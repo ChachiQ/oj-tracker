@@ -1,5 +1,7 @@
 # OJ Tracker - Online Judge Progress Tracking & Analysis
 
+English | [中文](README.md)
+
 A web application that helps parents track their children's competitive programming progress across multiple Online Judge (OJ) platforms, automatically analyze weaknesses, and provide targeted practice recommendations and skill reports.
 
 ## Features
