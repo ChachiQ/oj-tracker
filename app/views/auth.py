@@ -30,7 +30,7 @@ def register():
         username = request.form.get('username', '').strip()
         email = request.form.get('email', '').strip()
         password = request.form.get('password', '')
-        confirm = request.form.get('confirm_password', '')
+        confirm = request.form.get('password_confirm', '')
 
         if not username or not email or not password:
             flash('请填写所有必填项', 'danger')

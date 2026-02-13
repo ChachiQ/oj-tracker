@@ -31,7 +31,10 @@ class PlatformAccount(db.Model):
     # Relationships
     student = db.relationship('Student', back_populates='platform_accounts')
     submissions = db.relationship(
-        'Submission', back_populates='platform_account', lazy='dynamic'
+        'Submission',
+        back_populates='platform_account',
+        cascade='all, delete-orphan',
+        lazy='dynamic',
     )
 
     def __repr__(self) -> str:

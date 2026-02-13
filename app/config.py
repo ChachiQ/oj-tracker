@@ -58,7 +58,20 @@ class ProductionConfig(BaseConfig):
     ).lower() in ('true', '1', 'yes')
 
 
+class TestingConfig(BaseConfig):
+    """Testing environment configuration."""
+
+    TESTING = True
+    DEBUG = True
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    WTF_CSRF_ENABLED = False
+    SECRET_KEY = 'test-secret-key'
+    SCHEDULER_ENABLED = False
+    SERVER_NAME = 'localhost'
+
+
 config_map = {
     'development': DevelopmentConfig,
     'production': ProductionConfig,
+    'testing': TestingConfig,
 }

@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, redirect, url_for
 
 from app.config import config_map
 from app.extensions import db, login_manager, migrate, csrf
@@ -59,6 +59,11 @@ def create_app(config_name=None):
 
     # Register blueprints
     _register_blueprints(app)
+
+    # Root URL redirect to dashboard
+    @app.route('/')
+    def index():
+        return redirect(url_for('dashboard.index'))
 
     # Initialize scheduler if enabled
     if app.config.get('SCHEDULER_ENABLED'):
