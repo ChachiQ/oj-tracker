@@ -350,4 +350,4 @@ pytest tests/ -v --tb=short
 
 ## License
 
-Private project.
+[GPL-3.0](LICENSE)
