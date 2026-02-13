@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}题库 - OJ Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-journal-code"></i> 题库</h4>
+    <span class="text-muted">共 {{ total or 0 }} 题</span>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="GET" action="{{ url_for('problem.list_problems') }}" class="row g-3 align-items-end">
+            <div class="col-md-2">
+                <label for="filter-platform" class="form-label">平台</label>
+                <select class="form-select form-select-sm" id="filter-platform" name="platform">
+                    <option value="">全部平台</option>
+                    {% set available_platforms = ['luogu', 'codeforces', 'atcoder', 'leetcode', 'nowcoder', 'hdu', 'poj'] %}
+                    {% for p in available_platforms %}
+                    <option value="{{ p }}" {% if request.args.get('platform') == p %}selected{% endif %}>{{ p }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="filter-tag" class="form-label">知识点标签</label>
+                <select class="form-select form-select-sm" id="filter-tag" name="tag">
+                    <option value="">全部标签</option>
+                    {% if tags %}
+                    {% for tag in tags %}
+                    <option value="{{ tag }}" {% if request.args.get('tag') == tag %}selected{% endif %}>{{ tag }}</option>
+                    {% endfor %}
+                    {% endif %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="filter-difficulty" class="form-label">难度</label>
+                <select class="form-select form-select-sm" id="filter-difficulty" name="difficulty">
+                    <option value="">全部难度</option>
+                    {% for d in range(1, 11) %}
+                    <option value="{{ d }}" {% if request.args.get('difficulty') == d|string %}selected{% endif %}>
+                        难度 {{ d }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="filter-search" class="form-label">搜索</label>
+                <input type="text" class="form-control form-control-sm" id="filter-search" name="q"
+                       placeholder="题目 ID 或标题..." value="{{ request.args.get('q', '') }}">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary btn-sm w-100">
+                    <i class="bi bi-search"></i> 搜索
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Problems Table -->
+{% if problems and problems|length > 0 %}
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>平台</th>
+                    <th>题号</th>
+                    <th>标题</th>
+                    <th>难度</th>
+                    <th>知识点</th>
+                    <th>AI 分类</th>
+                    <th class="text-center">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for problem in problems %}
+                <tr>
+                    <td><span class="badge bg-dark">{{ problem.platform }}</span></td>
+                    <td><code>{{ problem.platform_pid }}</code></td>
+                    <td>
+                        <a href="{{ url_for('problem.detail', problem_id=problem.id) }}" class="text-decoration-none">
+                            {{ problem.title or problem.platform_pid }}
+                        </a>
+                    </td>
+                    <td>
+                        {% if problem.difficulty %}
+                        <span class="text-warning">
+                            {% for i in range(problem.difficulty|int if problem.difficulty|int <= 5 else 5) %}
+                                <i class="bi bi-star-fill"></i>
+                            {% endfor %}
+                            {% for i in range(5 - (problem.difficulty|int if problem.difficulty|int <= 5 else 5)) %}
+                                <i class="bi bi-star"></i>
+                            {% endfor %}
+                        </span>
+                        <small class="text-muted ms-1">({{ problem.difficulty }})</small>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if problem.tags %}
+                            {% for tag in problem.tags[:3] %}
+                            <span class="badge bg-light text-dark border">{{ tag }}</span>
+                            {% endfor %}
+                            {% if problem.tags|length > 3 %}
+                            <span class="badge bg-light text-muted border">+{{ problem.tags|length - 3 }}</span>
+                            {% endif %}
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if problem.ai_type %}
+                            <span class="badge bg-info">{{ problem.ai_type }}</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <a href="{{ url_for('problem.detail', problem_id=problem.id) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if pagination %}
+<nav class="mt-4 d-flex justify-content-center">
+    <ul class="pagination pagination-sm">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('problem.list_problems', page=pagination.prev_num, **request.args) }}">
+                <i class="bi bi-chevron-left"></i> 上一页
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link"><i class="bi bi-chevron-left"></i> 上一页</span>
+        </li>
+        {% endif %}
+
+        {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+            {% if page_num %}
+                <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
+                    <a class="page-link" href="{{ url_for('problem.list_problems', page=page_num, **request.args) }}">
+                        {{ page_num }}
+                    </a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">...</span></li>
+            {% endif %}
+        {% endfor %}
+
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="{{ url_for('problem.list_problems', page=pagination.next_num, **request.args) }}">
+                下一页 <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        {% else %}
+        <li class="page-item disabled">
+            <span class="page-link">下一页 <i class="bi bi-chevron-right"></i></span>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-journal-code text-muted" style="font-size: 4rem;"></i>
+    <h4 class="mt-3 text-muted">暂无题目</h4>
+    <p class="text-muted">
+        {% if request.args.get('q') or request.args.get('platform') or request.args.get('tag') or request.args.get('difficulty') %}
+            没有找到符合筛选条件的题目，请尝试调整筛选条件。
+        {% else %}
+            绑定 OJ 平台账号并同步数据后，题目会自动出现在这里。
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock %}

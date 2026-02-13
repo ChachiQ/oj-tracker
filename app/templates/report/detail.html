@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}学习报告详情 - OJ Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('report.list_reports') }}" class="btn btn-outline-secondary btn-sm me-3">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-text"></i> 学习报告</h4>
+</div>
+
+<!-- Report Header -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h5 class="fw-bold mb-2">
+                    {{ report.student.name if report.student else '未知学生' }}
+                    -
+                    <span class="badge {{ 'bg-info' if report.report_type == 'weekly' else 'bg-primary' }}">
+                        {{ '周报' if report.report_type == 'weekly' else '月报' }}
+                    </span>
+                </h5>
+                <p class="text-muted mb-0">
+                    <i class="bi bi-calendar3"></i>
+                    报告周期：
+                    {% if report.period_start and report.period_end %}
+                        {{ report.period_start.strftime('%Y-%m-%d') }} 至 {{ report.period_end.strftime('%Y-%m-%d') }}
+                    {% else %}
+                        {{ report.period or '-' }}
+                    {% endif %}
+                    <span class="mx-2">|</span>
+                    <i class="bi bi-clock"></i>
+                    生成时间：{{ report.created_at.strftime('%Y-%m-%d %H:%M') if report.created_at else '-' }}
+                </p>
+            </div>
+            <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                <a href="{{ url_for('report.list_reports') }}" class="btn btn-outline-secondary btn-sm">
+                    <i class="bi bi-list"></i> 返回列表
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Stats Summary -->
+    {% if report.stats %}
+    <div class="col-12">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="card stat-card border-0" style="border-left-color: var(--primary-color) !important;">
+                    <div class="card-body text-center">
+                        <div class="stat-label">总提交</div>
+                        <div class="stat-value text-primary">{{ report.stats.get('total_submissions', 0) }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card border-0" style="border-left-color: var(--success-color) !important;">
+                    <div class="card-body text-center">
+                        <div class="stat-label">通过数</div>
+                        <div class="stat-value text-success">{{ report.stats.get('ac_count', 0) }}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card border-0" style="border-left-color: var(--warning-color) !important;">
+                    <div class="card-body text-center">
+                        <div class="stat-label">通过率</div>
+                        <div class="stat-value text-warning">{{ report.stats.get('ac_rate', '0') }}%</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card border-0" style="border-left-color: var(--info-color) !important;">
+                    <div class="card-body text-center">
+                        <div class="stat-label">新知识点</div>
+                        <div class="stat-value text-info">{{ report.stats.get('new_tags', 0) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Radar Comparison Chart -->
+    <div class="col-lg-5">
+        <div class="chart-container">
+            <div class="chart-title"><i class="bi bi-radar"></i> 能力变化对比</div>
+            <div id="report-radar" style="height: 380px;"
+                 data-prev="{{ report.prev_scores|tojson if report.prev_scores else '{}' }}"
+                 data-curr="{{ report.curr_scores|tojson if report.curr_scores else '{}' }}">
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Report Content -->
+    <div class="col-lg-7">
+        <div class="chart-container">
+            <div class="chart-title"><i class="bi bi-robot"></i> AI 分析报告</div>
+            <div class="report-content">
+                {% if report.content %}
+                    {{ report.content|safe }}
+                {% else %}
+                    <p class="text-muted text-center py-3">暂无报告内容</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed Sections -->
+{% if report.sections %}
+<div class="row g-4 mt-2">
+    {% for section in report.sections %}
+    <div class="col-12">
+        <div class="chart-container">
+            <div class="chart-title">{{ section.title }}</div>
+            <div class="report-content">{{ section.content|safe }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Back Button -->
+<div class="text-center mt-4 mb-4">
+    <a href="{{ url_for('report.list_reports') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> 返回报告列表
+    </a>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/report.js') }}"></script>
+{% endblock %}

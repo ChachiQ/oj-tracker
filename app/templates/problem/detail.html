@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}{{ problem.title or problem.platform_pid }} - 题目详情 - OJ Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('problem.list_problems') }}" class="btn btn-outline-secondary btn-sm me-3">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <h4 class="fw-bold mb-0"><i class="bi bi-journal-code"></i> 题目详情</h4>
+</div>
+
+<!-- Problem Header -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h4 class="fw-bold mb-2">
+                    {{ problem.title or problem.platform_pid }}
+                </h4>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <span class="badge bg-dark">{{ problem.platform }}</span>
+                    <code class="text-muted">{{ problem.platform_pid }}</code>
+                    {% if problem.difficulty %}
+                    <span class="text-warning">
+                        {% for i in range(problem.difficulty|int if problem.difficulty|int <= 5 else 5) %}
+                            <i class="bi bi-star-fill"></i>
+                        {% endfor %}
+                        {% for i in range(5 - (problem.difficulty|int if problem.difficulty|int <= 5 else 5)) %}
+                            <i class="bi bi-star"></i>
+                        {% endfor %}
+                        <small class="text-muted ms-1">(难度 {{ problem.difficulty }})</small>
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                {% if problem.source_url %}
+                <a href="{{ problem.source_url }}" target="_blank" rel="noopener noreferrer"
+                   class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-box-arrow-up-right"></i> 查看原题
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Left Column: Problem Content -->
+    <div class="col-lg-8">
+        <!-- Tags -->
+        {% if problem.tags and problem.tags|length > 0 %}
+        <div class="chart-container">
+            <div class="chart-title"><i class="bi bi-tags"></i> 知识点标签</div>
+            <div class="d-flex flex-wrap gap-2">
+                {% for tag in problem.tags %}
+                <span class="badge bg-primary">{{ tag }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- AI Analysis -->
+        {% if problem.ai_analysis %}
+        <div class="chart-container">
+            <div class="chart-title"><i class="bi bi-robot"></i> AI 分析</div>
+            <div class="row g-3 mb-3">
+                {% if problem.ai_type %}
+                <div class="col-auto">
+                    <strong>题目类型：</strong>
+                    <span class="badge bg-info">{{ problem.ai_type }}</span>
+                </div>
+                {% endif %}
+                {% if problem.ai_analysis.knowledge_points %}
+                <div class="col-12">
+                    <strong>知识点：</strong>
+                    {% for kp in problem.ai_analysis.knowledge_points %}
+                    <span class="badge bg-light text-dark border">{{ kp }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                {% if problem.ai_analysis.difficulty_assessment %}
+                <div class="col-12">
+                    <strong>难度评估：</strong> {{ problem.ai_analysis.difficulty_assessment }}
+                </div>
+                {% endif %}
+            </div>
+            {% if problem.ai_analysis.analysis_text %}
+            <div class="report-content">{{ problem.ai_analysis.analysis_text }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Problem Description -->
+        {% if problem.description %}
+        <div class="chart-container">
+            <div class="chart-title"><i class="bi bi-file-text"></i> 题目描述</div>
+            <div class="report-content">{{ problem.description|safe }}</div>
+        </div>
+        {% endif %}
+
+        <!-- Input/Output Format -->
+        {% if problem.input_format or problem.output_format %}
+        <div class="chart-container">
+            {% if problem.input_format %}
+            <div class="chart-title"><i class="bi bi-arrow-right-square"></i> 输入格式</div>
+            <div class="report-content mb-3">{{ problem.input_format|safe }}</div>
+            {% endif %}
+            {% if problem.output_format %}
+            <div class="chart-title"><i class="bi bi-arrow-left-square"></i> 输出格式</div>
+            <div class="report-content">{{ problem.output_format|safe }}</div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Examples -->
+        {% if problem.examples and problem.examples|length > 0 %}
+        <div class="chart-container">
+            <div class="chart-title"><i class="bi bi-clipboard"></i> 样例</div>
+            {% for example in problem.examples %}
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">样例输入 #{{ loop.index }}</label>
+                    <pre class="code-viewer"><code>{{ example.input }}</code></pre>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">样例输出 #{{ loop.index }}</label>
+                    <pre class="code-viewer"><code>{{ example.output }}</code></pre>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Hints -->
+        {% if problem.hint %}
+        <div class="chart-container">
+            <div class="chart-title"><i class="bi bi-lightbulb"></i> 提示</div>
+            <div class="report-content">{{ problem.hint|safe }}</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Right Column: Submissions -->
+    <div class="col-lg-4">
+        <div class="chart-container">
+            <div class="chart-title"><i class="bi bi-clock-history"></i> 提交记录</div>
+            {% if submissions and submissions|length > 0 %}
+            <div class="list-group list-group-flush">
+                {% for sub in submissions %}
+                <div class="list-group-item px-0">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge
+                                {% if sub.status == 'AC' %}badge-ac
+                                {% elif sub.status == 'WA' %}badge-wa
+                                {% elif sub.status == 'TLE' %}badge-tle
+                                {% elif sub.status == 'MLE' %}badge-mle
+                                {% elif sub.status == 'RE' %}badge-re
+                                {% elif sub.status == 'CE' %}badge-ce
+                                {% else %}bg-secondary{% endif %}">
+                                {{ sub.status }}
+                            </span>
+                            <small class="text-muted ms-2">{{ sub.language or '' }}</small>
+                        </div>
+                        <small class="text-muted">
+                            {{ sub.submitted_at.strftime('%m-%d %H:%M') if sub.submitted_at else '' }}
+                        </small>
+                    </div>
+                    {% if sub.student %}
+                    <small class="text-muted"><i class="bi bi-person"></i> {{ sub.student.name }}</small>
+                    {% endif %}
+
+                    <!-- Execution Info -->
+                    {% if sub.time_ms is not none or sub.memory_kb is not none %}
+                    <div class="mt-1">
+                        {% if sub.time_ms is not none %}
+                        <small class="text-muted me-2"><i class="bi bi-stopwatch"></i> {{ sub.time_ms }}ms</small>
+                        {% endif %}
+                        {% if sub.memory_kb is not none %}
+                        <small class="text-muted"><i class="bi bi-memory"></i> {{ sub.memory_kb }}KB</small>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Code Viewer (Collapsible) -->
+                    {% if sub.code %}
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-secondary" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#code-{{ sub.id }}"
+                                aria-expanded="false" aria-controls="code-{{ sub.id }}">
+                            <i class="bi bi-code"></i> 查看代码
+                        </button>
+                        <div class="collapse mt-2" id="code-{{ sub.id }}">
+                            <pre class="code-viewer"><code>{{ sub.code }}</code></pre>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- AI Analysis for Submission -->
+                    {% if sub.ai_analysis %}
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-info" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#ai-{{ sub.id }}"
+                                aria-expanded="false" aria-controls="ai-{{ sub.id }}">
+                            <i class="bi bi-robot"></i> AI 分析
+                        </button>
+                        <div class="collapse mt-2" id="ai-{{ sub.id }}">
+                            <div class="alert alert-info mb-0">
+                                <small>{{ sub.ai_analysis }}</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="text-center py-3 text-muted">
+                <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                <p class="mt-2 mb-0">暂无提交记录</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

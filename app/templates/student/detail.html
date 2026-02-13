@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}{{ student.name }} - 学生详情 - OJ Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-4">
+    <a href="{{ url_for('student.list_students') }}" class="btn btn-outline-secondary btn-sm me-3">
+        <i class="bi bi-arrow-left"></i>
+    </a>
+    <h4 class="fw-bold mb-0"><i class="bi bi-person"></i> {{ student.name }}</h4>
+    <a href="{{ url_for('student.edit_student', student_id=student.id) }}" class="btn btn-outline-primary btn-sm ms-3">
+        <i class="bi bi-pencil"></i> 编辑
+    </a>
+</div>
+
+<div class="row g-4">
+    <!-- Student Info Card -->
+    <div class="col-lg-4">
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> 基本信息</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-borderless mb-0">
+                    <tr>
+                        <td class="text-muted" style="width: 80px;">姓名</td>
+                        <td class="fw-bold">{{ student.name }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">年龄</td>
+                        <td>
+                            {% if student.birthday %}
+                                {{ ((now() if now is defined else none) or student.birthday).year - student.birthday.year }} 岁
+                                <small class="text-muted">({{ student.birthday.strftime('%Y-%m-%d') }})</small>
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">年级</td>
+                        <td>{{ student.grade or '-' }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">水平</td>
+                        <td>
+                            {% if student.level %}
+                            <span class="badge
+                                {% if student.level == '入门' %}bg-secondary
+                                {% elif student.level == '普及' %}bg-info
+                                {% elif student.level == '提高' %}bg-primary
+                                {% elif student.level == '省选' %}bg-warning text-dark
+                                {% else %}bg-secondary{% endif %}">
+                                {{ student.level }}
+                            </span>
+                            {% else %}-{% endif %}
+                        </td>
+                    </tr>
+                    {% if student.school_math_level %}
+                    <tr>
+                        <td class="text-muted">数学</td>
+                        <td>{{ student.school_math_level }}</td>
+                    </tr>
+                    {% endif %}
+                    {% if student.notes %}
+                    <tr>
+                        <td class="text-muted">备注</td>
+                        <td>{{ student.notes }}</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+
+        <!-- Quick Links -->
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-link-45deg"></i> 快捷入口</h5>
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{{ url_for('dashboard.index') }}?student_id={{ student.id }}"
+                   class="list-group-item list-group-item-action">
+                    <i class="bi bi-speedometer2 text-primary"></i> 查看仪表盘
+                </a>
+                <a href="{{ url_for('knowledge.graph') }}?student_id={{ student.id }}"
+                   class="list-group-item list-group-item-action">
+                    <i class="bi bi-diagram-3 text-success"></i> 查看知识图谱
+                </a>
+                <a href="{{ url_for('report.list_reports') }}?student_id={{ student.id }}"
+                   class="list-group-item list-group-item-action">
+                    <i class="bi bi-file-earmark-text text-info"></i> 查看学习报告
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column -->
+    <div class="col-lg-8">
+        <!-- Platform Accounts -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-hdd-network"></i> 平台账号</h5>
+                <a href="{{ url_for('settings.index') }}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-plus-circle"></i> 管理账号
+                </a>
+            </div>
+            <div class="card-body">
+                {% if student.accounts and student.accounts|length > 0 %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>平台</th>
+                                <th>账号 ID</th>
+                                <th>最后同步</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for account in student.accounts %}
+                            <tr>
+                                <td>
+                                    <span class="badge bg-dark">{{ account.platform }}</span>
+                                </td>
+                                <td>{{ account.platform_uid }}</td>
+                                <td>
+                                    {% if account.last_sync_at %}
+                                        {{ account.last_sync_at.strftime('%Y-%m-%d %H:%M') }}
+                                    {% else %}
+                                        <span class="text-muted">未同步</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if account.is_active %}
+                                        <span class="badge bg-success">正常</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">异常</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-3 text-muted">
+                    <i class="bi bi-link-45deg" style="font-size: 2rem;"></i>
+                    <p class="mt-2 mb-0">暂未绑定平台账号，
+                        <a href="{{ url_for('settings.index') }}">前往设置绑定</a>
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Submissions -->
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> 最近提交记录 (最近20条)</h5>
+            </div>
+            <div class="card-body">
+                {% if submissions and submissions|length > 0 %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>提交时间</th>
+                                <th>平台</th>
+                                <th>题目</th>
+                                <th>状态</th>
+                                <th>语言</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sub in submissions %}
+                            <tr>
+                                <td>{{ sub.submitted_at.strftime('%Y-%m-%d %H:%M') if sub.submitted_at else '-' }}</td>
+                                <td><span class="badge bg-dark">{{ sub.platform }}</span></td>
+                                <td>
+                                    {% if sub.problem %}
+                                    <a href="{{ url_for('problem.detail', problem_id=sub.problem.id) }}" class="text-decoration-none">
+                                        {{ sub.problem.title or sub.problem.platform_pid }}
+                                    </a>
+                                    {% else %}
+                                        {{ sub.platform_pid or '-' }}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge
+                                        {% if sub.status == 'AC' %}badge-ac
+                                        {% elif sub.status == 'WA' %}badge-wa
+                                        {% elif sub.status == 'TLE' %}badge-tle
+                                        {% elif sub.status == 'MLE' %}badge-mle
+                                        {% elif sub.status == 'RE' %}badge-re
+                                        {% elif sub.status == 'CE' %}badge-ce
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ sub.status }}
+                                    </span>
+                                </td>
+                                <td>{{ sub.language or '-' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-3 text-muted">
+                    <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                    <p class="mt-2 mb-0">暂无提交记录</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

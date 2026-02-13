@@ -1,0 +1,456 @@
+/* OJ Tracker Custom Styles */
+:root {
+    --primary-color: #4e73df;
+    --success-color: #1cc88a;
+    --warning-color: #f6c23e;
+    --danger-color: #e74a3b;
+    --info-color: #36b9cc;
+    --bg-color: #f8f9fc;
+    --card-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.1);
+    --navbar-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+}
+
+/* Base Styles */
+body {
+    background-color: var(--bg-color);
+    font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                 'Helvetica Neue', Arial, 'Noto Sans SC', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+/* Navbar */
+.navbar {
+    box-shadow: var(--navbar-shadow);
+}
+
+.navbar-brand {
+    font-size: 1.25rem;
+    letter-spacing: 0.5px;
+}
+
+.navbar .nav-link {
+    font-size: 0.9rem;
+    padding: 0.5rem 0.85rem;
+    transition: opacity 0.2s ease;
+}
+
+.navbar .nav-link:hover {
+    opacity: 0.85;
+}
+
+.navbar .nav-link.active {
+    font-weight: 700;
+}
+
+/* Stat Cards */
+.stat-card {
+    border-left: 4px solid;
+    border-radius: 0.35rem;
+    box-shadow: var(--card-shadow);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    background: white;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.25rem 2rem 0 rgba(58, 59, 69, 0.15);
+}
+
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.stat-card .stat-label {
+    font-size: 0.8rem;
+    color: #858796;
+    text-transform: uppercase;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.25rem;
+}
+
+/* Chart Containers */
+.chart-container {
+    background: white;
+    border-radius: 0.35rem;
+    padding: 1.25rem;
+    box-shadow: var(--card-shadow);
+    margin-bottom: 1.5rem;
+}
+
+.chart-container .chart-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #5a5c69;
+    margin-bottom: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e3e6f0;
+}
+
+/* Knowledge Graph */
+#knowledge-graph {
+    width: 100%;
+    height: 600px;
+}
+
+/* Status Badges */
+.badge-ac {
+    background-color: #1cc88a;
+    color: white;
+}
+
+.badge-wa {
+    background-color: #e74a3b;
+    color: white;
+}
+
+.badge-tle {
+    background-color: #f6c23e;
+    color: #333;
+}
+
+.badge-mle {
+    background-color: #fd7e14;
+    color: white;
+}
+
+.badge-re {
+    background-color: #6f42c1;
+    color: white;
+}
+
+.badge-ce {
+    background-color: #858796;
+    color: white;
+}
+
+/* Weakness Severity */
+.weakness-critical {
+    border-left: 4px solid #e74a3b;
+    background: #fff5f5;
+}
+
+.weakness-moderate {
+    border-left: 4px solid #f6c23e;
+    background: #fffbf0;
+}
+
+.weakness-mild {
+    border-left: 4px solid #858796;
+    background: #fafafa;
+}
+
+.weakness-card {
+    border-radius: 0.35rem;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    transition: transform 0.15s ease;
+}
+
+.weakness-card:hover {
+    transform: translateX(4px);
+}
+
+/* Stage Cards */
+.stage-card {
+    text-align: center;
+    padding: 1rem;
+    border-radius: 0.35rem;
+    background: white;
+    box-shadow: var(--card-shadow);
+    transition: transform 0.15s ease;
+}
+
+.stage-card:hover {
+    transform: translateY(-2px);
+}
+
+.stage-card .stage-number {
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+/* Heatmap */
+.heatmap-tooltip {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 1000;
+}
+
+/* Report Content */
+.report-content {
+    white-space: pre-wrap;
+    line-height: 1.8;
+    font-size: 0.95rem;
+    color: #3a3b45;
+}
+
+.report-content h1,
+.report-content h2,
+.report-content h3 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    color: #5a5c69;
+}
+
+.report-content ul,
+.report-content ol {
+    margin-bottom: 1rem;
+}
+
+/* Code Viewer */
+.code-viewer {
+    background: #2d2d2d;
+    color: #f8f8f2;
+    padding: 1rem;
+    border-radius: 0.35rem;
+    overflow-x: auto;
+    font-family: 'Fira Code', 'Source Code Pro', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin: 0;
+    tab-size: 4;
+}
+
+.code-viewer code {
+    color: inherit;
+    background: none;
+    padding: 0;
+}
+
+/* Cards Enhancement */
+.card {
+    border: none;
+    border-radius: 0.35rem;
+}
+
+.card-header {
+    background-color: #f8f9fc;
+    border-bottom: 1px solid #e3e6f0;
+    font-weight: 600;
+}
+
+/* Tables */
+.table {
+    font-size: 0.9rem;
+}
+
+.table th {
+    font-weight: 600;
+    color: #5a5c69;
+    border-bottom-width: 2px;
+}
+
+.table td {
+    vertical-align: middle;
+}
+
+/* Buttons */
+.btn {
+    font-size: 0.875rem;
+    border-radius: 0.35rem;
+}
+
+.btn-group-sm > .btn {
+    font-size: 0.8rem;
+}
+
+/* Forms */
+.form-label {
+    font-weight: 600;
+    font-size: 0.875rem;
+    color: #5a5c69;
+}
+
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
+}
+
+/* Alert Enhancement */
+.alert {
+    border: none;
+    border-radius: 0.35rem;
+    font-size: 0.9rem;
+}
+
+/* Progress Bars */
+.progress {
+    border-radius: 0.35rem;
+    background-color: #eaecf4;
+}
+
+/* Badge Enhancement */
+.badge {
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.3px;
+}
+
+/* Node Detail Panel for Knowledge Graph */
+#node-detail-panel .card {
+    border: 1px solid #e3e6f0;
+    animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Pagination */
+.pagination .page-link {
+    color: var(--primary-color);
+    border-radius: 0.35rem;
+    margin: 0 2px;
+    font-size: 0.85rem;
+}
+
+.pagination .page-item.active .page-link {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+/* Modal Enhancement */
+.modal-content {
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+    border-bottom: 1px solid #e3e6f0;
+}
+
+.modal-footer {
+    border-top: 1px solid #e3e6f0;
+}
+
+/* Accordion Enhancement */
+.accordion-button:not(.collapsed) {
+    background-color: rgba(78, 115, 223, 0.05);
+    color: var(--primary-color);
+}
+
+.accordion-button:focus {
+    border-color: rgba(78, 115, 223, 0.25);
+    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.15);
+}
+
+/* Footer */
+.footer {
+    font-size: 0.85rem;
+}
+
+/* Spinner */
+.loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 200px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .stat-card .stat-value {
+        font-size: 1.5rem;
+    }
+
+    #knowledge-graph {
+        height: 400px;
+    }
+
+    .chart-container {
+        padding: 1rem;
+    }
+
+    .navbar-brand {
+        font-size: 1.1rem;
+    }
+
+    .stage-card .stage-number {
+        font-size: 0.85rem;
+    }
+
+    #node-detail-panel {
+        position: fixed;
+        right: 10px;
+        left: 10px;
+        top: auto;
+        bottom: 10px;
+        width: auto;
+    }
+}
+
+@media (max-width: 576px) {
+    .container-fluid {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+
+    .stat-card .stat-value {
+        font-size: 1.25rem;
+    }
+
+    .table {
+        font-size: 0.8rem;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .navbar, .footer, .btn, .form-select, .pagination {
+        display: none !important;
+    }
+
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #ddd !important;
+    }
+
+    .chart-container {
+        box-shadow: none !important;
+        border: 1px solid #ddd;
+        page-break-inside: avoid;
+    }
+}

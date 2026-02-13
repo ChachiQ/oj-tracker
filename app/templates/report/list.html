@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}学习报告 - OJ Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-text"></i> 学习报告</h4>
+    <div class="d-flex align-items-center gap-2">
+        {% if students and students|length > 0 %}
+        <select id="student-selector" class="form-select form-select-sm" style="width: auto;"
+                onchange="window.location.href='{{ url_for('report.list_reports') }}?student_id=' + this.value">
+            <option value="">全部学生</option>
+            {% for s in students %}
+            <option value="{{ s.id }}" {% if selected_student_id and s.id == selected_student_id %}selected{% endif %}>
+                {{ s.name }}
+            </option>
+            {% endfor %}
+        </select>
+        <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#generateModal">
+            <i class="bi bi-plus-circle"></i> 生成报告
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+{% if reports and reports|length > 0 %}
+<div class="card shadow-sm">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>#</th>
+                    <th>学生</th>
+                    <th>类型</th>
+                    <th>周期</th>
+                    <th>生成时间</th>
+                    <th class="text-center">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in reports %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>
+                        {% if report.student %}
+                            {{ report.student.name }}
+                        {% else %}-{% endif %}
+                    </td>
+                    <td>
+                        <span class="badge {{ 'bg-info' if report.report_type == 'weekly' else 'bg-primary' }}">
+                            {{ '周报' if report.report_type == 'weekly' else '月报' }}
+                        </span>
+                    </td>
+                    <td>
+                        {% if report.period_start and report.period_end %}
+                            {{ report.period_start.strftime('%m/%d') }} - {{ report.period_end.strftime('%m/%d') }}
+                        {% else %}
+                            {{ report.period or '-' }}
+                        {% endif %}
+                    </td>
+                    <td>{{ report.created_at.strftime('%Y-%m-%d %H:%M') if report.created_at else '-' }}</td>
+                    <td class="text-center">
+                        <a href="{{ url_for('report.detail', report_id=report.id) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye"></i> 查看
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-file-earmark-text text-muted" style="font-size: 4rem;"></i>
+    <h4 class="mt-3 text-muted">暂无报告</h4>
+    <p class="text-muted">
+        {% if students and students|length > 0 %}
+            点击"生成报告"按钮为学生创建第一份学习报告。
+        {% else %}
+            请先添加学生并绑定 OJ 平台账号。
+        {% endif %}
+    </p>
+</div>
+{% endif %}
+
+<!-- Generate Report Modal -->
+{% if students and students|length > 0 %}
+<div class="modal fade" id="generateModal" tabindex="-1" aria-labelledby="generateModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('report.generate') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="generateModalLabel">
+                        <i class="bi bi-file-earmark-plus"></i> 生成学习报告
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="gen-student" class="form-label">选择学生 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="gen-student" name="student_id" required>
+                            <option value="">-- 请选择 --</option>
+                            {% for s in students %}
+                            <option value="{{ s.id }}" {% if selected_student_id and s.id == selected_student_id %}selected{% endif %}>
+                                {{ s.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="gen-type" class="form-label">报告类型 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="gen-type" name="report_type" required>
+                            <option value="weekly">周报</option>
+                            <option value="monthly">月报</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        报告将由 AI 自动分析学生最近的做题数据并生成，生成过程可能需要几分钟时间。
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-lightning"></i> 开始生成
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

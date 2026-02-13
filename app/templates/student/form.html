@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}{{ '编辑学生' if student else '添加学生' }} - OJ Tracker{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-xl-6">
+        <div class="d-flex align-items-center mb-4">
+            <a href="{{ url_for('student.list_students') }}" class="btn btn-outline-secondary btn-sm me-3">
+                <i class="bi bi-arrow-left"></i>
+            </a>
+            <h4 class="fw-bold mb-0">
+                <i class="bi bi-{{ 'pencil' if student else 'person-plus' }}"></i>
+                {{ '编辑学生' if student else '添加学生' }}
+            </h4>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <form method="POST"
+                      action="{{ url_for('student.edit_student', student_id=student.id) if student else url_for('student.add_student') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">
+                            姓名 <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control" id="name" name="name"
+                               value="{{ student.name if student else '' }}" required
+                               placeholder="请输入学生姓名">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="birthday" class="form-label">出生日期</label>
+                        <input type="date" class="form-control" id="birthday" name="birthday"
+                               value="{{ student.birthday.strftime('%Y-%m-%d') if student and student.birthday else '' }}">
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label for="grade" class="form-label">年级</label>
+                            <select class="form-select" id="grade" name="grade">
+                                <option value="">-- 请选择 --</option>
+                                {% set grade_options = ['小三', '小四', '小五', '小六', '初一', '初二', '初三', '高一', '高二', '高三'] %}
+                                {% for g in grade_options %}
+                                <option value="{{ g }}" {% if student and student.grade == g %}selected{% endif %}>{{ g }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="level" class="form-label">竞赛水平</label>
+                            <select class="form-select" id="level" name="level">
+                                <option value="">-- 请选择 --</option>
+                                {% set level_options = ['入门', '普及', '提高', '省选'] %}
+                                {% for l in level_options %}
+                                <option value="{{ l }}" {% if student and student.level == l %}selected{% endif %}>{{ l }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="school_math_level" class="form-label">校内数学水平</label>
+                        <textarea class="form-control" id="school_math_level" name="school_math_level" rows="2"
+                                  placeholder="简要描述校内数学水平，如：数学成绩优秀，经常满分">{{ student.school_math_level if student and student.school_math_level else '' }}</textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">备注</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="3"
+                                  placeholder="其他备注信息">{{ student.notes if student and student.notes else '' }}</textarea>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2">
+                        <a href="{{ url_for('student.list_students') }}" class="btn btn-secondary">
+                            <i class="bi bi-x-circle"></i> 取消
+                        </a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle"></i> {{ '保存修改' if student else '添加学生' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

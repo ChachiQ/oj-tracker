@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}设置 - OJ Tracker{% endblock %}
+
+{% block content %}
+<h4 class="fw-bold mb-4"><i class="bi bi-gear"></i> 系统设置</h4>
+
+<div class="row g-4">
+    <!-- Section 1: Platform Accounts -->
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-hdd-network"></i> 平台账号管理</h5>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+                        <i class="bi bi-plus-circle"></i> 添加账号
+                    </button>
+                    <form method="POST" action="{{ url_for('settings.sync_all') }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-sm btn-outline-success">
+                            <i class="bi bi-arrow-repeat"></i> 全部同步
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if accounts and accounts|length > 0 %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>学生</th>
+                                <th>平台</th>
+                                <th>账号 ID</th>
+                                <th>状态</th>
+                                <th>最后同步</th>
+                                <th class="text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for account in accounts %}
+                            <tr>
+                                <td>{{ account.student.name if account.student else '-' }}</td>
+                                <td>
+                                    {% set platform_icons = {
+                                        'luogu': 'bi-trophy',
+                                        'codeforces': 'bi-globe',
+                                        'atcoder': 'bi-flag',
+                                        'leetcode': 'bi-code-square',
+                                        'nowcoder': 'bi-braces',
+                                        'hdu': 'bi-cpu',
+                                        'poj': 'bi-server',
+                                        'bzoj': 'bi-hdd',
+                                        'uoj': 'bi-motherboard',
+                                        'loj': 'bi-pc-display'
+                                    } %}
+                                    <i class="bi {{ platform_icons.get(account.platform, 'bi-globe') }}"></i>
+                                    {{ account.platform }}
+                                </td>
+                                <td><code>{{ account.platform_uid }}</code></td>
+                                <td>
+                                    {% if account.is_active %}
+                                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> 正常</span>
+                                    {% else %}
+                                        <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 异常</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if account.last_sync_at %}
+                                        <small>{{ account.last_sync_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                                    {% else %}
+                                        <span class="text-muted">未同步</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <div class="btn-group btn-group-sm">
+                                        <form method="POST" action="{{ url_for('settings.sync_account', account_id=account.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-outline-success" title="同步数据">
+                                                <i class="bi bi-arrow-repeat"></i>
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="{{ url_for('settings.delete_account', account_id=account.id) }}"
+                                              class="d-inline" onsubmit="return confirm('确定要删除该账号吗？关联的提交记录不会被删除。')">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-outline-danger" title="删除账号">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-3 text-muted">
+                    <i class="bi bi-link-45deg" style="font-size: 2rem;"></i>
+                    <p class="mt-2 mb-0">暂无平台账号，点击"添加账号"按钮开始绑定。</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 2: AI Analysis Status -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-robot"></i> AI 分析状态</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">当前 AI 提供者</span>
+                        <span class="fw-bold">{{ ai_provider or 'OpenAI GPT-4' }}</span>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted">本月 API 用量</span>
+                        <span class="fw-bold">
+                            {{ '%.2f'|format(monthly_cost or 0) }} / {{ '%.2f'|format(monthly_budget or 50) }} 元
+                        </span>
+                    </div>
+                    {% set cost_pct = ((monthly_cost or 0) / (monthly_budget or 50) * 100)|int %}
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar {{ 'bg-danger' if cost_pct > 80 else 'bg-warning' if cost_pct > 50 else 'bg-success' }}"
+                             style="width: {{ cost_pct }}%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">已分析题目数</span>
+                        <span class="fw-bold">{{ analyzed_count or 0 }}</span>
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <form method="POST" action="{{ url_for('settings.index') }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="action" value="trigger_analysis">
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="bi bi-lightning"></i> 触发分析
+                        </button>
+                    </form>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Section 3: Platform Instructions -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-question-circle"></i> 平台绑定说明</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="accordion accordion-flush" id="platformInstructions">
+                    {% set platforms = [
+                        {'id': 'luogu', 'name': '洛谷 (Luogu)', 'desc': '输入洛谷用户 ID（数字），系统通过公开 API 获取提交记录。无需 Cookie。'},
+                        {'id': 'codeforces', 'name': 'Codeforces', 'desc': '输入 Codeforces 用户名（handle），系统通过公开 API 获取提交记录。无需 Cookie。'},
+                        {'id': 'atcoder', 'name': 'AtCoder', 'desc': '输入 AtCoder 用户名，系统通过公开 API 获取提交记录。无需额外认证。'},
+                        {'id': 'leetcode', 'name': 'LeetCode', 'desc': '输入 LeetCode 用户名，系统通过 GraphQL API 获取公开的提交记录。'},
+                        {'id': 'nowcoder', 'name': '牛客 (NowCoder)', 'desc': '输入牛客用户 ID，部分功能可能需要 Cookie。Cookie 获取方法：登录牛客后，打开浏览器开发者工具 -> Network -> 复制 Cookie。'},
+                        {'id': 'others', 'name': '其他平台', 'desc': '对于 HDU/POJ/BZOJ/UOJ/LOJ 等平台，输入对应的用户名或 ID。部分平台可能需要 Cookie 才能获取完整数据。'}
+                    ] %}
+                    {% for p in platforms %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#instr-{{ p.id }}"
+                                    aria-expanded="false" aria-controls="instr-{{ p.id }}">
+                                {{ p.name }}
+                            </button>
+                        </h2>
+                        <div id="instr-{{ p.id }}" class="accordion-collapse collapse"
+                             data-bs-parent="#platformInstructions">
+                            <div class="accordion-body">
+                                {{ p.desc }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Account Modal -->
+<div class="modal fade" id="addAccountModal" tabindex="-1" aria-labelledby="addAccountModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('settings.add_account') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addAccountModalLabel">
+                        <i class="bi bi-plus-circle"></i> 添加平台账号
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="add-student" class="form-label">选择学生 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="add-student" name="student_id" required>
+                            <option value="">-- 请选择学生 --</option>
+                            {% for s in students %}
+                            <option value="{{ s.id }}">{{ s.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="add-platform" class="form-label">平台 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="add-platform" name="platform" required>
+                            <option value="">-- 请选择平台 --</option>
+                            {% set available_platforms = ['luogu', 'codeforces', 'atcoder', 'leetcode', 'nowcoder', 'hdu', 'poj', 'bzoj', 'uoj', 'loj'] %}
+                            {% for p in available_platforms %}
+                            <option value="{{ p }}">{{ p }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="add-uid" class="form-label">平台用户 ID <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="add-uid" name="platform_uid"
+                               placeholder="如：123456 或 tourist" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="add-cookie" class="form-label">Cookie（可选）</label>
+                        <textarea class="form-control" id="add-cookie" name="cookie" rows="3"
+                                  placeholder="部分平台需要 Cookie 才能获取完整数据"></textarea>
+                        <div class="form-text">仅在需要时填写，Cookie 将加密存储。</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> 添加
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

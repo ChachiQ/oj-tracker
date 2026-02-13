@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}知识图谱 - OJ Tracker{% endblock %}
+
+{% block extra_css %}
+<style>
+    #node-detail-panel {
+        position: fixed;
+        right: 20px;
+        top: 80px;
+        width: 320px;
+        z-index: 1000;
+        display: none;
+    }
+    #node-detail-panel .card {
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header with Student Selector -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-diagram-3"></i> 知识图谱</h4>
+    {% if students and students|length > 0 %}
+    <div class="d-flex align-items-center gap-2">
+        <label class="form-label mb-0 text-muted">当前学生：</label>
+        <select id="student-selector" class="form-select form-select-sm" style="width: auto;"
+                onchange="window.location.href='{{ url_for('knowledge.graph') }}?student_id=' + this.value">
+            {% for s in students %}
+            <option value="{{ s.id }}" {% if current_student and s.id == current_student.id %}selected{% endif %}>
+                {{ s.name }}{% if s.grade %} ({{ s.grade }}){% endif %}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    {% endif %}
+</div>
+
+{% if current_student %}
+<!-- Stage Progress Bar -->
+<div class="chart-container mb-4">
+    <div class="chart-title"><i class="bi bi-bar-chart-steps"></i> 学习阶段总览</div>
+    <div class="row g-3" id="stage-cards">
+        {% set stage_names = {1: '语法基础', 2: '基础算法', 3: 'CSP-J', 4: 'CSP-S', 5: '省选', 6: 'NOI'} %}
+        {% set stage_colors = {1: '#91cc75', 2: '#5470c6', 3: '#73c0de', 4: '#fac858', 5: '#ee6666', 6: '#9a60b4'} %}
+        {% for stage_id, stage_name in stage_names.items() %}
+        <div class="col-lg-2 col-md-4 col-6">
+            <div class="stage-card">
+                <div class="stage-number" style="color: {{ stage_colors[stage_id] }};">{{ stage_name }}</div>
+                <div class="mt-2">
+                    <small class="text-muted">覆盖率</small>
+                    <div class="progress mt-1" style="height: 6px;">
+                        <div class="progress-bar" id="stage-{{ stage_id }}-coverage"
+                             style="width: 0%; background-color: {{ stage_colors[stage_id] }};"></div>
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">掌握率</small>
+                    <div class="progress mt-1" style="height: 6px;">
+                        <div class="progress-bar" id="stage-{{ stage_id }}-mastery"
+                             style="width: 0%; background-color: {{ stage_colors[stage_id] }}; opacity: 0.6;"></div>
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <small id="stage-{{ stage_id }}-text" class="text-muted">--% / --%</small>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Legend -->
+<div class="chart-container mb-4">
+    <div class="d-flex justify-content-center gap-4 flex-wrap">
+        <span><i class="bi bi-circle-fill" style="color: #1cc88a;"></i> 已掌握</span>
+        <span><i class="bi bi-circle-fill" style="color: #f6c23e;"></i> 学习中</span>
+        <span><i class="bi bi-circle-fill" style="color: #e74a3b;"></i> 薄弱</span>
+        <span><i class="bi bi-circle-fill" style="color: #d1d3e2;"></i> 未涉及</span>
+    </div>
+</div>
+
+<!-- Knowledge Graph Container -->
+<div class="chart-container">
+    <div class="chart-title"><i class="bi bi-share"></i> 知识点关系图</div>
+    <div id="knowledge-graph" style="height: 600px;" data-student-id="{{ current_student.id }}"></div>
+</div>
+
+<!-- Node Detail Panel (floating) -->
+<div id="node-detail-panel"></div>
+
+{% else %}
+<div class="text-center py-5">
+    <i class="bi bi-diagram-3 text-muted" style="font-size: 4rem;"></i>
+    <h4 class="mt-3 text-muted">请选择学生查看知识图谱</h4>
+    {% if not students or students|length == 0 %}
+    <p class="text-muted">请先添加学生。</p>
+    <a href="{{ url_for('student.add_student') }}" class="btn btn-primary">
+        <i class="bi bi-plus-circle"></i> 添加学生
+    </a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if current_student %}
+<script src="{{ url_for('static', filename='js/knowledge_graph.js') }}"></script>
+{% endif %}
+{% endblock %}
