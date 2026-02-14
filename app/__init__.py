@@ -6,6 +6,8 @@ from flask import Flask, redirect, url_for
 from app.config import config_map
 from app.extensions import db, login_manager, migrate, csrf
 
+__version__ = '0.2.0'
+
 
 def create_app(config_name=None):
     """Application factory for creating the Flask app instance.
@@ -59,6 +61,11 @@ def create_app(config_name=None):
 
     # Register blueprints
     _register_blueprints(app)
+
+    # Inject version into all templates
+    @app.context_processor
+    def inject_version():
+        return dict(app_version=__version__)
 
     # Root URL redirect to dashboard
     @app.route('/')
