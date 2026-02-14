@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.2.1 (2026-02-14) -- YBT 爬虫修复 & 题目详情优化
+
+### 修复
+- YBT 爬虫编码：GBK → UTF-8（页面实际为 UTF-8 + BOM，之前解码导致标题乱码）
+- YBT 题目内容解析：重写 `_extract_section()`，匹配实际 `pshow("content")` 单参数格式（旧正则 `pshow('name','content')` 完全不匹配）
+- YBT 样例提取：从 `<pre>` 标签提取输入/输出样例（样例区域不使用 pshow）
+- YBT 图片抓取：新增 `_fix_image_urls()`，将 `pic/1365.gif` 等相对路径转为绝对 URL
+- 题目详情模板字段映射：`platform_pid` → `problem_id`、`source_url` → `url`、`input_format` → `input_desc`、`output_format` → `output_desc`、`sub.code` → `sub.source_code`、`sub.student` → `sub.platform_account.student`、`ai_type` → `ai_problem_type`
+- 提交记录排序改为按时间倒序（最新在前）
+
+### 优化
+- 题目列表/详情页：移除题号列，平台 badge 内嵌外链图标，点击直接跳转 OJ 原题
+- 平台 badge 悬停变色效果，提升可点击感知
+- 全站 footer 显示版本号（`__version__` + context_processor）
+
 ## v0.2.0 (2026-02-14) -- 设置页面完善
 
 ### 新增
