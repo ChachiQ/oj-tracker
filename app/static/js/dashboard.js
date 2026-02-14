@@ -43,6 +43,13 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 /**
+ * Check if current viewport is mobile
+ */
+function isMobile() {
+    return window.innerWidth < 576;
+}
+
+/**
  * Update stat cards with data
  */
 function updateStatCards(data) {
@@ -91,11 +98,12 @@ function initRadarChart(tagScores) {
         }
     }
 
+    var mobile = isMobile();
     var option = {
         title: {
             text: '能力雷达图',
             left: 'center',
-            textStyle: { fontSize: 14, color: '#5a5c69' }
+            textStyle: { fontSize: mobile ? 12 : 14, color: '#5a5c69' }
         },
         tooltip: {
             trigger: 'item'
@@ -105,10 +113,11 @@ function initRadarChart(tagScores) {
                 return { name: item[0], max: 100 };
             }),
             shape: 'polygon',
-            splitNumber: 5,
+            splitNumber: mobile ? 3 : 5,
+            radius: mobile ? '55%' : '65%',
             axisName: {
                 color: '#666',
-                fontSize: 11
+                fontSize: mobile ? 9 : 11
             },
             splitArea: {
                 areaStyle: {
@@ -154,11 +163,12 @@ function initHeatmap(heatmapData) {
         return;
     }
 
+    var mobile = isMobile();
     var option = {
         title: {
             text: '做题日历',
             left: 'center',
-            textStyle: { fontSize: 14, color: '#5a5c69' }
+            textStyle: { fontSize: mobile ? 12 : 14, color: '#5a5c69' }
         },
         tooltip: {
             formatter: function (params) {
@@ -172,6 +182,7 @@ function initHeatmap(heatmapData) {
             orient: 'horizontal',
             left: 'center',
             bottom: 0,
+            show: !mobile,
             pieces: [
                 { min: 0, max: 0, label: '0', color: '#ebedf0' },
                 { min: 1, max: 2, label: '1-2', color: '#9be9a8' },
@@ -183,22 +194,22 @@ function initHeatmap(heatmapData) {
         },
         calendar: {
             range: year.toString(),
-            cellSize: ['auto', 15],
-            left: 50,
-            right: 30,
-            top: 50,
+            cellSize: mobile ? ['auto', 10] : ['auto', 15],
+            left: mobile ? 30 : 50,
+            right: mobile ? 10 : 30,
+            top: mobile ? 40 : 50,
             itemStyle: {
-                borderWidth: 3,
+                borderWidth: mobile ? 2 : 3,
                 borderColor: '#fff'
             },
             yearLabel: { show: false },
             dayLabel: {
                 nameMap: 'ZH',
-                fontSize: 10
+                fontSize: mobile ? 8 : 10
             },
             monthLabel: {
                 nameMap: 'ZH',
-                fontSize: 10
+                fontSize: mobile ? 8 : 10
             }
         },
         series: [{
@@ -233,11 +244,12 @@ function initDifficultyChart(diffDist) {
     var barColors = ['#91cc75', '#73c0de', '#5470c6', '#fac858', '#ee6666',
                      '#fc8452', '#9a60b4', '#ea7ccc', '#e74a3b', '#c23531'];
 
+    var mobile = isMobile();
     var option = {
         title: {
             text: '难度分布',
             left: 'center',
-            textStyle: { fontSize: 14, color: '#5a5c69' }
+            textStyle: { fontSize: mobile ? 12 : 14, color: '#5a5c69' }
         },
         tooltip: {
             trigger: 'axis',
@@ -256,13 +268,13 @@ function initDifficultyChart(diffDist) {
         xAxis: {
             type: 'category',
             data: labels,
-            axisLabel: { fontSize: 11 }
+            axisLabel: { fontSize: mobile ? 9 : 11, rotate: mobile ? 30 : 0 }
         },
         yAxis: {
             type: 'value',
             name: '题数',
-            nameTextStyle: { fontSize: 11 },
-            axisLabel: { fontSize: 11 }
+            nameTextStyle: { fontSize: mobile ? 9 : 11 },
+            axisLabel: { fontSize: mobile ? 9 : 11 }
         },
         series: [{
             type: 'bar',
@@ -276,7 +288,7 @@ function initDifficultyChart(diffDist) {
             label: {
                 show: true,
                 position: 'top',
-                fontSize: 11,
+                fontSize: mobile ? 9 : 11,
                 color: '#666'
             }
         }]
@@ -355,7 +367,7 @@ function initWeaknessAlerts(weaknesses) {
         var severityLabel = severity === 'critical' ? '严重' : severity === 'moderate' ? '中等' : '轻微';
         var severityBadge = severity === 'critical' ? 'bg-danger' : severity === 'moderate' ? 'bg-warning text-dark' : 'bg-secondary';
 
-        html += '<div class="col-md-4">';
+        html += '<div class="col-12 col-sm-6 col-md-4">';
         html += '<div class="weakness-card ' + severityClass + '">';
         html += '<div class="d-flex justify-content-between align-items-start">';
         html += '<h6 class="fw-bold mb-1">' + escapeHtml(w.tag || w.name || '未知') + '</h6>';

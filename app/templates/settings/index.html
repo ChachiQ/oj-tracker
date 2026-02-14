@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import empty_state, table_col_class %}
 
 {% block title %}设置 - OJ Tracker{% endblock %}
 
@@ -9,7 +10,7 @@
     <!-- Section 1: Platform Accounts -->
     <div class="col-12">
         <div class="card shadow-sm">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 class="mb-0"><i class="bi bi-hdd-network"></i> 平台账号管理</h5>
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
@@ -31,9 +32,9 @@
                             <tr>
                                 <th>学生</th>
                                 <th>平台</th>
-                                <th>账号 ID</th>
+                                <th class="{{ table_col_class('md') }}">账号 ID</th>
                                 <th>状态</th>
-                                <th>最后同步</th>
+                                <th class="{{ table_col_class('md') }}">最后同步</th>
                                 <th class="text-center">操作</th>
                             </tr>
                         </thead>
@@ -57,7 +58,7 @@
                                     <i class="bi {{ platform_icons.get(account.platform, 'bi-globe') }}"></i>
                                     {{ account.platform }}
                                 </td>
-                                <td><code>{{ account.platform_uid }}</code></td>
+                                <td class="{{ table_col_class('md') }}"><code>{{ account.platform_uid }}</code></td>
                                 <td>
                                     {% if account.is_active %}
                                         <span class="badge bg-success"><i class="bi bi-check-circle"></i> 正常</span>
@@ -65,7 +66,7 @@
                                         <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 异常</span>
                                     {% endif %}
                                 </td>
-                                <td>
+                                <td class="{{ table_col_class('md') }}">
                                     {% if account.last_sync_at %}
                                         <small>{{ account.last_sync_at.strftime('%Y-%m-%d %H:%M') }}</small>
                                     {% else %}
@@ -95,17 +96,14 @@
                     </table>
                 </div>
                 {% else %}
-                <div class="text-center py-3 text-muted">
-                    <i class="bi bi-link-45deg" style="font-size: 2rem;"></i>
-                    <p class="mt-2 mb-0">暂无平台账号，点击"添加账号"按钮开始绑定。</p>
-                </div>
+                {{ empty_state('bi-link-45deg', '', '暂无平台账号，点击"添加账号"按钮开始绑定。', small=true) }}
                 {% endif %}
             </div>
         </div>
     </div>
 
     <!-- Section 2: AI Analysis Status -->
-    <div class="col-lg-6">
+    <div class="col-12 col-lg-6">
         <div class="card shadow-sm">
             <div class="card-header">
                 <h5 class="mb-0"><i class="bi bi-robot"></i> AI 分析状态</h5>
@@ -153,7 +151,7 @@
     </div>
 
     <!-- Section 3: Platform Instructions -->
-    <div class="col-lg-6">
+    <div class="col-12 col-lg-6">
         <div class="card shadow-sm">
             <div class="card-header">
                 <h5 class="mb-0"><i class="bi bi-question-circle"></i> 平台绑定说明</h5>

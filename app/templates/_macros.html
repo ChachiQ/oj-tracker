@@ -1,0 +1,103 @@
+{#
+  OJ Tracker - Reusable Jinja2 Macros
+  Responsive components with built-in mobile breakpoints
+#}
+
+{# stat_card - Dashboard/Report stat card with responsive columns
+   Params: label, value, color, icon, border_color, value_id #}
+{% macro stat_card(label, value, color='primary', icon='', border_color='', value_id='') %}
+<div class="col-6 col-md-6 col-xl-3">
+    <div class="card stat-card border-0 h-100" style="border-left-color: {{ border_color if border_color else 'var(--' ~ color ~ '-color)' }} !important;">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <div class="stat-label">{{ label }}</div>
+                    <div class="stat-value text-{{ color }}" {% if value_id %}id="{{ value_id }}"{% endif %}>{{ value }}</div>
+                </div>
+                {% if icon %}
+                <i class="bi {{ icon }} text-{{ color }}" style="font-size: 2rem; opacity: 0.3;"></i>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endmacro %}
+
+
+{# page_header - Page title with optional right-side content via caller
+   Params: title, icon
+   Use with call block to add right-side content #}
+{% macro page_header(title, icon='') %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <h4 class="fw-bold mb-0">{% if icon %}<i class="bi {{ icon }}"></i> {% endif %}{{ title }}</h4>
+    {% if caller %}
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        {{ caller() }}
+    </div>
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{# chart_box - Chart container with responsive height CSS class
+   Params: id, title, icon, height ('default' or 'lg'), extra_class, extra_attrs #}
+{% macro chart_box(id, title='', icon='', height='default', extra_class='', extra_attrs='') %}
+<div class="chart-container">
+    {% if title %}
+    <div class="chart-title">{% if icon %}<i class="bi {{ icon }}"></i> {% endif %}{{ title }}</div>
+    {% endif %}
+    <div id="{{ id }}" class="{{ 'chart-responsive-lg' if height == 'lg' else 'chart-responsive' }} {{ extra_class }}" {{ extra_attrs }}>
+    </div>
+</div>
+{% endmacro %}
+
+
+{# empty_state - Empty data placeholder with responsive icon
+   Params: icon, heading, message, action_url, action_text, action_icon, action_class, small
+   Supports caller block for custom content #}
+{% macro empty_state(icon='bi-inbox', heading='', message='', action_url='', action_text='', action_icon='', action_class='btn-primary', small=false) %}
+<div class="text-center py-{{ '3' if small else '5' }}{% if small %} text-muted{% endif %}">
+    <i class="bi {{ icon }}{% if not small %} text-muted{% endif %} {{ 'empty-state-icon-sm' if small else 'empty-state-icon' }}"></i>
+    {% if heading %}
+    <h4 class="mt-3 text-muted">{{ heading }}</h4>
+    {% endif %}
+    {% if message %}
+    <p class="{% if not heading %}mt-2 mb-0{% endif %} text-muted">{{ message }}</p>
+    {% endif %}
+    {% if action_url and action_text %}
+    <a href="{{ action_url }}" class="btn {{ action_class }}">
+        {% if action_icon %}<i class="bi {{ action_icon }}"></i> {% endif %}{{ action_text }}
+    </a>
+    {% endif %}
+    {% if caller %}
+    {{ caller() }}
+    {% endif %}
+</div>
+{% endmacro %}
+
+
+{# table_col_class - Returns responsive hide/show CSS classes
+   Params: priority ('always', 'sm', 'md', 'lg') #}
+{% macro table_col_class(priority) %}{% if priority and priority != 'always' %}d-none d-{{ priority }}-table-cell{% endif %}{% endmacro %}
+
+
+{# student_selector - Student dropdown selector with responsive layout
+   Params: students, selected_id, base_url, label, show_all #}
+{% macro student_selector(students, selected_id, base_url, label='当前学生：', show_all=false) %}
+{% if students and students|length > 0 %}
+<div class="d-flex align-items-center flex-wrap gap-2">
+    <label class="form-label mb-0 text-muted">{{ label }}</label>
+    <select id="student-selector" class="form-select form-select-sm" style="width: auto; max-width: 200px;"
+            onchange="window.location.href='{{ base_url }}?student_id=' + this.value">
+        {% if show_all %}
+        <option value="">全部学生</option>
+        {% endif %}
+        {% for s in students %}
+        <option value="{{ s.id }}" {% if selected_id and s.id == selected_id %}selected{% endif %}>
+            {{ s.name }}{% if s.grade %} ({{ s.grade }}){% endif %}
+        </option>
+        {% endfor %}
+    </select>
+</div>
+{% endif %}
+{% endmacro %}

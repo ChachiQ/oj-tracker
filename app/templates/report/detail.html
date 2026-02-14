@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import stat_card, chart_box %}
 
 {% block title %}学习报告详情 - OJ Tracker{% endblock %}
 
@@ -14,7 +15,7 @@
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <div class="row align-items-center">
-            <div class="col-md-8">
+            <div class="col-12 col-md-8">
                 <h5 class="fw-bold mb-2">
                     {{ report.student.name if report.student else '未知学生' }}
                     -
@@ -35,7 +36,7 @@
                     生成时间：{{ report.created_at.strftime('%Y-%m-%d %H:%M') if report.created_at else '-' }}
                 </p>
             </div>
-            <div class="col-md-4 text-md-end mt-3 mt-md-0">
+            <div class="col-12 col-md-4 text-md-end mt-3 mt-md-0">
                 <a href="{{ url_for('report.list_reports') }}" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-list"></i> 返回列表
                 </a>
@@ -49,55 +50,28 @@
     {% if report.stats %}
     <div class="col-12">
         <div class="row g-3">
-            <div class="col-md-3">
-                <div class="card stat-card border-0" style="border-left-color: var(--primary-color) !important;">
-                    <div class="card-body text-center">
-                        <div class="stat-label">总提交</div>
-                        <div class="stat-value text-primary">{{ report.stats.get('total_submissions', 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stat-card border-0" style="border-left-color: var(--success-color) !important;">
-                    <div class="card-body text-center">
-                        <div class="stat-label">通过数</div>
-                        <div class="stat-value text-success">{{ report.stats.get('ac_count', 0) }}</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stat-card border-0" style="border-left-color: var(--warning-color) !important;">
-                    <div class="card-body text-center">
-                        <div class="stat-label">通过率</div>
-                        <div class="stat-value text-warning">{{ report.stats.get('ac_rate', '0') }}%</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stat-card border-0" style="border-left-color: var(--info-color) !important;">
-                    <div class="card-body text-center">
-                        <div class="stat-label">新知识点</div>
-                        <div class="stat-value text-info">{{ report.stats.get('new_tags', 0) }}</div>
-                    </div>
-                </div>
-            </div>
+            {{ stat_card('总提交', report.stats.get('total_submissions', 0), 'primary') }}
+            {{ stat_card('通过数', report.stats.get('ac_count', 0), 'success') }}
+            {{ stat_card('通过率', report.stats.get('ac_rate', '0') ~ '%', 'warning') }}
+            {{ stat_card('新知识点', report.stats.get('new_tags', 0), 'info') }}
         </div>
     </div>
     {% endif %}
 
     <!-- Radar Comparison Chart -->
-    <div class="col-lg-5">
+    <div class="col-12 col-lg-5">
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-radar"></i> 能力变化对比</div>
-            <div id="report-radar" style="height: 380px;"
+            <div id="report-radar" class="chart-responsive"
                  data-prev="{{ report.prev_scores|tojson if report.prev_scores else '{}' }}"
-                 data-curr="{{ report.curr_scores|tojson if report.curr_scores else '{}' }}">
+                 data-curr="{{ report.curr_scores|tojson if report.curr_scores else '{}' }}"
+                 style="height: 380px;">
             </div>
         </div>
     </div>
 
     <!-- AI Report Content -->
-    <div class="col-lg-7">
+    <div class="col-12 col-lg-7">
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-robot"></i> AI 分析报告</div>
             <div class="report-content">

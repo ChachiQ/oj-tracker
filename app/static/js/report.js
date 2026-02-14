@@ -7,6 +7,13 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 /**
+ * Check if current viewport is mobile
+ */
+function isMobile() {
+    return window.innerWidth < 576;
+}
+
+/**
  * Initialize the radar chart comparing previous vs current period scores
  */
 function initReportRadar() {
@@ -44,13 +51,14 @@ function initReportRadar() {
     }
 
     var chart = echarts.init(container);
+    var mobile = isMobile();
 
     var option = {
         title: {
             text: '能力变化对比',
             left: 'center',
             textStyle: {
-                fontSize: 14,
+                fontSize: mobile ? 12 : 14,
                 color: '#5a5c69'
             }
         },
@@ -60,17 +68,18 @@ function initReportRadar() {
         legend: {
             data: ['上期', '本期'],
             bottom: 10,
-            textStyle: { fontSize: 12 }
+            textStyle: { fontSize: mobile ? 10 : 12 }
         },
         radar: {
             indicator: allKeys.map(function (k) {
                 return { name: k, max: 100 };
             }),
             shape: 'polygon',
-            splitNumber: 5,
+            splitNumber: mobile ? 3 : 5,
+            radius: mobile ? '50%' : '60%',
             axisName: {
                 color: '#666',
-                fontSize: 11
+                fontSize: mobile ? 9 : 11
             },
             splitArea: {
                 areaStyle: {

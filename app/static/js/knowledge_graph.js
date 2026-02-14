@@ -27,6 +27,17 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 /**
+ * Check if current viewport is mobile
+ */
+function isMobile() {
+    return window.innerWidth < 576;
+}
+
+function isTablet() {
+    return window.innerWidth < 768;
+}
+
+/**
  * Stage name and color mappings
  */
 var STAGE_NAMES = {
@@ -129,12 +140,14 @@ function initKnowledgeGraph(data) {
         };
     });
 
+    var mobile = isMobile();
+    var tablet = isTablet();
     var option = {
         title: {
             text: '信息学知识点图谱',
             left: 'center',
             textStyle: {
-                fontSize: 16,
+                fontSize: mobile ? 13 : 16,
                 color: '#5a5c69'
             }
         },
@@ -144,10 +157,11 @@ function initKnowledgeGraph(data) {
         },
         legend: [{
             data: categories.map(function (c) { return c.name; }),
-            orient: 'vertical',
-            left: 10,
-            top: 50,
-            textStyle: { fontSize: 11 }
+            orient: mobile ? 'horizontal' : 'vertical',
+            left: mobile ? 'center' : 10,
+            top: mobile ? 'auto' : 50,
+            bottom: mobile ? 0 : 'auto',
+            textStyle: { fontSize: mobile ? 10 : 11 }
         }],
         animationDurationUpdate: 1500,
         animationEasingUpdate: 'quinticInOut',
@@ -163,9 +177,9 @@ function initKnowledgeGraph(data) {
                 position: 'right'
             },
             force: {
-                repulsion: 200,
-                gravity: 0.1,
-                edgeLength: [50, 150],
+                repulsion: mobile ? 120 : tablet ? 160 : 200,
+                gravity: mobile ? 0.15 : 0.1,
+                edgeLength: mobile ? [30, 100] : [50, 150],
                 layoutAnimation: true,
                 friction: 0.6
             },

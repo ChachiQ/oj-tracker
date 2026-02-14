@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import empty_state %}
 
 {% block title %}{{ problem.title or problem.platform_pid }} - 题目详情 - OJ Tracker{% endblock %}
 
@@ -14,7 +15,7 @@
 <div class="card shadow-sm mb-4">
     <div class="card-body">
         <div class="row align-items-center">
-            <div class="col-md-8">
+            <div class="col-12 col-md-8">
                 <h4 class="fw-bold mb-2">
                     {{ problem.title or problem.platform_pid }}
                 </h4>
@@ -34,7 +35,7 @@
                     {% endif %}
                 </div>
             </div>
-            <div class="col-md-4 text-md-end mt-3 mt-md-0">
+            <div class="col-12 col-md-4 text-md-end mt-3 mt-md-0">
                 {% if problem.source_url %}
                 <a href="{{ problem.source_url }}" target="_blank" rel="noopener noreferrer"
                    class="btn btn-outline-primary btn-sm">
@@ -48,7 +49,7 @@
 
 <div class="row g-4">
     <!-- Left Column: Problem Content -->
-    <div class="col-lg-8">
+    <div class="col-12 col-lg-8">
         <!-- Tags -->
         {% if problem.tags and problem.tags|length > 0 %}
         <div class="chart-container">
@@ -120,11 +121,11 @@
             <div class="chart-title"><i class="bi bi-clipboard"></i> 样例</div>
             {% for example in problem.examples %}
             <div class="row g-3 mb-3">
-                <div class="col-md-6">
+                <div class="col-12 col-md-6">
                     <label class="form-label fw-bold">样例输入 #{{ loop.index }}</label>
                     <pre class="code-viewer"><code>{{ example.input }}</code></pre>
                 </div>
-                <div class="col-md-6">
+                <div class="col-12 col-md-6">
                     <label class="form-label fw-bold">样例输出 #{{ loop.index }}</label>
                     <pre class="code-viewer"><code>{{ example.output }}</code></pre>
                 </div>
@@ -143,7 +144,7 @@
     </div>
 
     <!-- Right Column: Submissions -->
-    <div class="col-lg-4">
+    <div class="col-12 col-lg-4">
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-clock-history"></i> 提交记录</div>
             {% if submissions and submissions|length > 0 %}
@@ -217,10 +218,7 @@
                 {% endfor %}
             </div>
             {% else %}
-            <div class="text-center py-3 text-muted">
-                <i class="bi bi-inbox" style="font-size: 2rem;"></i>
-                <p class="mt-2 mb-0">暂无提交记录</p>
-            </div>
+            {{ empty_state('bi-inbox', '', '暂无提交记录', small=true) }}
             {% endif %}
         </div>
     </div>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import empty_state %}
 
 {% block title %}{{ student.name }} - 学生详情 - OJ Tracker{% endblock %}
 
@@ -15,7 +16,7 @@
 
 <div class="row g-4">
     <!-- Student Info Card -->
-    <div class="col-lg-4">
+    <div class="col-12 col-lg-4">
         <div class="card shadow-sm mb-4">
             <div class="card-header bg-primary text-white">
                 <h5 class="mb-0"><i class="bi bi-info-circle"></i> 基本信息</h5>
@@ -93,10 +94,10 @@
     </div>
 
     <!-- Right Column -->
-    <div class="col-lg-8">
+    <div class="col-12 col-lg-8">
         <!-- Platform Accounts -->
         <div class="card shadow-sm mb-4">
-            <div class="card-header d-flex justify-content-between align-items-center">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <h5 class="mb-0"><i class="bi bi-hdd-network"></i> 平台账号</h5>
                 <a href="{{ url_for('settings.index') }}" class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-plus-circle"></i> 管理账号
@@ -141,12 +142,10 @@
                     </table>
                 </div>
                 {% else %}
-                <div class="text-center py-3 text-muted">
-                    <i class="bi bi-link-45deg" style="font-size: 2rem;"></i>
-                    <p class="mt-2 mb-0">暂未绑定平台账号，
-                        <a href="{{ url_for('settings.index') }}">前往设置绑定</a>
-                    </p>
-                </div>
+                {{ empty_state('bi-link-45deg', '', '', small=true) }}
+                <p class="text-center text-muted mt-2 mb-0">暂未绑定平台账号，
+                    <a href="{{ url_for('settings.index') }}">前往设置绑定</a>
+                </p>
                 {% endif %}
             </div>
         </div>
@@ -202,10 +201,7 @@
                     </table>
                 </div>
                 {% else %}
-                <div class="text-center py-3 text-muted">
-                    <i class="bi bi-inbox" style="font-size: 2rem;"></i>
-                    <p class="mt-2 mb-0">暂无提交记录</p>
-                </div>
+                {{ empty_state('bi-inbox', '', '暂无提交记录', small=true) }}
                 {% endif %}
             </div>
         </div>
