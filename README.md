@@ -273,12 +273,21 @@ class NewOJScraper(BaseScraper):
 - APScheduler定时任务
 - 120个自动化测试用例
 
-### v0.2.0 -- 爬虫完善与稳定性
+### v0.2.0 (2026-02-14) -- 设置页面完善 ✅
+
+- BBC OJ / 一本通OJ 平台绑定支持（密码登录 + 会话冲突提示）
+- REQUIRES_LOGIN 爬虫标记：区分需登录与公开 API 平台
+- 同步错误追踪（last_sync_error）+ 定时同步自动跳过需登录平台
+- AI 提供者可配置：支持 Claude/OpenAI/智谱 三家切换
+- 用户级 API KEY 管理 + 月度预算 + 用量统计
+- UserSetting 模型：用户配置 key-value 存储
+- 211个自动化测试用例
+
+### v0.3.0 -- 爬虫完善与稳定性
 
 计划内容：
 - 洛谷爬虫优化：完善登录态管理、增量同步调优
 - 爬虫错误重试机制与告警
-- 平台账号状态监控
 - 预置6阶段知识点种子数据完善
 
 技术要点：
@@ -286,7 +295,7 @@ class NewOJScraper(BaseScraper):
 - 增量同步机制（sync_cursor）调优
 - 频率控制（2秒间隔）精细化管理
 
-### v0.3.0 -- 分析与可视化增强
+### v0.4.0 -- 分析与可视化增强
 
 计划内容：
 - Dashboard增强：更丰富的统计维度
@@ -298,21 +307,19 @@ class NewOJScraper(BaseScraper):
 - ECharts图表交互事件绑定
 - WeaknessDetector算法迭代
 
-### v0.4.0 -- AI分析与推荐
+### v0.5.0 -- AI分析深度集成与推荐
 
 计划内容：
 - AI代码分析引擎深度集成
 - 分析日志机制完善（AnalysisLog日志链优化）
 - 智能推荐算法升级（ProblemRecommender）
-- APScheduler定时同步（每6小时）+ 定时AI分析（每周）
 
-### v0.5.0 -- 部署与扩展
+### v0.6.0 -- 部署与扩展
 
 计划内容：
 - 云服务器部署方案（Gunicorn + Nginx）
 - 学校/机构OJ适配器（根据实际页面结构实现）
 - PDF报表导出
-- 移动端适配
 
 ## 实施阶段 (Phases)
 

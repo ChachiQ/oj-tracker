@@ -273,15 +273,24 @@ All foundational features complete:
 - APScheduler scheduled tasks
 - 120 automated test cases
 
-### v0.2.0 -- Scraper Refinement & Stability
+### v0.2.0 (2026-02-14) -- Settings Page Enhancements ✅
+
+- BBC OJ / Ybt OJ platform binding (password login + session conflict warnings)
+- REQUIRES_LOGIN scraper attribute: distinguish login-required vs public API platforms
+- Sync error tracking (last_sync_error) + scheduler auto-skips login-required platforms
+- Configurable AI provider: switch between Claude/OpenAI/Zhipu
+- Per-user API KEY management + monthly budget + usage statistics
+- UserSetting model: user config key-value store
+- 211 automated test cases
+
+### v0.3.0 -- Scraper Refinement & Stability
 
 Planned:
 - Luogu scraper optimization: session management, incremental sync tuning
 - Scraper error retry mechanism and alerts
-- Platform account status monitoring
 - Knowledge point seed data refinement
 
-### v0.3.0 -- Analysis & Visualization Enhancement
+### v0.4.0 -- Analysis & Visualization Enhancement
 
 Planned:
 - Enhanced dashboard with richer statistical dimensions
@@ -289,21 +298,19 @@ Planned:
 - Weakness detection algorithm upgrade: add first-AC rate and average attempts
 - Skill scoring formula optimization
 
-### v0.4.0 -- AI Analysis & Recommendations
+### v0.5.0 -- AI Analysis Deep Integration & Recommendations
 
 Planned:
 - Deep AI code analysis integration
 - Analysis log chain optimization
 - Intelligent recommendation algorithm upgrade (ProblemRecommender)
-- APScheduler: auto-sync every 6 hours + weekly AI analysis
 
-### v0.5.0 -- Deployment & Extensions
+### v0.6.0 -- Deployment & Extensions
 
 Planned:
 - Cloud deployment (Gunicorn + Nginx)
 - School/institution OJ adapters
 - PDF report export
-- Mobile-responsive design
 
 ## Implementation Phases
 
