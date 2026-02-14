@@ -75,7 +75,7 @@ class YBTScraper(BaseScraper):
             )
 
             # Check if login succeeded by looking for cookies or page content
-            response_text = resp.content.decode('gbk', errors='replace')
+            response_text = resp.content.decode('utf-8', errors='replace')
 
             # If we get redirected to index or see welcome text, login succeeded
             # Also check if PHPSESSID cookie is set
@@ -128,7 +128,7 @@ class YBTScraper(BaseScraper):
             try:
                 url = f"{self.BASE_URL}/status.php?showname={platform_uid}&start={start}"
                 resp = self._rate_limited_get(url)
-                page_content = resp.content.decode('gbk', errors='replace')
+                page_content = resp.content.decode('utf-8', errors='replace')
 
                 # Extract the ee variable from JavaScript
                 records = self._parse_ee_variable(page_content)
@@ -311,7 +311,7 @@ class YBTScraper(BaseScraper):
         try:
             url = f"{self.BASE_URL}/problem_show.php?pid={problem_id}"
             resp = self._rate_limited_get(url)
-            page_content = resp.content.decode('gbk', errors='replace')
+            page_content = resp.content.decode('utf-8', errors='replace')
 
             soup = BeautifulSoup(page_content, 'html.parser')
 
@@ -332,8 +332,8 @@ class YBTScraper(BaseScraper):
             output_desc = self._extract_section(soup, page_content, '输出')
             hint = self._extract_section(soup, page_content, '提示')
 
-            # Extract examples from <pre> tags
-            examples = self._extract_examples(soup)
+            # Extract examples from pshow content
+            examples = self._extract_examples(soup, page_content)
 
             return ScrapedProblem(
                 problem_id=problem_id,
@@ -356,76 +356,71 @@ class YBTScraper(BaseScraper):
     def _extract_section(self, soup: BeautifulSoup, page_content: str, section_name: str) -> str | None:
         """Extract a named section from the YBT problem page.
 
-        YBT uses JavaScript pshow() calls to populate sections, or direct HTML.
-        Look for section headers and extract following content.
+        YBT page structure: section header like 【题目描述】 appears before a
+        pshow("content") call with a single double-quoted parameter.
         """
-        # Try to find section via pshow() JavaScript calls
-        # Pattern: pshow('section_name','encoded_content')
-        pattern = rf"pshow\s*\(\s*'[^']*{re.escape(section_name)}[^']*'\s*,\s*'([^']*)'\s*\)"
-        match = re.search(pattern, page_content)
-        if match:
-            content = match.group(1)
-            # Unescape JavaScript string
-            content = content.replace("\\'", "'").replace('\\"', '"').replace('\\n', '\n')
-            content = html.unescape(content)
-            if content.strip():
-                return content.strip()
-
-        # Fallback: look for section in HTML structure
-        # Find headers containing the section name
-        for tag in soup.find_all(['h3', 'h4', 'b', 'strong', 'p', 'div']):
-            text = tag.get_text(strip=True)
-            if section_name in text:
-                # Get the next sibling elements until next header
-                content_parts = []
-                sibling = tag.find_next_sibling()
-                while sibling:
-                    if sibling.name in ('h3', 'h4') or (
-                        sibling.name in ('b', 'strong') and any(
-                            kw in sibling.get_text() for kw in ('输入', '输出', '提示', '样例', '描述')
-                        )
-                    ):
-                        break
-                    text_content = sibling.get_text(strip=True)
-                    if text_content:
-                        content_parts.append(text_content)
-                    sibling = sibling.find_next_sibling()
-                if content_parts:
-                    return '\n'.join(content_parts)
-
-        return None
-
-    def _extract_examples(self, soup: BeautifulSoup) -> str | None:
-        """Extract input/output examples from <pre> tags on the problem page."""
-        pre_tags = soup.find_all('pre')
-        if not pre_tags:
+        # Find the section header (e.g. 【题目描述】, 【输入】, 【输出】)
+        header_pattern = rf'【[^】]*{re.escape(section_name)}[^】]*】'
+        header_match = re.search(header_pattern, page_content)
+        if not header_match:
             return None
 
-        examples_parts = []
-        # YBT typically has pairs of <pre> for input and output samples
-        i = 0
-        sample_num = 1
-        while i < len(pre_tags):
-            input_text = pre_tags[i].get_text()
-            output_text = ''
-            if i + 1 < len(pre_tags):
-                output_text = pre_tags[i + 1].get_text()
-                i += 2
-            else:
-                i += 1
-            examples_parts.append(
-                f"输入样例 {sample_num}:\n{input_text.strip()}\n输出样例 {sample_num}:\n{output_text.strip()}"
-            )
-            sample_num += 1
+        # From the header position, find the nearest pshow("...") call
+        after_header = page_content[header_match.end():]
+        pshow_match = re.search(r'pshow\s*\(\s*"((?:[^"\\]|\\.)*)"\s*\)', after_header)
+        if not pshow_match:
+            return None
 
-        return '\n\n'.join(examples_parts) if examples_parts else None
+        # Unescape pshow content
+        content = pshow_match.group(1)
+        content = content.replace('\\n', '\n')
+        content = content.replace('\\"', '"')
+        content = content.replace("\\'", "'")
+        content = content.replace('\\\\', '\\')
+        content = html.unescape(content)
+
+        # Convert relative image URLs to absolute URLs
+        content = self._fix_image_urls(content)
+
+        return content.strip() if content.strip() else None
+
+    def _fix_image_urls(self, content: str) -> str:
+        """Convert relative image URLs in pshow content to absolute URLs."""
+        def replace_src(match):
+            src = match.group(1)
+            if not src.startswith(('http://', 'https://', '//')):
+                src = f"{self.BASE_URL}/{src}"
+            return f'<img src="{src}"'
+
+        return re.sub(r'<img\s+src="([^"]*)"', replace_src, content)
+
+    def _extract_examples(self, soup: BeautifulSoup, page_content: str) -> str | None:
+        """Extract input/output examples from <pre> tags after section headers.
+
+        YBT examples use <pre> tags (not pshow): 【输入样例】<pre>...</pre>
+        """
+        parts = []
+
+        input_match = re.search(
+            r'【[^】]*输入样例[^】]*】.*?<pre>(.*?)</pre>', page_content, re.DOTALL
+        )
+        if input_match:
+            parts.append(f"输入样例 1:\n{input_match.group(1).strip()}")
+
+        output_match = re.search(
+            r'【[^】]*输出样例[^】]*】.*?<pre>(.*?)</pre>', page_content, re.DOTALL
+        )
+        if output_match:
+            parts.append(f"输出样例 1:\n{output_match.group(1).strip()}")
+
+        return '\n\n'.join(parts) if parts else None
 
     def fetch_submission_code(self, record_id: str) -> str | None:
         """Fetch source code for a specific submission from YBT."""
         try:
             url = f"{self.BASE_URL}/show_source.php?runid={record_id}"
             resp = self._rate_limited_get(url)
-            page_content = resp.content.decode('gbk', errors='replace')
+            page_content = resp.content.decode('utf-8', errors='replace')
 
             soup = BeautifulSoup(page_content, 'html.parser')
             pre_tag = soup.find('pre')

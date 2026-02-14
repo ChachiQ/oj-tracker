@@ -66,7 +66,6 @@
             <thead class="table-light">
                 <tr>
                     <th>平台</th>
-                    <th>题号</th>
                     <th>标题</th>
                     <th class="{{ table_col_class('md') }}">难度</th>
                     <th class="{{ table_col_class('lg') }}">知识点</th>
@@ -77,11 +76,18 @@
             <tbody>
                 {% for problem in problems %}
                 <tr>
-                    <td><span class="badge bg-dark">{{ problem.platform }}</span></td>
-                    <td><code>{{ problem.platform_pid }}</code></td>
+                    <td>
+                        {% if problem.url %}
+                        <a href="{{ problem.url }}" target="_blank" rel="noopener noreferrer" class="badge bg-dark text-white text-decoration-none" title="在OJ中打开">
+                            {{ problem.platform }} <i class="bi bi-box-arrow-up-right"></i>
+                        </a>
+                        {% else %}
+                        <span class="badge bg-dark">{{ problem.platform }}</span>
+                        {% endif %}
+                    </td>
                     <td>
                         <a href="{{ url_for('problem.detail', problem_id=problem.id) }}" class="text-decoration-none">
-                            {{ problem.title or problem.platform_pid }}
+                            {{ problem.title or problem.problem_id }}
                         </a>
                     </td>
                     <td class="{{ table_col_class('md') }}">
@@ -112,8 +118,8 @@
                         {% endif %}
                     </td>
                     <td class="{{ table_col_class('lg') }}">
-                        {% if problem.ai_type %}
-                            <span class="badge bg-info">{{ problem.ai_type }}</span>
+                        {% if problem.ai_problem_type %}
+                            <span class="badge bg-info">{{ problem.ai_problem_type }}</span>
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}

@@ -70,7 +70,7 @@ def detail(problem_id):
             Submission.platform_account_id.in_(all_account_ids),
             Submission.problem_id_ref == problem.id,
         )
-        .order_by(Submission.submitted_at)
+        .order_by(Submission.submitted_at.desc())
         .all()
         if all_account_ids
         else []

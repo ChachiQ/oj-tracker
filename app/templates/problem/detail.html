@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import empty_state %}
 
-{% block title %}{{ problem.title or problem.platform_pid }} - 题目详情 - OJ Tracker{% endblock %}
+{% block title %}{{ problem.title or problem.problem_id }} - 题目详情 - OJ Tracker{% endblock %}
 
 {% block content %}
 <div class="d-flex align-items-center mb-4">
@@ -17,11 +17,17 @@
         <div class="row align-items-center">
             <div class="col-12 col-md-8">
                 <h4 class="fw-bold mb-2">
-                    {{ problem.title or problem.platform_pid }}
+                    {{ problem.title or problem.problem_id }}
                 </h4>
                 <div class="d-flex flex-wrap gap-2 align-items-center">
+                    {% if problem.url %}
+                    <a href="{{ problem.url }}" target="_blank" rel="noopener noreferrer"
+                       class="badge bg-dark text-white text-decoration-none">
+                        {{ problem.platform }} <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                    {% else %}
                     <span class="badge bg-dark">{{ problem.platform }}</span>
-                    <code class="text-muted">{{ problem.platform_pid }}</code>
+                    {% endif %}
                     {% if problem.difficulty %}
                     <span class="text-warning">
                         {% for i in range(problem.difficulty|int if problem.difficulty|int <= 5 else 5) %}
@@ -34,14 +40,6 @@
                     </span>
                     {% endif %}
                 </div>
-            </div>
-            <div class="col-12 col-md-4 text-md-end mt-3 mt-md-0">
-                {% if problem.source_url %}
-                <a href="{{ problem.source_url }}" target="_blank" rel="noopener noreferrer"
-                   class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-box-arrow-up-right"></i> 查看原题
-                </a>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -67,10 +65,10 @@
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-robot"></i> AI 分析</div>
             <div class="row g-3 mb-3">
-                {% if problem.ai_type %}
+                {% if problem.ai_problem_type %}
                 <div class="col-auto">
                     <strong>题目类型：</strong>
-                    <span class="badge bg-info">{{ problem.ai_type }}</span>
+                    <span class="badge bg-info">{{ problem.ai_problem_type }}</span>
                 </div>
                 {% endif %}
                 {% if problem.ai_analysis.knowledge_points %}
@@ -102,35 +100,24 @@
         {% endif %}
 
         <!-- Input/Output Format -->
-        {% if problem.input_format or problem.output_format %}
+        {% if problem.input_desc or problem.output_desc %}
         <div class="chart-container">
-            {% if problem.input_format %}
-            <div class="chart-title"><i class="bi bi-arrow-right-square"></i> 输入格式</div>
-            <div class="report-content mb-3">{{ problem.input_format|safe }}</div>
+            {% if problem.input_desc %}
+            <div class="chart-title"><i class="bi bi-arrow-right-square"></i> 输入</div>
+            <div class="report-content mb-3">{{ problem.input_desc|safe }}</div>
             {% endif %}
-            {% if problem.output_format %}
-            <div class="chart-title"><i class="bi bi-arrow-left-square"></i> 输出格式</div>
-            <div class="report-content">{{ problem.output_format|safe }}</div>
+            {% if problem.output_desc %}
+            <div class="chart-title"><i class="bi bi-arrow-left-square"></i> 输出</div>
+            <div class="report-content">{{ problem.output_desc|safe }}</div>
             {% endif %}
         </div>
         {% endif %}
 
         <!-- Examples -->
-        {% if problem.examples and problem.examples|length > 0 %}
+        {% if problem.examples %}
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-clipboard"></i> 样例</div>
-            {% for example in problem.examples %}
-            <div class="row g-3 mb-3">
-                <div class="col-12 col-md-6">
-                    <label class="form-label fw-bold">样例输入 #{{ loop.index }}</label>
-                    <pre class="code-viewer"><code>{{ example.input }}</code></pre>
-                </div>
-                <div class="col-12 col-md-6">
-                    <label class="form-label fw-bold">样例输出 #{{ loop.index }}</label>
-                    <pre class="code-viewer"><code>{{ example.output }}</code></pre>
-                </div>
-            </div>
-            {% endfor %}
+            <pre class="code-viewer"><code>{{ problem.examples }}</code></pre>
         </div>
         {% endif %}
 
@@ -169,8 +156,8 @@
                             {{ sub.submitted_at.strftime('%m-%d %H:%M') if sub.submitted_at else '' }}
                         </small>
                     </div>
-                    {% if sub.student %}
-                    <small class="text-muted"><i class="bi bi-person"></i> {{ sub.student.name }}</small>
+                    {% if sub.platform_account and sub.platform_account.student %}
+                    <small class="text-muted"><i class="bi bi-person"></i> {{ sub.platform_account.student.name }}</small>
                     {% endif %}
 
                     <!-- Execution Info -->
@@ -186,7 +173,7 @@
                     {% endif %}
 
                     <!-- Code Viewer (Collapsible) -->
-                    {% if sub.code %}
+                    {% if sub.source_code %}
                     <div class="mt-2">
                         <button class="btn btn-sm btn-outline-secondary" type="button"
                                 data-bs-toggle="collapse" data-bs-target="#code-{{ sub.id }}"
@@ -194,13 +181,13 @@
                             <i class="bi bi-code"></i> 查看代码
                         </button>
                         <div class="collapse mt-2" id="code-{{ sub.id }}">
-                            <pre class="code-viewer"><code>{{ sub.code }}</code></pre>
+                            <pre class="code-viewer"><code>{{ sub.source_code }}</code></pre>
                         </div>
                     </div>
                     {% endif %}
 
                     <!-- AI Analysis for Submission -->
-                    {% if sub.ai_analysis %}
+                    {% if analysis_results.get(sub.id) %}
                     <div class="mt-2">
                         <button class="btn btn-sm btn-outline-info" type="button"
                                 data-bs-toggle="collapse" data-bs-target="#ai-{{ sub.id }}"
@@ -208,9 +195,11 @@
                             <i class="bi bi-robot"></i> AI 分析
                         </button>
                         <div class="collapse mt-2" id="ai-{{ sub.id }}">
-                            <div class="alert alert-info mb-0">
-                                <small>{{ sub.ai_analysis }}</small>
+                            {% for result in analysis_results[sub.id] %}
+                            <div class="alert alert-info mb-1">
+                                <small>{{ result.summary }}</small>
                             </div>
+                            {% endfor %}
                         </div>
                     </div>
                     {% endif %}

@@ -318,6 +318,15 @@ main {
     letter-spacing: 0.3px;
 }
 
+a.badge.bg-dark {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+a.badge.bg-dark:hover {
+    background-color: var(--primary-color) !important;
+}
+
 /* Node Detail Panel for Knowledge Graph */
 #node-detail-panel .card {
     border: 1px solid #e3e6f0;
