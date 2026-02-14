@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from typing import Generator
 from datetime import datetime
 from .common import ScrapedSubmission, ScrapedProblem
-from .rate_limiter import RateLimiter
+from .rate_limiter import RateLimiter, get_platform_limiter
 
 
 class BaseScraper(ABC):
@@ -20,7 +20,7 @@ class BaseScraper(ABC):
     def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0):
         self.auth_cookie = auth_cookie
         self.auth_password = auth_password
-        self.rate_limiter = RateLimiter(rate_limit)
+        self.rate_limiter = get_platform_limiter(self.PLATFORM_NAME, rate_limit)
         self.logger = logging.getLogger(f'scraper.{self.PLATFORM_NAME}')
         self.session = self._create_session()
 

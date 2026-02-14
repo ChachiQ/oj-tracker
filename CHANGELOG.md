@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.3.0 (2026-02-14) -- Dashboard & 知识图谱完善 + 爬虫稳定性
+
+### 新增
+- 同步 AJAX 化：设置页同步操作改为 AJAX 请求，添加全屏 overlay + spinner 进度展示
+- Dashboard 近期提交：`get_dashboard_data()` 新增 `stats`/`recent_submissions`/`weaknesses` 字段
+- 知识图谱推荐练习：每个知识点节点附带最多5道推荐练习题
+- 连续失败追踪：`PlatformAccount` 新增 `consecutive_sync_failures` 字段，>=10 次自动停用
+- 平台级共享限流：`get_platform_limiter()` 注册表，同平台多账号共享限流器
+- 洛谷 429 限流处理：遇到 HTTP 429 自动等待 30 秒后重试
+- 洛谷 Content-Type 校验：非 JSON 响应提前中断，防止解析垃圾数据
+- 洛谷 MAX_PAGES 安全限制：最多抓取 100 页，防止无限循环
+- 8 个新知识点标签：位运算、哈希表、滑动窗口、双端队列、LIS、折半搜索、2-SAT、斜率优化DP
+- 所有知识点标签添加中文描述字段
+- `seed_tags()` 改为 upsert 模式，可重复运行不会产生重复数据
+
+### 修复
+- Dashboard 数据结构：前端 `updateStatCards()` 期望的 `data.stats` 字段现在正确返回
+- Dashboard 提交列表回退请求：`data.submissions` → `data.items`（匹配 API 实际返回）
+- 知识图谱阶段进度条：`data.stage_stats` → `data.stages`（匹配后端实际返回字段名）
+- `sync_cursor` 修复：同步后存储最新 record_id 而非时间戳，增量同步真正生效
+- `union_find` 阶段修正：从 stage 4 → stage 3（并查集属于 CSP-J 级别）
+- YBT 登录验证加固：替换乐观 fallback 为 member.php 页面验证
+
+### 技术改进
+- 设置页同步/删除按钮在同步期间禁用，防止误操作
+- 设置页状态列显示连续失败次数和自动停用提示
+- Alembic 迁移：`consecutive_sync_failures` 列
+
 ## v0.2.1 (2026-02-14) -- YBT 爬虫修复 & 题目详情优化
 
 ### 修复

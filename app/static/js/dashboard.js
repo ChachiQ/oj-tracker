@@ -33,8 +33,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return response.json();
         })
         .then(function (data) {
-            if (data && data.submissions) {
-                initRecentSubmissions(data.submissions);
+            if (data && data.items) {
+                initRecentSubmissions(data.items);
             }
         })
         .catch(function () {

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from typing import Generator
+
+import requests
 
 from .base import BaseScraper
 from .common import ScrapedSubmission, ScrapedProblem, SubmissionStatus
@@ -106,11 +109,18 @@ class LuoguScraper(BaseScraper):
         """Fetch submissions for a Luogu user, paginated."""
         page = 1
         reached_end = False
+        MAX_PAGES = 100
 
-        while not reached_end:
+        while not reached_end and page <= MAX_PAGES:
             try:
                 url = f"{self.BASE_URL}/record/list?user={platform_uid}&page={page}"
                 resp = self._rate_limited_get(url)
+
+                content_type = resp.headers.get('Content-Type', '')
+                if 'application/json' not in content_type and 'text/json' not in content_type:
+                    self.logger.error(f"Unexpected Content-Type: {content_type} for page {page}")
+                    break
+
                 data = resp.json()
 
                 current_data = data.get('currentData', {})
@@ -177,6 +187,13 @@ class LuoguScraper(BaseScraper):
                     break
                 page += 1
 
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code == 429:
+                    self.logger.warning(f"Luogu rate limited (429), waiting 30s before retry")
+                    time.sleep(30)
+                    continue  # Retry the same page
+                self.logger.error(f"Error fetching Luogu submissions page {page} for user {platform_uid}: {e}")
+                break
             except Exception as e:
                 self.logger.error(f"Error fetching Luogu submissions page {page} for user {platform_uid}: {e}")
                 break

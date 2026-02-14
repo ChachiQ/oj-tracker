@@ -27,6 +27,7 @@ class PlatformAccount(db.Model):
     last_analysis_at = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     last_sync_error = db.Column(db.Text, nullable=True)
+    consecutive_sync_failures = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
     # Relationships

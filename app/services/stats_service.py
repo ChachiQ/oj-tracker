@@ -10,16 +10,57 @@ class StatsService:
     @staticmethod
     def get_dashboard_data(student_id: int) -> dict:
         engine = AnalysisEngine(student_id)
+        basic = engine.get_basic_stats()
+        weekly = engine.get_weekly_stats(1)
+
+        recent_submissions = StatsService._get_recent_submissions(student_id, limit=15)
+        weaknesses = StatsService.get_weakness_data(student_id)
+
         return {
-            'basic': engine.get_basic_stats(),
-            'weekly': engine.get_weekly_stats(1),
+            'stats': {
+                'total_problems': basic.get('unique_solved', 0),
+                'ac_count': basic.get('ac_submissions', 0),
+                'week_submissions': weekly.get('submissions', 0) if isinstance(weekly, dict) else 0,
+                'streak_days': engine.get_streak_days(),
+            },
+            'tag_scores': engine.get_tag_scores(),
+            'heatmap': engine.get_heatmap_data(),
+            'difficulty_dist': engine.get_difficulty_distribution(),
+            'recent_submissions': recent_submissions,
+            'weaknesses': weaknesses,
+            # Preserve original fields for backward compat
+            'basic': basic,
+            'weekly': weekly,
             'streak': engine.get_streak_days(),
             'status_dist': engine.get_status_distribution(),
-            'difficulty_dist': engine.get_difficulty_distribution(),
-            'heatmap': engine.get_heatmap_data(),
-            'tag_scores': engine.get_tag_scores(),
             'first_ac_rate': engine.get_first_ac_rate(),
         }
+
+    @staticmethod
+    def _get_recent_submissions(student_id: int, limit: int = 15) -> list:
+        account_ids = [a.id for a in PlatformAccount.query.filter_by(student_id=student_id).all()]
+        if not account_ids:
+            return []
+        submissions = (
+            Submission.query
+            .filter(Submission.platform_account_id.in_(account_ids))
+            .order_by(Submission.submitted_at.desc())
+            .limit(limit)
+            .all()
+        )
+        result = []
+        for sub in submissions:
+            problem = Problem.query.get(sub.problem_id_ref) if sub.problem_id_ref else None
+            account = PlatformAccount.query.get(sub.platform_account_id)
+            result.append({
+                'platform': account.platform if account else '-',
+                'problem_title': problem.title if problem else '-',
+                'problem_id': problem.id if problem else None,
+                'platform_pid': problem.problem_id if problem else sub.platform_record_id,
+                'status': sub.status,
+                'submitted_at': sub.submitted_at.strftime('%Y-%m-%d %H:%M') if sub.submitted_at else '-',
+            })
+        return result
 
     @staticmethod
     def get_knowledge_graph_data(student_id: int) -> dict:
@@ -44,6 +85,13 @@ class StatsService:
                 status = 'untouched'  # gray
                 size = 10
 
+            # Fetch recommended problems for this tag
+            problems = Problem.query.filter(Problem.tags.any(Tag.name == tag.name)).limit(5).all()
+            recommended = [
+                {'id': p.id, 'title': p.title, 'platform': p.platform}
+                for p in problems
+            ]
+
             nodes.append({
                 'id': tag.name,
                 'name': tag.display_name,
@@ -55,6 +103,7 @@ class StatsService:
                 'solved': score_info['solved'] if score_info else 0,
                 'attempted': score_info['attempted'] if score_info else 0,
                 'pass_rate': score_info['pass_rate'] if score_info else 0,
+                'recommended_problems': recommended,
             })
 
         # Build links from prerequisite_tags

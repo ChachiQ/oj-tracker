@@ -92,9 +92,20 @@ class YBTScraper(BaseScraper):
                 self.logger.info(f"YBT login successful for user: {username}")
                 return True
 
-            # Fallback: try to access status page and see if we get valid data
-            self._logged_in = True
-            return True
+            # Fallback: verify login by checking a page that requires authentication
+            try:
+                verify_url = f"{self.BASE_URL}/member.php"
+                verify_resp = self._request_with_retry(verify_url)
+                verify_text = verify_resp.content.decode('utf-8', errors='replace')
+                if 'login.php' in verify_text or '请登录' in verify_text:
+                    self.logger.error(f"YBT login verification failed for user: {username}")
+                    return False
+                self._logged_in = True
+                self.logger.info(f"YBT login verified via member page for user: {username}")
+                return True
+            except Exception as e2:
+                self.logger.error(f"YBT login verification request failed: {e2}")
+                return False
 
         except Exception as e:
             self.logger.error(f"YBT login error: {e}")

@@ -14,7 +14,7 @@
             <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
                 <i class="bi bi-plus-circle"></i> 添加账号
             </button>
-            <form method="POST" action="{{ url_for('settings.sync_all') }}" class="d-inline">
+            <form method="POST" action="{{ url_for('settings.sync_all') }}" class="d-inline" id="sync-all-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-sm btn-outline-success">
                     <i class="bi bi-arrow-repeat"></i> 全部同步
@@ -60,7 +60,13 @@
                         </td>
                         <td class="{{ table_col_class('md') }}"><code>{{ account.platform_uid }}</code></td>
                         <td>
-                            {% if account.last_sync_error %}
+                            {% if account.consecutive_sync_failures and account.consecutive_sync_failures >= 10 %}
+                                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 已停用 (失败{{ account.consecutive_sync_failures }}次)</span>
+                            {% elif account.consecutive_sync_failures and account.consecutive_sync_failures >= 3 %}
+                                <span class="badge bg-warning text-dark" title="{{ account.last_sync_error or '' }}" data-bs-toggle="tooltip">
+                                    <i class="bi bi-exclamation-triangle"></i> 连续失败{{ account.consecutive_sync_failures }}次
+                                </span>
+                            {% elif account.last_sync_error %}
                                 <span class="badge bg-warning text-dark" title="{{ account.last_sync_error }}" data-bs-toggle="tooltip">
                                     <i class="bi bi-exclamation-triangle"></i> 同步异常
                                 </span>
@@ -79,9 +85,12 @@
                         </td>
                         <td class="text-center">
                             <div class="btn-group btn-group-sm">
-                                <form method="POST" action="{{ url_for('settings.sync_account', account_id=account.id) }}" class="d-inline"
+                                <form method="POST" action="{{ url_for('settings.sync_account', account_id=account.id) }}"
+                                      class="d-inline sync-form"
+                                      data-platform="{{ account.platform }}"
+                                      data-account-id="{{ account.id }}"
                                       {% if account.platform in requires_login_platforms %}
-                                      onsubmit="return confirm('该平台需要登录同步，会踢掉你在{{ account.platform }}网站上的活跃会话，确定继续？')"
+                                      data-requires-login="true"
                                       {% endif %}>
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="btn btn-outline-success" title="同步数据">
@@ -342,6 +351,16 @@
     </div>
 </div>
 
+{# ── Sync Overlay ── #}
+<div id="sync-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:9999; display:none; align-items:center; justify-content:center;">
+    <div class="bg-white rounded-3 shadow-lg p-4 text-center" style="min-width:280px;">
+        <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">同步中...</span>
+        </div>
+        <p class="mb-0 fw-bold" id="sync-overlay-text">正在同步数据，请稍候...</p>
+    </div>
+</div>
+
 {# ── Add Account Modal ── #}
 <div class="modal fade" id="addAccountModal" tabindex="-1" aria-labelledby="addAccountModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -450,6 +469,115 @@
     tooltips.forEach(function(el) {
         new bootstrap.Tooltip(el);
     });
+
+    // ── AJAX Sync Logic ──
+    var overlay = document.getElementById('sync-overlay');
+    var overlayText = document.getElementById('sync-overlay-text');
+    var beforeUnloadHandler = function(e) { e.preventDefault(); e.returnValue = ''; };
+
+    function showOverlay(text) {
+        overlayText.textContent = text || '正在同步数据，请稍候...';
+        overlay.style.display = 'flex';
+        // Disable all sync and delete buttons
+        document.querySelectorAll('.sync-form button, #sync-all-form button, form[action*="delete"] button').forEach(function(btn) {
+            btn.disabled = true;
+        });
+        window.addEventListener('beforeunload', beforeUnloadHandler);
+    }
+
+    function hideOverlay() {
+        overlay.style.display = 'none';
+        document.querySelectorAll('.sync-form button, #sync-all-form button, form[action*="delete"] button').forEach(function(btn) {
+            btn.disabled = false;
+        });
+        window.removeEventListener('beforeunload', beforeUnloadHandler);
+    }
+
+    function showAlert(message, type) {
+        var alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-' + type + ' alert-dismissible fade show';
+        alertDiv.setAttribute('role', 'alert');
+        alertDiv.innerHTML = message +
+            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
+        var container = document.querySelector('#sync-overlay').parentElement;
+        container.insertBefore(alertDiv, container.querySelector('.card'));
+        setTimeout(function() { alertDiv.remove(); }, 8000);
+    }
+
+    // Intercept individual sync forms
+    document.querySelectorAll('.sync-form').forEach(function(form) {
+        form.addEventListener('submit', function(e) {
+            // Check if platform requires login confirmation
+            if (form.dataset.requiresLogin === 'true') {
+                if (!confirm('该平台需要登录同步，会踢掉你在' + form.dataset.platform + '网站上的活跃会话，确定继续？')) {
+                    e.preventDefault();
+                    return;
+                }
+            }
+            e.preventDefault();
+            var accountId = form.dataset.accountId;
+            showOverlay('正在同步 ' + (form.dataset.platform || '') + ' 数据...');
+
+            var formData = new FormData(form);
+            fetch(form.action, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData,
+            })
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                hideOverlay();
+                showAlert(data.message, data.success ? 'success' : 'danger');
+                // Update last sync time for this row
+                if (data.success) {
+                    var row = form.closest('tr');
+                    if (row) {
+                        var timeCells = row.querySelectorAll('td');
+                        // The "最后同步" column is the 5th (index 4)
+                        var timeCell = timeCells[4];
+                        if (timeCell) {
+                            var now = new Date();
+                            var pad = function(n) { return n < 10 ? '0' + n : n; };
+                            timeCell.innerHTML = '<small>' + now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + '</small>';
+                        }
+                    }
+                }
+            })
+            .catch(function(err) {
+                hideOverlay();
+                showAlert('同步请求失败: ' + err.message, 'danger');
+            });
+        });
+    });
+
+    // Intercept sync-all form
+    var syncAllForm = document.getElementById('sync-all-form');
+    if (syncAllForm) {
+        syncAllForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            showOverlay('正在同步所有平台数据...');
+
+            var formData = new FormData(syncAllForm);
+            fetch(syncAllForm.action, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData,
+            })
+            .then(function(resp) { return resp.json(); })
+            .then(function(data) {
+                hideOverlay();
+                showAlert(data.message, data.success ? 'success' : 'danger');
+                if (data.success) {
+                    // Reload to update all rows
+                    setTimeout(function() { location.reload(); }, 1500);
+                }
+            })
+            .catch(function(err) {
+                hideOverlay();
+                showAlert('同步请求失败: ' + err.message, 'danger');
+            });
+        });
+    }
 })();
 </script>
 {% endblock %}

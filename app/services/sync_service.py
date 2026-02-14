@@ -26,6 +26,7 @@ class SyncService:
             return {'error': str(e)}
 
         stats = {'new_submissions': 0, 'new_problems': 0, 'errors': 0}
+        first_record_id = None
 
         try:
             for scraped_sub in scraper.fetch_submissions(
@@ -33,6 +34,8 @@ class SyncService:
                 since=account.last_sync_at,
                 cursor=account.sync_cursor,
             ):
+                if first_record_id is None:
+                    first_record_id = scraped_sub.platform_record_id
                 try:
                     # Check if submission already exists
                     existing = Submission.query.filter_by(
@@ -89,8 +92,9 @@ class SyncService:
 
             # Update sync cursor and clear any previous error
             account.last_sync_at = datetime.utcnow()
-            account.sync_cursor = str(datetime.utcnow().timestamp())
+            account.sync_cursor = first_record_id if first_record_id else account.sync_cursor
             account.last_sync_error = None
+            account.consecutive_sync_failures = 0
             db.session.commit()
 
         except Exception as e:
@@ -101,6 +105,13 @@ class SyncService:
                 account = PlatformAccount.query.get(account_id)
                 if account:
                     account.last_sync_error = str(e)
+                    account.consecutive_sync_failures = (account.consecutive_sync_failures or 0) + 1
+                    if account.consecutive_sync_failures >= 10:
+                        account.is_active = False
+                        logger.warning(
+                            f"Account {account_id} auto-disabled after "
+                            f"{account.consecutive_sync_failures} consecutive sync failures"
+                        )
                     db.session.commit()
             except Exception:
                 logger.error(f"Failed to record sync error for account {account_id}")

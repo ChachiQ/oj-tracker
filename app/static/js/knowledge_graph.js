@@ -14,7 +14,7 @@ document.addEventListener('DOMContentLoaded', function () {
         })
         .then(function (data) {
             initKnowledgeGraph(data);
-            updateStageProgress(data.stage_stats || {});
+            updateStageProgress(data.stages || {});
         })
         .catch(function (err) {
             console.error('Failed to load knowledge data:', err);

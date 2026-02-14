@@ -6,6 +6,7 @@ from flask import (
     redirect,
     url_for,
     flash,
+    jsonify,
     request,
     current_app,
 )
@@ -184,15 +185,23 @@ def delete_account(account_id):
 def sync_account(account_id):
     account = PlatformAccount.query.get_or_404(account_id)
     if account.student.parent_id != current_user.id:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': '无权操作'}), 403
         flash('无权操作', 'danger')
         return redirect(url_for('settings.index'))
 
     service = SyncService()
     stats = service.sync_account(account_id)
 
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
     if 'error' in stats:
+        if is_ajax:
+            return jsonify({'success': False, 'message': f'同步失败: {stats["error"]}', 'stats': stats})
         flash(f'同步失败: {stats["error"]}', 'danger')
     else:
+        if is_ajax:
+            return jsonify({'success': True, 'message': f'同步完成: 新增 {stats["new_submissions"]} 条提交记录', 'stats': stats})
         flash(
             f'同步完成: 新增 {stats["new_submissions"]} 条提交记录',
             'success',
@@ -206,6 +215,14 @@ def sync_account(account_id):
 def sync_all():
     service = SyncService()
     stats = service.sync_all_accounts()
+
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({
+            'success': True,
+            'message': f'同步完成: {stats["accounts_synced"]} 个账号, 新增 {stats["total_new_submissions"]} 条提交',
+            'stats': stats,
+        })
+
     flash(
         f'同步完成: {stats["accounts_synced"]} 个账号, '
         f'新增 {stats["total_new_submissions"]} 条提交',
