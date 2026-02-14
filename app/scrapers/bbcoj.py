@@ -55,7 +55,7 @@ _LANG_MAP = {
 class BBCOJScraper(BaseScraper):
     PLATFORM_NAME = "bbcoj"
     PLATFORM_DISPLAY = "BBC OJ"
-    BASE_URL = "https://www.bbcoj.cn"
+    BASE_URL = "http://bbcoj.cn"
     SUPPORT_CODE_FETCH = True
     REQUIRES_LOGIN = True
 
@@ -68,11 +68,14 @@ class BBCOJScraper(BaseScraper):
         """Authenticate with BBC OJ and set up session headers."""
         try:
             url = f"{self.BASE_URL}/api/login"
+            self.logger.debug(f"BBC OJ login request URL: {url}")
             payload = {
                 'username': username,
                 'password': password,
             }
             resp = self._request_with_retry(url, method='POST', json=payload)
+            self.logger.debug(f"BBC OJ login response status: {resp.status_code}")
+            resp.encoding = 'utf-8'
             data = resp.json()
 
             status = data.get('status', None)
@@ -92,6 +95,8 @@ class BBCOJScraper(BaseScraper):
                 return False
 
             # Set Authorization header with Bearer token
+            if not token.startswith('Bearer '):
+                token = f'Bearer {token}'
             self.session.headers['Authorization'] = token
 
             # JSESSIONID should be set automatically via cookie jar from Set-Cookie
@@ -100,7 +105,7 @@ class BBCOJScraper(BaseScraper):
             return True
 
         except Exception as e:
-            self.logger.error(f"BBC OJ login error: {e}")
+            self.logger.error(f"BBC OJ login error ({type(e).__name__}): {e}")
             return False
 
     def _ensure_logged_in(self, platform_uid: str) -> bool:
@@ -112,6 +117,7 @@ class BBCOJScraper(BaseScraper):
             self.logger.error("BBC OJ requires a password for authentication")
             return False
 
+        self.logger.info(f"BBC OJ attempting login for user: {platform_uid}")
         return self.login(platform_uid, self.auth_password)
 
     def validate_account(self, platform_uid: str) -> bool:
@@ -137,6 +143,8 @@ class BBCOJScraper(BaseScraper):
                     f"?limit={limit}&currentPage={page}&onlyMine=true"
                 )
                 resp = self._rate_limited_get(url)
+                self.logger.debug(f"BBC OJ submissions page {page} response status: {resp.status_code}")
+                resp.encoding = 'utf-8'
                 data = resp.json()
 
                 status = data.get('status', None)
@@ -227,6 +235,7 @@ class BBCOJScraper(BaseScraper):
         try:
             url = f"{self.BASE_URL}/api/get-problem-detail?problemId={problem_id}"
             resp = self._rate_limited_get(url)
+            resp.encoding = 'utf-8'
             data = resp.json()
 
             status = data.get('status', None)
@@ -296,6 +305,7 @@ class BBCOJScraper(BaseScraper):
             if self._tag_cache is None:
                 url = f"{self.BASE_URL}/api/get-problem-tags-and-classification?oj=ME"
                 resp = self._rate_limited_get(url)
+                resp.encoding = 'utf-8'
                 data = resp.json()
                 if data.get('status') == 200:
                     self._tag_cache = data.get('data', {})
@@ -315,6 +325,7 @@ class BBCOJScraper(BaseScraper):
         try:
             url = f"{self.BASE_URL}/api/get-submission-detail?submitId={record_id}&cid=0"
             resp = self._rate_limited_get(url)
+            resp.encoding = 'utf-8'
             data = resp.json()
 
             status = data.get('status', None)
@@ -369,7 +380,7 @@ class BBCOJScraper(BaseScraper):
         return 0
 
     def get_problem_url(self, problem_id: str) -> str:
-        return f"https://www.bbcoj.cn/problem/{problem_id}"
+        return f"{self.BASE_URL}/problem/{problem_id}"
 
     def get_auth_instructions(self) -> str:
         return "请输入BBC OJ的用户名和密码，系统会自动登录获取数据"
