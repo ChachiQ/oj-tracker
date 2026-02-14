@@ -1,7 +1,7 @@
 """
 Zhipu AI (GLM) LLM provider.
 
-Supports GLM-4-Flash and GLM-4-Plus models via the official zhipuai Python SDK.
+Supports GLM-5 model via the official zhipuai Python SDK.
 """
 from __future__ import annotations
 
@@ -15,11 +15,10 @@ logger = logging.getLogger(__name__)
 
 # Pricing per million tokens (USD)
 ZHIPU_PRICING = {
-    "glm-4-flash": {"input": 0.07, "output": 0.07},
-    "glm-4-plus": {"input": 0.70, "output": 0.70},
+    "glm-5": {"input": 1.0, "output": 3.2},
 }
 
-DEFAULT_MODEL = "glm-4-flash"
+DEFAULT_MODEL = "glm-5"
 
 try:
     from zhipuai import ZhipuAI
@@ -82,7 +81,7 @@ class ZhipuProvider(BaseLLMProvider):
         Args:
             messages: List of message dicts with 'role' and 'content' keys.
                       Supports 'system', 'user', and 'assistant' roles.
-            model: Model identifier. Defaults to glm-4-flash.
+            model: Model identifier. Defaults to glm-5.
             max_tokens: Maximum tokens in the response.
             temperature: Sampling temperature. Note: Zhipu requires temperature > 0,
                          so 0 is remapped to 0.01.
@@ -126,7 +125,7 @@ class ZhipuProvider(BaseLLMProvider):
 
     def list_models(self) -> list[str]:
         """Return available Zhipu model identifiers."""
-        return ["glm-4-flash", "glm-4-plus"]
+        return ["glm-5"]
 
     def estimate_cost(
         self, input_tokens: int, output_tokens: int, model: str

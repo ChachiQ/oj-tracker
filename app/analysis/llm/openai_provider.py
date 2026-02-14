@@ -1,7 +1,7 @@
 """
 OpenAI LLM provider.
 
-Supports GPT-4o-mini and GPT-4o models via the official openai Python SDK.
+Supports GPT-4.1-mini and GPT-5 models via the official openai Python SDK.
 """
 from __future__ import annotations
 
@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 
 # Pricing per million tokens (USD)
 OPENAI_PRICING = {
-    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-    "gpt-4o": {"input": 2.50, "output": 10.0},
+    "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
+    "gpt-5": {"input": 1.25, "output": 10.0},
 }
 
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-4.1-mini"
 
 try:
     import openai
@@ -80,7 +80,7 @@ class OpenAIProvider(BaseLLMProvider):
         Args:
             messages: List of message dicts with 'role' and 'content' keys.
                       Supports 'system', 'user', and 'assistant' roles.
-            model: Model identifier. Defaults to gpt-4o-mini.
+            model: Model identifier. Defaults to gpt-4.1-mini.
             max_tokens: Maximum tokens in the response.
             temperature: Sampling temperature (0 = deterministic).
 
@@ -119,7 +119,7 @@ class OpenAIProvider(BaseLLMProvider):
 
     def list_models(self) -> list[str]:
         """Return available OpenAI model identifiers."""
-        return ["gpt-4o-mini", "gpt-4o"]
+        return ["gpt-4.1-mini", "gpt-5"]
 
     def estimate_cost(
         self, input_tokens: int, output_tokens: int, model: str

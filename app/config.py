@@ -16,8 +16,8 @@ class BaseConfig:
 
     # AI provider settings
     AI_PROVIDER = os.environ.get('AI_PROVIDER', 'zhipu')
-    AI_MODEL_BASIC = os.environ.get('AI_MODEL_BASIC', 'glm-4-flash')
-    AI_MODEL_ADVANCED = os.environ.get('AI_MODEL_ADVANCED', 'glm-4-plus')
+    AI_MODEL_BASIC = os.environ.get('AI_MODEL_BASIC', 'glm-5')
+    AI_MODEL_ADVANCED = os.environ.get('AI_MODEL_ADVANCED', 'glm-5')
 
     # AI API keys
     ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')

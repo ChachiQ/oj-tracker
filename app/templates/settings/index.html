@@ -6,114 +6,113 @@
 {% block content %}
 <h4 class="fw-bold mb-4"><i class="bi bi-gear"></i> 系统设置</h4>
 
-<div class="row g-4">
-    <!-- Section 1: Platform Accounts -->
-    <div class="col-12">
-        <div class="card shadow-sm">
-            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <h5 class="mb-0"><i class="bi bi-hdd-network"></i> 平台账号管理</h5>
-                <div class="d-flex gap-2">
-                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
-                        <i class="bi bi-plus-circle"></i> 添加账号
-                    </button>
-                    <form method="POST" action="{{ url_for('settings.sync_all') }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <button type="submit" class="btn btn-sm btn-outline-success">
-                            <i class="bi bi-arrow-repeat"></i> 全部同步
-                        </button>
-                    </form>
-                </div>
-            </div>
-            <div class="card-body">
-                {% if accounts and accounts|length > 0 %}
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>学生</th>
-                                <th>平台</th>
-                                <th class="{{ table_col_class('md') }}">账号 ID</th>
-                                <th>状态</th>
-                                <th class="{{ table_col_class('md') }}">最后同步</th>
-                                <th class="text-center">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for account in accounts %}
-                            <tr>
-                                <td>{{ account.student.name if account.student else '-' }}</td>
-                                <td>
-                                    {% set platform_icons = {
-                                        'luogu': 'bi-trophy',
-                                        'bbcoj': 'bi-pc-display',
-                                        'ybt': 'bi-book',
-                                        'codeforces': 'bi-globe',
-                                        'atcoder': 'bi-flag',
-                                        'leetcode': 'bi-code-square',
-                                        'nowcoder': 'bi-braces',
-                                        'hdu': 'bi-cpu',
-                                        'poj': 'bi-server',
-                                        'bzoj': 'bi-hdd',
-                                        'uoj': 'bi-motherboard',
-                                        'loj': 'bi-pc-display'
-                                    } %}
-                                    <i class="bi {{ platform_icons.get(account.platform, 'bi-globe') }}"></i>
-                                    {{ account.platform }}
-                                </td>
-                                <td class="{{ table_col_class('md') }}"><code>{{ account.platform_uid }}</code></td>
-                                <td>
-                                    {% if account.last_sync_error %}
-                                        <span class="badge bg-warning text-dark" title="{{ account.last_sync_error }}" data-bs-toggle="tooltip">
-                                            <i class="bi bi-exclamation-triangle"></i> 同步异常
-                                        </span>
-                                    {% elif account.is_active %}
-                                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> 正常</span>
-                                    {% else %}
-                                        <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 已停用</span>
-                                    {% endif %}
-                                </td>
-                                <td class="{{ table_col_class('md') }}">
-                                    {% if account.last_sync_at %}
-                                        <small>{{ account.last_sync_at.strftime('%Y-%m-%d %H:%M') }}</small>
-                                    {% else %}
-                                        <span class="text-muted">未同步</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-center">
-                                    <div class="btn-group btn-group-sm">
-                                        <form method="POST" action="{{ url_for('settings.sync_account', account_id=account.id) }}" class="d-inline"
-                                              {% if account.platform in requires_login_platforms %}
-                                              onsubmit="return confirm('该平台需要登录同步，会踢掉你在{{ account.platform }}网站上的活跃会话，确定继续？')"
-                                              {% endif %}>
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <button type="submit" class="btn btn-outline-success" title="同步数据">
-                                                <i class="bi bi-arrow-repeat"></i>
-                                            </button>
-                                        </form>
-                                        <form method="POST" action="{{ url_for('settings.delete_account', account_id=account.id) }}"
-                                              class="d-inline" onsubmit="return confirm('确定要删除该账号吗？关联的提交记录不会被删除。')">
-                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                            <button type="submit" class="btn btn-outline-danger" title="删除账号">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% else %}
-                {{ empty_state('bi-link-45deg', '', '暂无平台账号，点击"添加账号"按钮开始绑定。', small=true) }}
-                {% endif %}
-            </div>
+{# ── Section 1: Platform Accounts (full width) ── #}
+<div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="bi bi-hdd-network"></i> 平台账号管理</h5>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+                <i class="bi bi-plus-circle"></i> 添加账号
+            </button>
+            <form method="POST" action="{{ url_for('settings.sync_all') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-arrow-repeat"></i> 全部同步
+                </button>
+            </form>
         </div>
     </div>
+    <div class="card-body">
+        {% if accounts and accounts|length > 0 %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>学生</th>
+                        <th>平台</th>
+                        <th class="{{ table_col_class('md') }}">账号 ID</th>
+                        <th>状态</th>
+                        <th class="{{ table_col_class('md') }}">最后同步</th>
+                        <th class="text-center">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account in accounts %}
+                    <tr>
+                        <td>{{ account.student.name if account.student else '-' }}</td>
+                        <td>
+                            {% set platform_icons = {
+                                'luogu': 'bi-trophy',
+                                'bbcoj': 'bi-pc-display',
+                                'ybt': 'bi-book',
+                                'codeforces': 'bi-globe',
+                                'atcoder': 'bi-flag',
+                                'leetcode': 'bi-code-square',
+                                'nowcoder': 'bi-braces',
+                                'hdu': 'bi-cpu',
+                                'poj': 'bi-server',
+                                'bzoj': 'bi-hdd',
+                                'uoj': 'bi-motherboard',
+                                'loj': 'bi-pc-display'
+                            } %}
+                            <i class="bi {{ platform_icons.get(account.platform, 'bi-globe') }}"></i>
+                            {{ account.platform }}
+                        </td>
+                        <td class="{{ table_col_class('md') }}"><code>{{ account.platform_uid }}</code></td>
+                        <td>
+                            {% if account.last_sync_error %}
+                                <span class="badge bg-warning text-dark" title="{{ account.last_sync_error }}" data-bs-toggle="tooltip">
+                                    <i class="bi bi-exclamation-triangle"></i> 同步异常
+                                </span>
+                            {% elif account.is_active %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle"></i> 正常</span>
+                            {% else %}
+                                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 已停用</span>
+                            {% endif %}
+                        </td>
+                        <td class="{{ table_col_class('md') }}">
+                            {% if account.last_sync_at %}
+                                <small>{{ account.last_sync_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            {% else %}
+                                <span class="text-muted">未同步</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <form method="POST" action="{{ url_for('settings.sync_account', account_id=account.id) }}" class="d-inline"
+                                      {% if account.platform in requires_login_platforms %}
+                                      onsubmit="return confirm('该平台需要登录同步，会踢掉你在{{ account.platform }}网站上的活跃会话，确定继续？')"
+                                      {% endif %}>
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-outline-success" title="同步数据">
+                                        <i class="bi bi-arrow-repeat"></i>
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ url_for('settings.delete_account', account_id=account.id) }}"
+                                      class="d-inline" onsubmit="return confirm('确定要删除该账号吗？关联的提交记录不会被删除。')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-outline-danger" title="删除账号">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        {{ empty_state('bi-link-45deg', '', '暂无平台账号，点击"添加账号"按钮开始绑定。', small=true) }}
+        {% endif %}
+    </div>
+</div>
 
-    <!-- Section 2: AI Configuration -->
-    <div class="col-12 col-lg-6">
-        <div class="card shadow-sm">
+{# ── Section 2 & 3: AI Config (left) + Pricing & Platform Instructions (right) ── #}
+<div class="row g-4">
+    {# Left column: AI Configuration #}
+    <div class="col-12 col-lg-7">
+        <div class="card shadow-sm h-100">
             <div class="card-header">
                 <h5 class="mb-0"><i class="bi bi-robot"></i> AI 分析配置</h5>
             </div>
@@ -121,7 +120,7 @@
                 <form method="POST" action="{{ url_for('settings.save_ai_config') }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-                    <!-- Provider selection -->
+                    {# Provider selection #}
                     <div class="mb-3">
                         <label class="form-label fw-bold">AI 提供者</label>
                         <div class="row g-2">
@@ -154,7 +153,7 @@
                         {% endif %}
                     </div>
 
-                    <!-- API Keys -->
+                    {# API Keys #}
                     <div class="mb-3">
                         <label class="form-label fw-bold">API KEY</label>
                         {% for p in ['claude', 'openai', 'zhipu'] %}
@@ -171,7 +170,7 @@
                         <div class="form-text">留空不会覆盖已有 KEY。优先使用此处配置，未配置时回退到环境变量。</div>
                     </div>
 
-                    <!-- Monthly budget -->
+                    {# Monthly budget #}
                     <div class="mb-3">
                         <label for="ai-budget" class="form-label fw-bold">月度预算 (USD)</label>
                         <input type="number" class="form-control form-control-sm" id="ai-budget"
@@ -184,61 +183,127 @@
                         <i class="bi bi-save"></i> 保存 AI 配置
                     </button>
                 </form>
-
-                <hr class="my-3">
-
-                <!-- Usage stats -->
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
-                        <span class="text-muted">本月 API 用量</span>
-                        <span class="fw-bold">
-                            ${{ '%.4f'|format(monthly_cost or 0) }} / ${{ '%.2f'|format(monthly_budget or 5) }}
-                        </span>
-                    </div>
-                    {% set cost_pct = ((monthly_cost or 0) / (monthly_budget or 5) * 100)|int %}
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar {{ 'bg-danger' if cost_pct > 80 else 'bg-warning' if cost_pct > 50 else 'bg-success' }}"
-                             style="width: {{ cost_pct }}%"></div>
-                    </div>
-                </div>
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between">
-                        <span class="text-muted">已分析题目数</span>
-                        <span class="fw-bold">{{ analyzed_count or 0 }}</span>
-                    </div>
-                </div>
-
-                {% if usage_by_model and usage_by_model|length > 0 %}
-                <div class="mb-2">
-                    <small class="fw-bold text-muted">本月用量明细</small>
-                    <table class="table table-sm table-borderless mb-0 mt-1">
-                        <thead>
-                            <tr class="text-muted">
-                                <th><small>模型</small></th>
-                                <th class="text-end"><small>调用</small></th>
-                                <th class="text-end"><small>Token</small></th>
-                                <th class="text-end"><small>费用</small></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for model_name, call_count, tokens, cost in usage_by_model %}
-                            <tr>
-                                <td><small>{{ model_name or '-' }}</small></td>
-                                <td class="text-end"><small>{{ call_count }}</small></td>
-                                <td class="text-end"><small>{{ tokens or 0 }}</small></td>
-                                <td class="text-end"><small>${{ '%.4f'|format(cost or 0) }}</small></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-                {% endif %}
             </div>
         </div>
     </div>
 
-    <!-- Section 3: Platform Instructions -->
-    <div class="col-12 col-lg-6">
+    {# Right column: Model Pricing + Platform Instructions stacked #}
+    <div class="col-12 col-lg-5">
+        {# Model Pricing & Usage #}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-currency-dollar"></i> 费用与用量</h5>
+            </div>
+            <div class="card-body pb-2">
+                {# Monthly budget progress #}
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <small class="text-muted">本月预算</small>
+                    <span class="fw-bold small">
+                        ${{ '%.4f'|format(monthly_cost or 0) }} / ${{ '%.2f'|format(monthly_budget or 5) }}
+                    </span>
+                </div>
+                {% set cost_pct = ((monthly_cost or 0) / (monthly_budget or 5) * 100)|int %}
+                <div class="progress mb-2" style="height: 6px;">
+                    <div class="progress-bar {{ 'bg-danger' if cost_pct > 80 else 'bg-warning' if cost_pct > 50 else 'bg-success' }}"
+                         style="width: {{ [cost_pct, 100]|min }}%"></div>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <small class="text-muted">已分析 <span class="fw-bold text-body">{{ analyzed_count or 0 }}</span> 题</small>
+                </div>
+            </div>
+
+            {# Build usage lookup dict from usage_by_model tuples #}
+            {% set ns = namespace(usage_map={}) %}
+            {% if usage_by_model %}
+            {% for model_name, call_count, tokens, cost in usage_by_model %}
+                {% set _ = ns.usage_map.update({model_name: {'calls': call_count, 'tokens': tokens or 0, 'cost': cost or 0}}) %}
+            {% endfor %}
+            {% endif %}
+
+            {% set provider_display = {'claude': 'Claude', 'openai': 'OpenAI', 'zhipu': '智谱 AI'} %}
+            {% set provider_colors  = {'claude': 'primary', 'openai': 'success', 'zhipu': 'info'} %}
+            {% set tier_labels      = {'basic': '基础', 'advanced': '高级'} %}
+
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th colspan="3" class="border-end">模型与定价 <small class="fw-normal text-muted">($/M tokens)</small></th>
+                            <th colspan="3" class="text-center">本月用量</th>
+                        </tr>
+                        <tr class="text-muted small">
+                            <th>提供者</th>
+                            <th>模型</th>
+                            <th class="text-end border-end">输入 / 输出</th>
+                            <th class="text-end">调用</th>
+                            <th class="text-end">Token</th>
+                            <th class="text-end">费用</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pname, pconf in model_config.items() %}
+                        {% set models = pconf.get('models', {}) %}
+                        {% for mname, minfo in models.items() %}
+                        {% set usage = ns.usage_map.get(mname, {}) %}
+                        <tr>
+                            {% if loop.first %}
+                            <td rowspan="{{ models|length }}" class="align-middle">
+                                <span class="badge bg-{{ provider_colors.get(pname, 'secondary') }}">{{ provider_display.get(pname, pname) }}</span>
+                            </td>
+                            {% endif %}
+                            <td>
+                                <code class="small">{{ mname }}</code>
+                                <span class="badge bg-{{ 'secondary' if minfo.get('tier') == 'basic' else 'dark' }} bg-opacity-75 ms-1" style="font-size:.6rem">
+                                    {{ tier_labels.get(minfo.get('tier', ''), '') }}
+                                </span>
+                            </td>
+                            <td class="text-end border-end text-nowrap">
+                                {% if minfo.get('input_price', 0) == 0 and minfo.get('output_price', 0) == 0 %}
+                                <span class="text-success fw-bold small">免费</span>
+                                {% else %}
+                                <small>${{ '%.2f'|format(minfo.get('input_price', 0)) }} / ${{ '%.2f'|format(minfo.get('output_price', 0)) }}</small>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if usage %}
+                                <small>{{ usage.calls }}</small>
+                                {% else %}
+                                <small class="text-muted">-</small>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if usage %}
+                                <small>{{ '{:,}'.format(usage.tokens) }}</small>
+                                {% else %}
+                                <small class="text-muted">-</small>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if usage %}
+                                <small class="fw-bold">${{ '%.4f'|format(usage.cost) }}</small>
+                                {% else %}
+                                <small class="text-muted">-</small>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% endfor %}
+                    </tbody>
+                    {% if monthly_cost and monthly_cost > 0 %}
+                    <tfoot class="table-light">
+                        <tr class="fw-bold">
+                            <td colspan="3" class="text-end border-end"><small>合计</small></td>
+                            <td class="text-end"><small>{{ analyzed_count or 0 }}</small></td>
+                            <td></td>
+                            <td class="text-end"><small>${{ '%.4f'|format(monthly_cost or 0) }}</small></td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+
+        {# Platform Instructions #}
         <div class="card shadow-sm">
             <div class="card-header">
                 <h5 class="mb-0"><i class="bi bi-question-circle"></i> 平台绑定说明</h5>
@@ -277,7 +342,7 @@
     </div>
 </div>
 
-<!-- Add Account Modal -->
+{# ── Add Account Modal ── #}
 <div class="modal fade" id="addAccountModal" tabindex="-1" aria-labelledby="addAccountModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">

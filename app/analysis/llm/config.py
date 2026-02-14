@@ -9,26 +9,26 @@ MODEL_CONFIG = {
     "claude": {
         "models": {
             "claude-haiku-4-5": {
-                "input_price": 0.25,
-                "output_price": 1.25,
+                "input_price": 1.0,
+                "output_price": 5.0,
                 "tier": "basic",
             },
-            "claude-sonnet-4-5": {
-                "input_price": 3.0,
-                "output_price": 15.0,
+            "claude-opus-4-6": {
+                "input_price": 5.0,
+                "output_price": 25.0,
                 "tier": "advanced",
             },
         }
     },
     "openai": {
         "models": {
-            "gpt-4o-mini": {
-                "input_price": 0.15,
-                "output_price": 0.60,
+            "gpt-4.1-mini": {
+                "input_price": 0.40,
+                "output_price": 1.60,
                 "tier": "basic",
             },
-            "gpt-4o": {
-                "input_price": 2.50,
+            "gpt-5": {
+                "input_price": 1.25,
                 "output_price": 10.0,
                 "tier": "advanced",
             },
@@ -36,15 +36,10 @@ MODEL_CONFIG = {
     },
     "zhipu": {
         "models": {
-            "glm-4-flash": {
-                "input_price": 0.07,
-                "output_price": 0.07,
+            "glm-5": {
+                "input_price": 1.0,
+                "output_price": 3.2,
                 "tier": "basic",
-            },
-            "glm-4-plus": {
-                "input_price": 0.70,
-                "output_price": 0.70,
-                "tier": "advanced",
             },
         }
     },

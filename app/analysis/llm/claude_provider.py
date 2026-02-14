@@ -1,7 +1,7 @@
 """
 Anthropic Claude LLM provider.
 
-Supports Claude Haiku 4.5 and Claude Sonnet 4.5 models via the
+Supports Claude Haiku 4.5 and Claude Opus 4.6 models via the
 official anthropic Python SDK.
 """
 from __future__ import annotations
@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 # Pricing per million tokens (USD)
 CLAUDE_PRICING = {
-    "claude-haiku-4-5": {"input": 0.25, "output": 1.25},
-    "claude-sonnet-4-5": {"input": 3.0, "output": 15.0},
+    "claude-haiku-4-5": {"input": 1.0, "output": 5.0},
+    "claude-opus-4-6": {"input": 5.0, "output": 25.0},
 }
 
 DEFAULT_MODEL = "claude-haiku-4-5"
@@ -137,7 +137,7 @@ class ClaudeProvider(BaseLLMProvider):
 
     def list_models(self) -> list[str]:
         """Return available Claude model identifiers."""
-        return ["claude-haiku-4-5", "claude-sonnet-4-5"]
+        return ["claude-haiku-4-5", "claude-opus-4-6"]
 
     def estimate_cost(
         self, input_tokens: int, output_tokens: int, model: str
