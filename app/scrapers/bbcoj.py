@@ -84,19 +84,19 @@ class BBCOJScraper(BaseScraper):
                 self.logger.error(f"BBC OJ login failed: {msg}")
                 return False
 
-            # Extract JWT token from response
-            result = data.get('data', {})
-            token = None
-            if isinstance(result, dict):
-                token = result.get('token', None)
+            # Extract JWT token from response header (HOJ returns it there)
+            token = resp.headers.get('Authorization', None)
+            if not token:
+                # Fallback: try JSON body
+                result = data.get('data', {})
+                if isinstance(result, dict):
+                    token = result.get('token', None)
 
             if not token:
                 self.logger.error("BBC OJ login succeeded but no token returned")
                 return False
 
-            # Set Authorization header with Bearer token
-            if not token.startswith('Bearer '):
-                token = f'Bearer {token}'
+            # Set Authorization header (raw JWT, no Bearer prefix for this HOJ instance)
             self.session.headers['Authorization'] = token
 
             # JSESSIONID should be set automatically via cookie jar from Set-Cookie
