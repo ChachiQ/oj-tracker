@@ -11,15 +11,29 @@ def init_scheduler(app):
         logger.info("Scheduler disabled by config")
         return
 
-    # Sync all accounts every 6 hours
+    # Sync all accounts every 6 hours (skip platforms that require login)
     @scheduler.scheduled_job('interval', hours=6, id='sync_all')
     def sync_all_job():
         with app.app_context():
+            from app.models import PlatformAccount
+            from app.scrapers import get_scraper_class
             from app.services.sync_service import SyncService
 
             service = SyncService()
-            stats = service.sync_all_accounts()
-            logger.info(f"Scheduled sync completed: {stats}")
+            accounts = PlatformAccount.query.filter_by(is_active=True).all()
+            skipped = 0
+            synced = 0
+            for account in accounts:
+                cls = get_scraper_class(account.platform)
+                if cls and getattr(cls, 'REQUIRES_LOGIN', False):
+                    skipped += 1
+                    continue
+                service.sync_account(account.id)
+                synced += 1
+            logger.info(
+                f"Scheduled sync completed: synced={synced}, "
+                f"skipped_login={skipped}"
+            )
 
     # AI analysis batch - daily at 2am
     @scheduler.scheduled_job('cron', hour=2, id='ai_analysis_batch')

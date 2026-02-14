@@ -7,6 +7,7 @@ from .tag import Tag, problem_tags
 from .analysis_result import AnalysisResult
 from .analysis_log import AnalysisLog
 from .report import Report
+from .user_setting import UserSetting
 
 __all__ = [
     'User',
@@ -19,4 +20,5 @@ __all__ = [
     'AnalysisResult',
     'AnalysisLog',
     'Report',
+    'UserSetting',
 ]

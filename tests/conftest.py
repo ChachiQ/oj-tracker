@@ -17,6 +17,7 @@ from app.models import (
     AnalysisResult,
     AnalysisLog,
     Report,
+    UserSetting,
     problem_tags,
 )
 

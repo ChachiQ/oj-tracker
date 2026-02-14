@@ -52,6 +52,7 @@ class YBTScraper(BaseScraper):
     PLATFORM_DISPLAY = "一本通OJ"
     BASE_URL = "http://ybt.ssoier.cn:8088"
     SUPPORT_CODE_FETCH = True
+    REQUIRES_LOGIN = True
 
     def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0):
         super().__init__(auth_cookie=auth_cookie, auth_password=auth_password, rate_limit=rate_limit)

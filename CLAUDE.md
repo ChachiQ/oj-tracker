@@ -42,6 +42,7 @@ User 1-N Student 1-N PlatformAccount 1-N Submission N-1 Problem N-M Tag
 Submission 1-N AnalysisResult
 Student 1-N AnalysisLog
 Student 1-N Report
+User 1-N UserSetting
 ```
 
 ## 关键设计决策
@@ -73,6 +74,11 @@ Student 1-N Report
 - 弱项识别过滤超龄知识点
 - AI分析Prompt注入年龄上下文
 
+### 6. 用户级 AI 配置
+- UserSetting key-value 模型存储用户偏好
+- AI API KEY 优先从 UserSetting 读取，回退到环境变量
+- 每用户可独立选择 AI 提供者和预算
+
 ## 开发约定
 - Python 代码遵循 PEP 8
 - 模型关系使用 back_populates (非 backref)
@@ -82,9 +88,9 @@ Student 1-N Report
 - 配置通过环境变量管理
 
 ## 已支持的OJ平台
-- 洛谷 (luogu) - JSON API
-- BBC OJ (bbcoj) - HOJ系统 REST API
-- 一本通 (ybt) - PHP系统 HTML解析
+- 洛谷 (luogu) - JSON API（无需登录）
+- BBC OJ (bbcoj) - HOJ系统 REST API（需密码登录，会影响活跃会话）
+- 一本通 (ybt) - PHP系统 HTML解析（需密码登录，会影响活跃会话）
 
 ## 当前进度
 见 CHANGELOG.md

@@ -40,25 +40,69 @@ class AIAnalyzer:
     def __init__(self, app=None):
         self.app = app or current_app._get_current_object()
 
-    def _get_llm(self, tier: str = "basic"):
+    def _get_llm(self, tier: str = "basic", user_id: int = None):
         """Get an LLM provider and model based on the configured tier.
+
+        When *user_id* is given the method first looks for per-user overrides
+        stored in ``UserSetting`` (ai_provider, api_key_*).  Falls back to
+        ``app.config`` / environment variables when no user config exists.
 
         Args:
             tier: 'basic' for cheaper/faster models, 'advanced' for more capable ones.
+            user_id: Optional user id to load per-user AI configuration.
 
         Returns:
             Tuple of (provider_instance, model_name).
         """
-        provider_name = self.app.config.get("AI_PROVIDER", "claude")
-        model_key = "AI_MODEL_BASIC" if tier == "basic" else "AI_MODEL_ADVANCED"
-        api_key_map = {
+        from .llm.config import MODEL_CONFIG
+
+        # Determine provider name and API key
+        user_key_map = {
+            "claude": "api_key_claude",
+            "openai": "api_key_openai",
+            "zhipu": "api_key_zhipu",
+        }
+        env_key_map = {
             "claude": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
             "zhipu": "ZHIPU_API_KEY",
         }
-        api_key = self.app.config.get(api_key_map.get(provider_name, ""), "")
+
+        if user_id:
+            from app.models import UserSetting
+            provider_name = (
+                UserSetting.get(user_id, 'ai_provider')
+                or self.app.config.get("AI_PROVIDER", "zhipu")
+            )
+            api_key = UserSetting.get(
+                user_id, user_key_map.get(provider_name, ''),
+            ) or ''
+        else:
+            provider_name = self.app.config.get("AI_PROVIDER", "claude")
+            api_key = ''
+
+        # Fall back to environment variable / app config
+        if not api_key:
+            api_key = self.app.config.get(
+                env_key_map.get(provider_name, ""), "",
+            )
+
         provider = get_provider(provider_name, api_key=api_key)
-        model = self.app.config.get(model_key)
+
+        # Pick the right model for the requested tier
+        models = MODEL_CONFIG.get(provider_name, {}).get("models", {})
+        target_tier = "basic" if tier == "basic" else "advanced"
+        model = None
+        for m_name, m_info in models.items():
+            if m_info.get("tier") == target_tier:
+                model = m_name
+                break
+
+        # Final fallback to explicit config keys
+        if not model:
+            model_key = "AI_MODEL_BASIC" if tier == "basic" else "AI_MODEL_ADVANCED"
+            model = self.app.config.get(model_key)
+
         return provider, model
 
     def _check_budget(self) -> bool:
@@ -129,7 +173,12 @@ class AIAnalyzer:
         )
 
         try:
-            provider, model = self._get_llm("basic")
+            # Resolve the owning user for per-user AI config
+            user_id = None
+            if student and hasattr(student, 'parent_id'):
+                user_id = student.parent_id
+
+            provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model)
 
             result = AnalysisResult(
@@ -237,7 +286,8 @@ class AIAnalyzer:
         )
 
         try:
-            provider, model = self._get_llm("basic")
+            user_id = student.parent_id if student else None
+            provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model, max_tokens=4096)
 
             result = AnalysisResult(

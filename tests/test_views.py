@@ -144,6 +144,20 @@ class TestSettingsViews:
         resp = client.post(f'/settings/account/{acc_id}/delete', follow_redirects=False)
         assert resp.status_code == 302
 
+    def test_settings_page_passes_accounts_to_template(self, app, logged_in_client):
+        client, data = logged_in_client
+        resp = client.get('/settings/')
+        html = resp.data.decode('utf-8')
+        # The existing luogu account should appear in the page
+        assert '123456' in html  # platform_uid from sample_data
+
+    def test_settings_page_passes_analyzed_count(self, app, logged_in_client):
+        client, data = logged_in_client
+        resp = client.get('/settings/')
+        html = resp.data.decode('utf-8')
+        # analyzed_count should be rendered (0 when no analysis results)
+        assert '已分析题目数' in html
+
 
 class TestKnowledgeViews:
     def test_knowledge_graph(self, app, logged_in_client):

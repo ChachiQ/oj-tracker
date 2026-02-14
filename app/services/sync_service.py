@@ -87,14 +87,23 @@ class SyncService:
                     )
                     stats['errors'] += 1
 
-            # Update sync cursor
+            # Update sync cursor and clear any previous error
             account.last_sync_at = datetime.utcnow()
             account.sync_cursor = str(datetime.utcnow().timestamp())
+            account.last_sync_error = None
             db.session.commit()
 
         except Exception as e:
             logger.error(f"Sync failed for account {account_id}: {e}")
             db.session.rollback()
+            # Record the error on the account
+            try:
+                account = PlatformAccount.query.get(account_id)
+                if account:
+                    account.last_sync_error = str(e)
+                    db.session.commit()
+            except Exception:
+                logger.error(f"Failed to record sync error for account {account_id}")
             stats['error'] = str(e)
 
         return stats

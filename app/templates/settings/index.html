@@ -45,6 +45,8 @@
                                 <td>
                                     {% set platform_icons = {
                                         'luogu': 'bi-trophy',
+                                        'bbcoj': 'bi-pc-display',
+                                        'ybt': 'bi-book',
                                         'codeforces': 'bi-globe',
                                         'atcoder': 'bi-flag',
                                         'leetcode': 'bi-code-square',
@@ -60,10 +62,14 @@
                                 </td>
                                 <td class="{{ table_col_class('md') }}"><code>{{ account.platform_uid }}</code></td>
                                 <td>
-                                    {% if account.is_active %}
+                                    {% if account.last_sync_error %}
+                                        <span class="badge bg-warning text-dark" title="{{ account.last_sync_error }}" data-bs-toggle="tooltip">
+                                            <i class="bi bi-exclamation-triangle"></i> 同步异常
+                                        </span>
+                                    {% elif account.is_active %}
                                         <span class="badge bg-success"><i class="bi bi-check-circle"></i> 正常</span>
                                     {% else %}
-                                        <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 异常</span>
+                                        <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 已停用</span>
                                     {% endif %}
                                 </td>
                                 <td class="{{ table_col_class('md') }}">
@@ -75,7 +81,10 @@
                                 </td>
                                 <td class="text-center">
                                     <div class="btn-group btn-group-sm">
-                                        <form method="POST" action="{{ url_for('settings.sync_account', account_id=account.id) }}" class="d-inline">
+                                        <form method="POST" action="{{ url_for('settings.sync_account', account_id=account.id) }}" class="d-inline"
+                                              {% if account.platform in requires_login_platforms %}
+                                              onsubmit="return confirm('该平台需要登录同步，会踢掉你在{{ account.platform }}网站上的活跃会话，确定继续？')"
+                                              {% endif %}>
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <button type="submit" class="btn btn-outline-success" title="同步数据">
                                                 <i class="bi bi-arrow-repeat"></i>
@@ -102,27 +111,91 @@
         </div>
     </div>
 
-    <!-- Section 2: AI Analysis Status -->
+    <!-- Section 2: AI Configuration -->
     <div class="col-12 col-lg-6">
         <div class="card shadow-sm">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-robot"></i> AI 分析状态</h5>
+                <h5 class="mb-0"><i class="bi bi-robot"></i> AI 分析配置</h5>
             </div>
             <div class="card-body">
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between">
-                        <span class="text-muted">当前 AI 提供者</span>
-                        <span class="fw-bold">{{ ai_provider or 'OpenAI GPT-4' }}</span>
+                <form method="POST" action="{{ url_for('settings.save_ai_config') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <!-- Provider selection -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">AI 提供者</label>
+                        <div class="row g-2">
+                            {% set providers = [
+                                {'id': 'claude', 'name': 'Claude', 'icon': 'bi-cloud', 'color': 'primary'},
+                                {'id': 'openai', 'name': 'OpenAI', 'icon': 'bi-stars', 'color': 'success'},
+                                {'id': 'zhipu', 'name': '智谱 AI', 'icon': 'bi-translate', 'color': 'info'}
+                            ] %}
+                            {% for p in providers %}
+                            <div class="col-4">
+                                <input type="radio" class="btn-check" name="ai_provider" id="provider-{{ p.id }}"
+                                       value="{{ p.id }}" {{ 'checked' if user_ai_provider == p.id else '' }} autocomplete="off">
+                                <label class="btn btn-outline-{{ p.color }} w-100 py-2" for="provider-{{ p.id }}">
+                                    <i class="bi {{ p.icon }} d-block mb-1"></i>
+                                    <small>{{ p.name }}</small>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% if model_config %}
+                        <div class="form-text mt-2">
+                            {% for pname, pconf in model_config.items() %}
+                            <span class="d-block" id="model-info-{{ pname }}" style="{{ '' if user_ai_provider == pname else 'display:none' }}">
+                                {% for mname, minfo in pconf.get('models', {}).items() %}
+                                <small class="text-muted">{{ mname }} ({{ minfo.get('tier','') }})</small>{{ '、' if not loop.last else '' }}
+                                {% endfor %}
+                            </span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                     </div>
-                </div>
+
+                    <!-- API Keys -->
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">API KEY</label>
+                        {% for p in ['claude', 'openai', 'zhipu'] %}
+                        <div class="input-group input-group-sm mb-2" id="key-group-{{ p }}">
+                            <span class="input-group-text" style="min-width:70px">{{ p }}</span>
+                            <input type="password" class="form-control" name="api_key_{{ p }}"
+                                   placeholder="{{ '已配置' if user_has_key.get(p) else '未配置，留空使用环境变量' }}"
+                                   autocomplete="new-password">
+                            {% if user_has_key.get(p) %}
+                            <span class="input-group-text text-success"><i class="bi bi-check-circle-fill"></i></span>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                        <div class="form-text">留空不会覆盖已有 KEY。优先使用此处配置，未配置时回退到环境变量。</div>
+                    </div>
+
+                    <!-- Monthly budget -->
+                    <div class="mb-3">
+                        <label for="ai-budget" class="form-label fw-bold">月度预算 (USD)</label>
+                        <input type="number" class="form-control form-control-sm" id="ai-budget"
+                               name="ai_monthly_budget" step="0.5" min="0"
+                               placeholder="{{ user_monthly_budget or monthly_budget }}"
+                               value="{{ user_monthly_budget or '' }}">
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-sm">
+                        <i class="bi bi-save"></i> 保存 AI 配置
+                    </button>
+                </form>
+
+                <hr class="my-3">
+
+                <!-- Usage stats -->
                 <div class="mb-3">
                     <div class="d-flex justify-content-between mb-1">
                         <span class="text-muted">本月 API 用量</span>
                         <span class="fw-bold">
-                            {{ '%.2f'|format(monthly_cost or 0) }} / {{ '%.2f'|format(monthly_budget or 50) }} 元
+                            ${{ '%.4f'|format(monthly_cost or 0) }} / ${{ '%.2f'|format(monthly_budget or 5) }}
                         </span>
                     </div>
-                    {% set cost_pct = ((monthly_cost or 0) / (monthly_budget or 50) * 100)|int %}
+                    {% set cost_pct = ((monthly_cost or 0) / (monthly_budget or 5) * 100)|int %}
                     <div class="progress" style="height: 8px;">
                         <div class="progress-bar {{ 'bg-danger' if cost_pct > 80 else 'bg-warning' if cost_pct > 50 else 'bg-success' }}"
                              style="width: {{ cost_pct }}%"></div>
@@ -134,18 +207,32 @@
                         <span class="fw-bold">{{ analyzed_count or 0 }}</span>
                     </div>
                 </div>
-                <div class="d-flex gap-2">
-                    <form method="POST" action="{{ url_for('settings.index') }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="action" value="trigger_analysis">
-                        <button type="submit" class="btn btn-sm btn-primary">
-                            <i class="bi bi-lightning"></i> 触发分析
-                        </button>
-                    </form>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
-                        <i class="bi bi-arrow-clockwise"></i> 刷新
-                    </button>
+
+                {% if usage_by_model and usage_by_model|length > 0 %}
+                <div class="mb-2">
+                    <small class="fw-bold text-muted">本月用量明细</small>
+                    <table class="table table-sm table-borderless mb-0 mt-1">
+                        <thead>
+                            <tr class="text-muted">
+                                <th><small>模型</small></th>
+                                <th class="text-end"><small>调用</small></th>
+                                <th class="text-end"><small>Token</small></th>
+                                <th class="text-end"><small>费用</small></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for model_name, call_count, tokens, cost in usage_by_model %}
+                            <tr>
+                                <td><small>{{ model_name or '-' }}</small></td>
+                                <td class="text-end"><small>{{ call_count }}</small></td>
+                                <td class="text-end"><small>{{ tokens or 0 }}</small></td>
+                                <td class="text-end"><small>${{ '%.4f'|format(cost or 0) }}</small></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -158,27 +245,28 @@
             </div>
             <div class="card-body p-0">
                 <div class="accordion accordion-flush" id="platformInstructions">
-                    {% set platforms = [
-                        {'id': 'luogu', 'name': '洛谷 (Luogu)', 'desc': '输入洛谷用户 ID（数字），系统通过公开 API 获取提交记录。无需 Cookie。'},
-                        {'id': 'codeforces', 'name': 'Codeforces', 'desc': '输入 Codeforces 用户名（handle），系统通过公开 API 获取提交记录。无需 Cookie。'},
-                        {'id': 'atcoder', 'name': 'AtCoder', 'desc': '输入 AtCoder 用户名，系统通过公开 API 获取提交记录。无需额外认证。'},
-                        {'id': 'leetcode', 'name': 'LeetCode', 'desc': '输入 LeetCode 用户名，系统通过 GraphQL API 获取公开的提交记录。'},
-                        {'id': 'nowcoder', 'name': '牛客 (NowCoder)', 'desc': '输入牛客用户 ID，部分功能可能需要 Cookie。Cookie 获取方法：登录牛客后，打开浏览器开发者工具 -> Network -> 复制 Cookie。'},
-                        {'id': 'others', 'name': '其他平台', 'desc': '对于 HDU/POJ/BZOJ/UOJ/LOJ 等平台，输入对应的用户名或 ID。部分平台可能需要 Cookie 才能获取完整数据。'}
-                    ] %}
-                    {% for p in platforms %}
+                    {% for p in platform_info %}
                     <div class="accordion-item">
                         <h2 class="accordion-header">
                             <button class="accordion-button collapsed" type="button"
-                                    data-bs-toggle="collapse" data-bs-target="#instr-{{ p.id }}"
-                                    aria-expanded="false" aria-controls="instr-{{ p.id }}">
-                                {{ p.name }}
+                                    data-bs-toggle="collapse" data-bs-target="#instr-{{ p.name }}"
+                                    aria-expanded="false" aria-controls="instr-{{ p.name }}">
+                                {{ p.display }}
+                                {% if p.requires_login %}
+                                <span class="badge bg-warning text-dark ms-2">需登录</span>
+                                {% endif %}
                             </button>
                         </h2>
-                        <div id="instr-{{ p.id }}" class="accordion-collapse collapse"
+                        <div id="instr-{{ p.name }}" class="accordion-collapse collapse"
                              data-bs-parent="#platformInstructions">
                             <div class="accordion-body">
-                                {{ p.desc }}
+                                {{ p.instructions }}
+                                {% if p.requires_login %}
+                                <div class="alert alert-warning mt-2 mb-0 py-2 small">
+                                    <i class="bi bi-exclamation-triangle"></i>
+                                    此平台需要密码登录同步数据，登录后会踢掉你在该OJ网站上的活跃会话。建议在不使用该OJ时进行同步。
+                                </div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
@@ -215,9 +303,10 @@
                         <label for="add-platform" class="form-label">平台 <span class="text-danger">*</span></label>
                         <select class="form-select" id="add-platform" name="platform" required>
                             <option value="">-- 请选择平台 --</option>
-                            {% set available_platforms = ['luogu', 'codeforces', 'atcoder', 'leetcode', 'nowcoder', 'hdu', 'poj', 'bzoj', 'uoj', 'loj'] %}
-                            {% for p in available_platforms %}
-                            <option value="{{ p }}">{{ p }}</option>
+                            {% for p in platform_info %}
+                            <option value="{{ p.name }}" data-requires-login="{{ 'true' if p.requires_login else 'false' }}">
+                                {{ p.display }}{% if p.requires_login %} (需登录){% endif %}
+                            </option>
                             {% endfor %}
                         </select>
                     </div>
@@ -226,9 +315,18 @@
                         <input type="text" class="form-control" id="add-uid" name="platform_uid"
                                placeholder="如：123456 或 tourist" required>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-3" id="password-field" style="display:none">
+                        <label for="add-password" class="form-label">密码 <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" id="add-password" name="auth_password"
+                               placeholder="输入该平台的登录密码" autocomplete="new-password">
+                        <div class="alert alert-warning mt-2 mb-0 py-2 small" id="login-warning">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            登录同步会踢掉你在该OJ网站上的活跃会话。密码仅用于数据同步。
+                        </div>
+                    </div>
+                    <div class="mb-3" id="cookie-field">
                         <label for="add-cookie" class="form-label">Cookie（可选）</label>
-                        <textarea class="form-control" id="add-cookie" name="cookie" rows="3"
+                        <textarea class="form-control" id="add-cookie" name="auth_cookie" rows="3"
                                   placeholder="部分平台需要 Cookie 才能获取完整数据"></textarea>
                         <div class="form-text">仅在需要时填写，Cookie 将加密存储。</div>
                     </div>
@@ -243,4 +341,50 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+    // Toggle password / cookie fields based on platform selection
+    var platformSelect = document.getElementById('add-platform');
+    var passwordField = document.getElementById('password-field');
+    var cookieField = document.getElementById('cookie-field');
+    var passwordInput = document.getElementById('add-password');
+
+    if (platformSelect) {
+        platformSelect.addEventListener('change', function() {
+            var selected = this.options[this.selectedIndex];
+            var requiresLogin = selected.getAttribute('data-requires-login') === 'true';
+            if (requiresLogin) {
+                passwordField.style.display = '';
+                cookieField.style.display = 'none';
+                passwordInput.setAttribute('required', 'required');
+            } else {
+                passwordField.style.display = 'none';
+                cookieField.style.display = '';
+                passwordInput.removeAttribute('required');
+            }
+        });
+    }
+
+    // Toggle model info display when provider radio changes
+    var providerRadios = document.querySelectorAll('input[name="ai_provider"]');
+    providerRadios.forEach(function(radio) {
+        radio.addEventListener('change', function() {
+            document.querySelectorAll('[id^="model-info-"]').forEach(function(el) {
+                el.style.display = 'none';
+            });
+            var infoEl = document.getElementById('model-info-' + this.value);
+            if (infoEl) infoEl.style.display = '';
+        });
+    });
+
+    // Enable Bootstrap tooltips
+    var tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+    tooltips.forEach(function(el) {
+        new bootstrap.Tooltip(el);
+    });
+})();
+</script>
 {% endblock %}

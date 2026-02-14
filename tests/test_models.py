@@ -214,6 +214,21 @@ class TestPlatformAccount:
         db.session.commit()
         assert acc.id is not None
 
+    def test_last_sync_error_crud(self, app, db, sample_data):
+        acct = PlatformAccount.query.get(sample_data['account_id'])
+        assert acct.last_sync_error is None
+
+        acct.last_sync_error = 'Connection refused'
+        db.session.commit()
+
+        acct = PlatformAccount.query.get(sample_data['account_id'])
+        assert acct.last_sync_error == 'Connection refused'
+
+        acct.last_sync_error = None
+        db.session.commit()
+        acct = PlatformAccount.query.get(sample_data['account_id'])
+        assert acct.last_sync_error is None
+
 
 # ──────────────────────────────────────────────
 # Problem model

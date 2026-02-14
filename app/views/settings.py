@@ -13,9 +13,16 @@ from flask_login import login_required, current_user
 from sqlalchemy import func
 
 from app.extensions import db
-from app.models import Student, PlatformAccount, AnalysisResult
+from app.models import (
+    Student,
+    PlatformAccount,
+    AnalysisResult,
+    Submission,
+    UserSetting,
+)
 from app.scrapers import get_all_scrapers
 from app.services.sync_service import SyncService
+from app.analysis.llm.config import MODEL_CONFIG
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
 
@@ -24,9 +31,34 @@ settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
 @login_required
 def index():
     students = Student.query.filter_by(parent_id=current_user.id).all()
-    available_platforms = get_all_scrapers()
+    student_ids = [s.id for s in students]
 
-    # Get AI analysis stats
+    # ── Platform info (dynamic from scraper registry) ──
+    scrapers = get_all_scrapers()
+    platform_info = []
+    for name, cls in scrapers.items():
+        platform_info.append({
+            'name': name,
+            'display': getattr(cls, 'PLATFORM_DISPLAY', name),
+            'instructions': cls().get_auth_instructions(),
+            'requires_login': getattr(cls, 'REQUIRES_LOGIN', False),
+        })
+
+    requires_login_platforms = [
+        name for name, cls in scrapers.items()
+        if getattr(cls, 'REQUIRES_LOGIN', False)
+    ]
+
+    # ── Accounts for the user's students ──
+    accounts = (
+        PlatformAccount.query.filter(
+            PlatformAccount.student_id.in_(student_ids)
+        ).all()
+        if student_ids
+        else []
+    )
+
+    # ── AI analysis stats ──
     month_start = datetime.utcnow().replace(
         day=1, hour=0, minute=0, second=0, microsecond=0
     )
@@ -38,13 +70,59 @@ def index():
     )
     monthly_budget = current_app.config.get('AI_MONTHLY_BUDGET', 5.0)
 
+    # Analyzed count
+    analyzed_count = (
+        AnalysisResult.query.join(Submission)
+        .join(PlatformAccount)
+        .filter(PlatformAccount.student_id.in_(student_ids))
+        .count()
+        if student_ids
+        else 0
+    )
+
+    # Usage by model this month
+    usage_by_model = (
+        db.session.query(
+            AnalysisResult.ai_model,
+            func.count(AnalysisResult.id),
+            func.sum(AnalysisResult.token_cost),
+            func.sum(AnalysisResult.cost_usd),
+        )
+        .filter(AnalysisResult.analyzed_at >= month_start)
+        .group_by(AnalysisResult.ai_model)
+        .all()
+    )
+
+    # ── User AI configuration ──
+    user_ai_provider = (
+        UserSetting.get(current_user.id, 'ai_provider')
+        or current_app.config.get('AI_PROVIDER', 'zhipu')
+    )
+    user_has_key = {}
+    for p in ['claude', 'openai', 'zhipu']:
+        key = UserSetting.get(current_user.id, f'api_key_{p}')
+        user_has_key[p] = bool(key)
+
+    user_monthly_budget = UserSetting.get(
+        current_user.id, 'ai_monthly_budget'
+    )
+
     return render_template(
         'settings/index.html',
         students=students,
-        platforms=available_platforms,
+        platforms=scrapers,
+        platform_info=platform_info,
+        requires_login_platforms=requires_login_platforms,
+        accounts=accounts,
         monthly_cost=round(monthly_cost, 4),
         monthly_budget=monthly_budget,
-        ai_provider=current_app.config.get('AI_PROVIDER', 'unknown'),
+        analyzed_count=analyzed_count,
+        usage_by_model=usage_by_model,
+        ai_provider=user_ai_provider,
+        user_ai_provider=user_ai_provider,
+        user_has_key=user_has_key,
+        user_monthly_budget=user_monthly_budget,
+        model_config=MODEL_CONFIG,
     )
 
 
@@ -133,4 +211,30 @@ def sync_all():
         f'新增 {stats["total_new_submissions"]} 条提交',
         'success',
     )
+    return redirect(url_for('settings.index'))
+
+
+@settings_bp.route('/ai', methods=['POST'])
+@login_required
+def save_ai_config():
+    """Save user-level AI provider configuration."""
+    provider = request.form.get('ai_provider', '')
+    if provider not in ('claude', 'openai', 'zhipu'):
+        flash('无效的 AI 提供者', 'danger')
+        return redirect(url_for('settings.index'))
+
+    UserSetting.set(current_user.id, 'ai_provider', provider)
+
+    # Only overwrite a key when the user submits a non-empty value
+    for p in ['claude', 'openai', 'zhipu']:
+        key_val = request.form.get(f'api_key_{p}', '').strip()
+        if key_val:
+            UserSetting.set(current_user.id, f'api_key_{p}', key_val)
+
+    budget = request.form.get('ai_monthly_budget', '').strip()
+    if budget:
+        UserSetting.set(current_user.id, 'ai_monthly_budget', budget)
+
+    db.session.commit()
+    flash('AI 配置已保存', 'success')
     return redirect(url_for('settings.index'))

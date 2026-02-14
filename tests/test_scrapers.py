@@ -51,6 +51,12 @@ class TestScraperRegistry:
             assert hasattr(cls, 'BASE_URL')
             assert cls.PLATFORM_NAME == name
 
+    def test_requires_login_attribute(self):
+        scrapers = get_all_scrapers()
+        assert scrapers['bbcoj'].REQUIRES_LOGIN is True
+        assert scrapers['ybt'].REQUIRES_LOGIN is True
+        assert scrapers['luogu'].REQUIRES_LOGIN is False
+
 
 class TestScrapedSubmission:
     def test_create(self):
