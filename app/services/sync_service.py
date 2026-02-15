@@ -101,7 +101,11 @@ class SyncService:
 
             # AI-classify newly synced problems (best-effort, after commit)
             if stats['new_problems'] > 0:
-                self._classify_new_problems(account.platform)
+                user_id = (
+                    account.student.parent_id
+                    if account.student else None
+                )
+                self._classify_new_problems(account.platform, user_id=user_id)
 
         except Exception as e:
             logger.error(f"Sync failed for account {account_id}: {e}")
@@ -180,7 +184,7 @@ class SyncService:
 
         return None
 
-    def _classify_new_problems(self, platform: str) -> None:
+    def _classify_new_problems(self, platform: str, user_id: int = None) -> None:
         """Best-effort AI classification of unanalyzed problems."""
         try:
             from app.analysis.problem_classifier import ProblemClassifier
@@ -194,7 +198,7 @@ class SyncService:
             )
             for p in problems:
                 try:
-                    classifier.classify_problem(p.id)
+                    classifier.classify_problem(p.id, user_id=user_id)
                 except Exception as e:
                     logger.debug(f"AI classify skipped for {p.problem_id}: {e}")
         except Exception as e:

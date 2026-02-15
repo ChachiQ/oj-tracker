@@ -8,6 +8,7 @@ Usage:
     python backfill_tags.py --all          # re-map ALL problems (even already tagged)
     python backfill_tags.py --ai           # use AI to classify unanalyzed problems
     python backfill_tags.py --ai --limit 15  # AI classify only 15 problems
+    python backfill_tags.py --ai --user-id 1 # use specific user's AI config
 """
 import argparse
 import json
@@ -107,11 +108,35 @@ def backfill(platform=None, dry_run=False, refetch=False, remap_all=False):
         logger.info("Done! %s", stats)
 
 
-def backfill_ai(platform=None, limit=15):
+def _find_ai_user():
+    """Find the first user that has an AI API key configured in UserSetting."""
+    from app.models import UserSetting
+    for key in ('api_key_zhipu', 'api_key_claude', 'api_key_openai'):
+        setting = UserSetting.query.filter_by(key=key).filter(
+            UserSetting.value.isnot(None),
+            UserSetting.value != '',
+        ).first()
+        if setting:
+            return setting.user_id
+    return None
+
+
+def backfill_ai(platform=None, limit=15, user_id=None):
     """Use AI to classify unanalyzed problems."""
     app = create_app()
     with app.app_context():
         from app.analysis.problem_classifier import ProblemClassifier
+
+        # Auto-discover a user with AI config if not specified
+        if user_id is None:
+            user_id = _find_ai_user()
+            if user_id:
+                logger.info("Auto-detected user_id=%d with AI config", user_id)
+            else:
+                logger.warning(
+                    "No --user-id given and no user with AI API key found. "
+                    "Falling back to environment variables."
+                )
 
         query = Problem.query.filter_by(ai_analyzed=False)
         if platform:
@@ -144,7 +169,7 @@ def backfill_ai(platform=None, limit=15):
                 "  [%d/%d] %s:%s — %s",
                 i, len(problems), p.platform, p.problem_id, p.title,
             )
-            if classifier.classify_problem(p.id):
+            if classifier.classify_problem(p.id, user_id=user_id):
                 success += 1
                 logger.info(
                     "    → tags=%s, difficulty=%s, type=%s",
@@ -184,10 +209,12 @@ if __name__ == '__main__':
                         help='Use AI to classify problems (requires API key)')
     parser.add_argument('--limit', type=int, default=15,
                         help='Max number of problems to AI-classify (default: 15)')
+    parser.add_argument('--user-id', type=int, default=None,
+                        help='User ID whose AI config to use (auto-detects if omitted)')
     args = parser.parse_args()
 
     if args.ai:
-        backfill_ai(platform=args.platform, limit=args.limit)
+        backfill_ai(platform=args.platform, limit=args.limit, user_id=args.user_id)
     else:
         backfill(
             platform=args.platform,
