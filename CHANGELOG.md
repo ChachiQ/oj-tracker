@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.4.1 (2026-02-15) -- 知识图谱交互增强
+
+### 新增
+- 知识图谱全屏模式：ResizeObserver 自动适配容器尺寸，进出全屏自动居中
+- 知识图谱旋转：±30° 旋转按钮，读取力导向布局坐标做矩阵旋转
+- 标签重叠优化：ECharts 5 `labelLayout: { hideOverlap: true }` 自动隐藏重叠标签，缩放后自动显示
+- AI 评估报告分页：每页 5 条，支持翻页导航
+- 阶段进度详情：stages 新增 learning/weak 计数和 tags 详情列表
+
+### 修复
+- 全屏图谱消失：CSS 从 `flex:1 + height:auto` 改为 `calc(100vh - 70px)` 显式高度
+- 标题下划线被 canvas 遮挡：标题行添加 `position: relative; z-index: 1`
+- 评估报告删除后分页状态同步：从缓存列表移除并自动修正页码
+
+### 优化
+- 技能树图例改为三行垂直布局，移至阶段图例下方
+- 全屏切换去除 setTimeout hack，改用 ResizeObserver
+- 依赖链高亮/恢复保留旋转后的节点坐标
+
 ## v0.4.0 (2026-02-15) -- 分析与可视化增强
 
 ### 修复

@@ -8,7 +8,7 @@ from flask import Flask, redirect, url_for
 from app.config import config_map
 from app.extensions import db, login_manager, migrate, csrf
 
-__version__ = '0.4.0'
+__version__ = '0.4.1'
 
 
 def create_app(config_name=None):

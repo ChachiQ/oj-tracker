@@ -101,6 +101,35 @@ class TestStatsService:
             assert node['first_ac_rate'] >= 0
             assert node['avg_attempts'] >= 0
 
+    def test_knowledge_graph_stages_have_learning_weak(self, app, db, sample_data):
+        """Stages dict should include learning and weak counts."""
+        data = StatsService.get_knowledge_graph_data(sample_data['student_id'])
+        for stage_num, stage in data['stages'].items():
+            assert 'learning' in stage, f'Stage {stage_num} missing learning count'
+            assert 'weak' in stage, f'Stage {stage_num} missing weak count'
+            assert 'tags' in stage, f'Stage {stage_num} missing tags list'
+
+    def test_knowledge_graph_stages_tags_list(self, app, db, sample_data):
+        """Each stage should have a 'tags' list with expected fields."""
+        data = StatsService.get_knowledge_graph_data(sample_data['student_id'])
+        for stage_num, stage in data['stages'].items():
+            assert isinstance(stage['tags'], list), \
+                f'Stage {stage_num} tags should be a list'
+            for tag in stage['tags']:
+                assert 'name' in tag, f'Tag in stage {stage_num} missing name'
+                assert 'display_name' in tag, f'Tag in stage {stage_num} missing display_name'
+                assert 'status' in tag, f'Tag in stage {stage_num} missing status'
+                assert 'score' in tag, f'Tag in stage {stage_num} missing score'
+
+    def test_knowledge_graph_node_has_status_field(self, app, db, sample_data):
+        """Each node should have a 'status' field."""
+        data = StatsService.get_knowledge_graph_data(sample_data['student_id'])
+        valid_statuses = {'mastered', 'learning', 'weak', 'untouched'}
+        for node in data['nodes']:
+            assert 'status' in node, f'Node {node.get("id")} missing status field'
+            assert node['status'] in valid_statuses, \
+                f'Node {node.get("id")} has invalid status: {node["status"]}'
+
 
 class TestSyncService:
     def test_sync_account_not_found(self, app, db):

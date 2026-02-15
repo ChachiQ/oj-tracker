@@ -145,20 +145,40 @@ class StatsService:
             mastered = [
                 n for n in stage_nodes if n['status'] == 'mastered'
             ]
+            learning = [
+                n for n in stage_nodes if n['status'] == 'learning'
+            ]
+            weak = [
+                n for n in stage_nodes if n['status'] == 'weak'
+            ]
             stages[stage_num] = {
                 'total': len(stage_tags),
                 'involved': len(involved),
                 'mastered': len(mastered),
+                'learning': len(learning),
+                'weak': len(weak),
                 'coverage': (
                     round(len(involved) / len(stage_tags) * 100)
                     if stage_tags
                     else 0
                 ),
                 'mastery': (
-                    round(len(mastered) / len(involved) * 100)
-                    if involved
+                    round(len(mastered) / len(stage_tags) * 100)
+                    if stage_tags
                     else 0
                 ),
+                'tags': [
+                    {
+                        'name': n['id'],
+                        'display_name': n['name'],
+                        'status': n['status'],
+                        'score': n['score'],
+                        'solved': n['solved'],
+                        'attempted': n['attempted'],
+                        'pass_rate': n['pass_rate'],
+                    }
+                    for n in stage_nodes
+                ],
             }
 
         return {'nodes': nodes, 'links': links, 'stages': stages}

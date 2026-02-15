@@ -556,6 +556,71 @@ class TestKnowledgeGraphResponsive:
         attr_val = graph.get('data-student-id', '')
         assert str(sid) in attr_val.strip('"')
 
+    def test_fullscreen_button_present(self, app, logged_in_client):
+        """Graph container should have a fullscreen toggle button."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/knowledge/?student_id={sid}')
+        soup = get_soup(resp)
+
+        btn = soup.find(id='btn-graph-fullscreen')
+        assert btn is not None, 'Fullscreen toggle button should exist'
+
+    def test_fullscreen_css_uses_calc_height(self, app, logged_in_client):
+        """Fullscreen CSS should use calc(100vh - 70px) for explicit height."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/knowledge/?student_id={sid}')
+        html = resp.data.decode('utf-8')
+
+        assert 'calc(100vh - 70px)' in html, \
+            'Fullscreen CSS should use calc(100vh - 70px) for explicit height'
+
+    def test_graph_title_has_z_index(self, app, logged_in_client):
+        """Graph title bar should have z-index to stay above canvas."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/knowledge/?student_id={sid}')
+        html = resp.data.decode('utf-8')
+
+        assert 'z-index' in html, \
+            'Graph title bar should have z-index style'
+
+    def test_rotate_buttons_present(self, app, logged_in_client):
+        """Graph should have clockwise and counter-clockwise rotate buttons."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/knowledge/?student_id={sid}')
+        html = resp.data.decode('utf-8')
+
+        assert 'rotateGraphBy(-30)' in html, \
+            'Counter-clockwise rotate button should exist'
+        assert 'rotateGraphBy(30)' in html, \
+            'Clockwise rotate button should exist'
+
+    def test_assessment_card_present(self, app, logged_in_client):
+        """Assessment history card should be present in the page."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/knowledge/?student_id={sid}')
+        soup = get_soup(resp)
+
+        card = soup.find(id='ai-assessment-card')
+        assert card is not None, 'AI assessment card should exist'
+
+    def test_fullscreen_css_no_flex_height_auto(self, app, logged_in_client):
+        """Fullscreen CSS should NOT use flex:1 + height:auto (the old bug)."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/knowledge/?student_id={sid}')
+        html = resp.data.decode('utf-8')
+
+        # The old buggy pattern used flex: 1 with height: auto !important
+        has_flex1 = 'flex: 1' in html
+        has_height_auto = 'height: auto !important' in html
+        assert not (has_flex1 and has_height_auto), \
+            'Fullscreen CSS should not use flex:1 + height:auto combo'
+
 
 # ===========================================================================
 # CSS responsive classes existence in stylesheet

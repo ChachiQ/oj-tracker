@@ -63,6 +63,29 @@ class TestKnowledgeAPI:
         resp = client.get(f'/api/knowledge/{other_sid}')
         assert resp.status_code == 403
 
+    def test_knowledge_stages_structure(self, app, logged_in_client):
+        """API should return stages with learning/weak/tags fields."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/api/knowledge/{sid}')
+        assert resp.status_code == 200
+        result = resp.get_json()
+        for stage_key, stage in result['stages'].items():
+            assert 'learning' in stage, f'Stage {stage_key} missing learning'
+            assert 'weak' in stage, f'Stage {stage_key} missing weak'
+            assert 'tags' in stage, f'Stage {stage_key} missing tags'
+            assert isinstance(stage['tags'], list)
+
+    def test_knowledge_nodes_have_status(self, app, logged_in_client):
+        """API nodes should include status field."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/api/knowledge/{sid}')
+        assert resp.status_code == 200
+        result = resp.get_json()
+        for node in result['nodes']:
+            assert 'status' in node, f'Node {node.get("id")} missing status'
+
 
 class TestWeaknessAPI:
     def test_weakness_data(self, app, logged_in_client):
