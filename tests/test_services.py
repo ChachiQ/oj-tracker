@@ -24,6 +24,8 @@ class TestStatsService:
         assert 'heatmap' in data
         assert 'tag_scores' in data
         assert 'first_ac_rate' in data
+        assert 'weekly_trend' in data
+        assert 'platform_stats' in data
 
     def test_get_dashboard_data_empty_student(self, app, db):
         user = User(username='dash_user', email='dash@test.com')
@@ -35,8 +37,11 @@ class TestStatsService:
         db.session.commit()
 
         data = StatsService.get_dashboard_data(student.id)
-        assert data['basic']['total_submissions'] == 0
+        assert isinstance(data, dict)
+        assert data['stats']['total_problems'] == 0
         assert data['streak'] == 0
+        assert data['weekly_trend'] == []
+        assert data['platform_stats'] == []
 
     def test_get_knowledge_graph_data(self, app, db, sample_data):
         data = StatsService.get_knowledge_graph_data(sample_data['student_id'])
@@ -55,6 +60,46 @@ class TestStatsService:
         data = StatsService.get_trend_data(sample_data['student_id'])
         assert 'weekly' in data
         assert 'monthly' in data
+
+    def test_dashboard_total_problems_semantics(self, app, db, sample_data):
+        """stats.total_problems should equal basic.unique_attempted."""
+        data = StatsService.get_dashboard_data(sample_data['student_id'])
+        assert data['stats']['total_problems'] == data['basic']['unique_attempted']
+
+    def test_dashboard_weekly_trend(self, app, db, sample_data):
+        """weekly_trend should be a list with expected fields."""
+        data = StatsService.get_dashboard_data(sample_data['student_id'])
+        assert isinstance(data['weekly_trend'], list)
+        for item in data['weekly_trend']:
+            assert 'week' in item
+            assert 'submissions' in item
+            assert 'ac_count' in item
+            assert 'pass_rate' in item
+
+    def test_dashboard_platform_stats(self, app, db, sample_data):
+        """platform_stats should contain per-platform data including luogu."""
+        data = StatsService.get_dashboard_data(sample_data['student_id'])
+        assert isinstance(data['platform_stats'], list)
+        for item in data['platform_stats']:
+            assert 'platform' in item
+            assert 'submissions' in item
+            assert 'ac_count' in item
+            assert 'pass_rate' in item
+        # sample_data uses luogu platform
+        platforms = [item['platform'] for item in data['platform_stats']]
+        assert 'luogu' in platforms
+        luogu = [item for item in data['platform_stats'] if item['platform'] == 'luogu'][0]
+        assert luogu['submissions'] == 3
+        assert luogu['ac_count'] == 2
+
+    def test_knowledge_graph_efficiency_metrics(self, app, db, sample_data):
+        """Knowledge graph nodes should include first_ac_rate and avg_attempts."""
+        data = StatsService.get_knowledge_graph_data(sample_data['student_id'])
+        for node in data['nodes']:
+            assert 'first_ac_rate' in node
+            assert 'avg_attempts' in node
+            assert node['first_ac_rate'] >= 0
+            assert node['avg_attempts'] >= 0
 
 
 class TestSyncService:

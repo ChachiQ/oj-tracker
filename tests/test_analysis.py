@@ -7,7 +7,7 @@ from app.extensions import db
 from app.models import (
     User, Student, PlatformAccount, Problem, Submission, Tag,
 )
-from app.analysis.engine import AnalysisEngine
+from app.analysis.engine import AnalysisEngine, STAGE_WEIGHTS
 from app.analysis.weakness import WeaknessDetector, STAGE_EXPECTATIONS, GRADE_STAGE_MAP
 from app.analysis.trend import TrendAnalyzer
 
@@ -104,6 +104,36 @@ class TestAnalysisEngine:
         rate = engine.get_first_ac_rate()
         assert isinstance(rate, float)
         assert 0 <= rate <= 100
+
+    def test_time_decay(self, app, db):
+        now = datetime.utcnow()
+        assert AnalysisEngine._time_decay(now) == 1.0
+        assert abs(AnalysisEngine._time_decay(now - timedelta(days=45)) - 0.75) < 0.01
+        assert AnalysisEngine._time_decay(now - timedelta(days=90)) == 0.5
+        assert AnalysisEngine._time_decay(now - timedelta(days=180)) == 0.5
+        assert AnalysisEngine._time_decay(None) == 0.5
+
+    def test_stage_weights(self):
+        for stage in range(1, 7):
+            assert stage in STAGE_WEIGHTS
+            weights = STAGE_WEIGHTS[stage]
+            assert abs(sum(weights) - 1.0) < 0.01, \
+                f'Stage {stage} weights should sum to ~1.0, got {sum(weights)}'
+        # Stage 1 count weight > stage 5 count weight
+        assert STAGE_WEIGHTS[1][0] > STAGE_WEIGHTS[5][0]
+        # Stage 5 difficulty weight > stage 1 difficulty weight
+        assert STAGE_WEIGHTS[5][2] > STAGE_WEIGHTS[1][2]
+
+    def test_tag_scores_recent_activity(self, app, db, sample_data):
+        engine = AnalysisEngine(sample_data['student_id'])
+        scores = engine.get_tag_scores()
+        for tag_name, info in scores.items():
+            assert 'recent_activity' in info
+            assert isinstance(info['recent_activity'], bool)
+        # sample_data submissions are < 30 days old, so at least one should be recent
+        if scores:
+            has_recent = any(info['recent_activity'] for info in scores.values())
+            assert has_recent, 'At least one tag should have recent_activity=True'
 
 
 class TestWeaknessDetector:

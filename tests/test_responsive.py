@@ -38,19 +38,19 @@ class TestStatCardMacro:
     """stat_card macro should render responsive columns with correct structure."""
 
     def test_stat_cards_have_responsive_columns(self, app, logged_in_client):
-        """Each stat card wrapper should have col-6 col-md-6 col-xl-3."""
+        """Each stat card wrapper should have col-6 col-md-4 col-xl."""
         client, data = logged_in_client
         sid = data['student_id']
         resp = client.get(f'/dashboard/?student_id={sid}')
         soup = get_soup(resp)
 
         stat_cards = soup.select('.stat-card')
-        assert len(stat_cards) >= 4, 'Dashboard should have at least 4 stat cards'
+        assert len(stat_cards) >= 5, 'Dashboard should have at least 5 stat cards'
 
         for card in stat_cards:
             wrapper = card.find_parent('div', class_='col-6')
             assert wrapper is not None, 'stat_card should be wrapped in col-6'
-            assert has_classes(wrapper, 'col-6', 'col-md-6', 'col-xl-3'), \
+            assert has_classes(wrapper, 'col-6', 'col-md-4', 'col-xl'), \
                 f'stat_card wrapper missing responsive classes, got: {wrapper.get("class")}'
 
     def test_stat_card_value_id(self, app, logged_in_client):
@@ -60,10 +60,22 @@ class TestStatCardMacro:
         resp = client.get(f'/dashboard/?student_id={sid}')
         soup = get_soup(resp)
 
-        for vid in ['stat-total', 'stat-ac', 'stat-week', 'stat-streak']:
+        for vid in ['stat-total', 'stat-ac', 'stat-week', 'stat-streak', 'stat-first-ac']:
             el = soup.find(id=vid)
             assert el is not None, f'stat_card should render value_id={vid}'
             assert 'stat-value' in el.get('class', [])
+
+    def test_first_ac_stat_card(self, app, logged_in_client):
+        """Dashboard should have stat-first-ac card with stat-value class."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/dashboard/?student_id={sid}')
+        soup = get_soup(resp)
+
+        el = soup.find(id='stat-first-ac')
+        assert el is not None, 'Dashboard should have id="stat-first-ac"'
+        assert 'stat-value' in el.get('class', []), \
+            'stat-first-ac should have stat-value class'
 
     def test_report_detail_responsive_layout(self, app, logged_in_client):
         """Report detail page should have responsive col-12 col-lg-* layout."""
@@ -149,7 +161,7 @@ class TestChartBoxMacro:
         resp = client.get(f'/dashboard/?student_id={sid}')
         soup = get_soup(resp)
 
-        for chart_id in ['radar-chart', 'heatmap-chart', 'difficulty-chart']:
+        for chart_id in ['radar-chart', 'heatmap-chart', 'difficulty-chart', 'status-chart', 'trend-chart']:
             el = soup.find(id=chart_id)
             assert el is not None, f'Chart container {chart_id} not found'
             assert 'chart-responsive' in el.get('class', []), \
@@ -175,7 +187,18 @@ class TestChartBoxMacro:
         soup = get_soup(resp)
 
         chart_titles = soup.select('.chart-title')
-        assert len(chart_titles) >= 3, 'Dashboard should have at least 3 chart titles'
+        assert len(chart_titles) >= 5, 'Dashboard should have at least 5 chart titles'
+
+    def test_dashboard_new_chart_containers(self, app, logged_in_client):
+        """Dashboard HTML should contain new chart containers."""
+        client, data = logged_in_client
+        sid = data['student_id']
+        resp = client.get(f'/dashboard/?student_id={sid}')
+        soup = get_soup(resp)
+
+        for container_id in ['status-chart', 'trend-chart', 'platform-stats']:
+            el = soup.find(id=container_id)
+            assert el is not None, f'Dashboard should contain id="{container_id}"'
 
 
 class TestEmptyStateMacro:
@@ -696,6 +719,22 @@ class TestJSContainsMobileChecks:
         assert 'repulsion' in content
         assert 'gravity' in content
         assert 'edgeLength' in content
+
+    def test_knowledge_graph_js_dependency_highlight(self):
+        """knowledge_graph.js should contain dependency highlighting functions."""
+        with open('app/static/js/knowledge_graph.js', 'r') as f:
+            content = f.read()
+        for func in ['buildDependencyMaps', 'toggleDependencyHighlight',
+                      'restoreGraph', 'findAllAncestors', 'findAllDescendants']:
+            assert func in content, \
+                f'knowledge_graph.js should contain {func}'
+
+    def test_knowledge_graph_js_jump_link(self):
+        """knowledge_graph.js should support problem list jump links."""
+        with open('app/static/js/knowledge_graph.js', 'r') as f:
+            content = f.read()
+        assert 'encodeURIComponent' in content, \
+            'knowledge_graph.js should use encodeURIComponent for jump links'
 
     def test_report_js_mobile_radar_config(self):
         """Report radar should adjust radius for mobile."""

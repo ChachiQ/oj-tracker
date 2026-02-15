@@ -17,6 +17,8 @@ class TestDashboardAPI:
         assert 'weekly' in result
         assert 'streak' in result
         assert 'heatmap' in result
+        assert 'weekly_trend' in result
+        assert 'platform_stats' in result
 
     def test_dashboard_unauthorized(self, app, db, logged_in_client):
         """Cannot access another user's student dashboard data."""
