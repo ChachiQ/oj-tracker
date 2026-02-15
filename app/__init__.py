@@ -1,12 +1,14 @@
 import os
 
+from datetime import datetime
+
 from dotenv import load_dotenv
 from flask import Flask, redirect, url_for
 
 from app.config import config_map
 from app.extensions import db, login_manager, migrate, csrf
 
-__version__ = '0.3.0'
+__version__ = '0.3.1'
 
 
 def create_app(config_name=None):
@@ -61,6 +63,30 @@ def create_app(config_name=None):
 
     # Register blueprints
     _register_blueprints(app)
+
+    # Register custom Jinja2 filters
+    @app.template_filter('smarttime')
+    def smarttime_filter(dt):
+        """将 datetime 格式化为微信风格的智能相对时间。"""
+        if not dt:
+            return '-'
+        now = datetime.now()
+        today = now.date()
+        dt_date = dt.date() if isinstance(dt, datetime) else dt
+        delta_days = (today - dt_date).days
+
+        if delta_days == 0:
+            return dt.strftime('%H:%M')
+        elif delta_days == 1:
+            return '昨天'
+        elif delta_days == 2:
+            return '前天'
+        elif delta_days <= 7:
+            return f'{delta_days}天前'
+        elif dt.year == now.year:
+            return dt.strftime('%m-%d')
+        else:
+            return dt.strftime('%Y-%m-%d')
 
     # Inject version into all templates
     @app.context_processor

@@ -283,12 +283,13 @@ All foundational features complete:
 - UserSetting model: user config key-value store
 - 211 automated test cases
 
-### v0.3.0 -- Scraper Refinement & Stability
+### v0.3.0 / v0.3.1 (2026-02-14 ~ 2026-02-15) -- Scraper Stability & Problem List UX ✅
 
-Planned:
-- Luogu scraper optimization: session management, incremental sync tuning
-- Scraper error retry mechanism and alerts
-- Knowledge point seed data refinement
+- Scraper stability: consecutive failure tracking, platform-level shared rate limiting, Luogu 429 retry, MAX_PAGES safety limit
+- Dashboard/knowledge graph improvements: recent submissions, recommended exercises, field fixes
+- Sync AJAX + full-screen spinner progress display
+- Problem list UX: smart time display, fast tooltip, page jump
+- 8 new knowledge point tags + Chinese descriptions + upsert seed
 
 ### v0.4.0 -- Analysis & Visualization Enhancement
 

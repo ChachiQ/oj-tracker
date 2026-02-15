@@ -70,6 +70,8 @@
                     <th class="{{ table_col_class('md') }}">难度</th>
                     <th class="{{ table_col_class('lg') }}">知识点</th>
                     <th class="{{ table_col_class('lg') }}">AI 分类</th>
+                    <th class="{{ table_col_class('md') }}">最近提交</th>
+                    <th class="{{ table_col_class('md') }}">提交状态</th>
                     <th class="text-center">操作</th>
                 </tr>
             </thead>
@@ -124,6 +126,30 @@
                         <span class="text-muted">-</span>
                         {% endif %}
                     </td>
+                    {% set sub_info = latest_submissions.get(problem.id) %}
+                    <td class="{{ table_col_class('md') }}">
+                        {% if sub_info %}
+                        <small data-bs-toggle="tooltip" data-bs-title="{{ sub_info.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}">{{ sub_info.submitted_at|smarttime }}</small>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="{{ table_col_class('md') }}">
+                        {% if sub_info %}
+                        <span class="badge
+                            {% if sub_info.status == 'AC' %}badge-ac
+                            {% elif sub_info.status == 'WA' %}badge-wa
+                            {% elif sub_info.status == 'TLE' %}badge-tle
+                            {% elif sub_info.status == 'MLE' %}badge-mle
+                            {% elif sub_info.status == 'RE' %}badge-re
+                            {% elif sub_info.status == 'CE' %}badge-ce
+                            {% else %}bg-secondary{% endif %}">
+                            {{ sub_info.status }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
                     <td class="text-center">
                         <a href="{{ url_for('problem.detail', problem_id=problem.id) }}" class="btn btn-sm btn-outline-primary">
                             <i class="bi bi-eye"></i>
@@ -138,11 +164,13 @@
 
 <!-- Pagination -->
 {% if pagination %}
-<nav class="mt-4 d-flex justify-content-center">
-    <ul class="pagination pagination-sm">
+{% set paging_args = request.args.to_dict() %}
+{% set _ = paging_args.pop('page', None) %}
+<nav class="mt-4 d-flex justify-content-center align-items-center">
+    <ul class="pagination pagination-sm mb-0">
         {% if pagination.has_prev %}
         <li class="page-item">
-            <a class="page-link" href="{{ url_for('problem.list_problems', page=pagination.prev_num, **request.args) }}">
+            <a class="page-link" href="{{ url_for('problem.list_problems', page=pagination.prev_num, **paging_args) }}">
                 <i class="bi bi-chevron-left"></i> 上一页
             </a>
         </li>
@@ -155,7 +183,7 @@
         {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
             {% if page_num %}
                 <li class="page-item {% if page_num == pagination.page %}active{% endif %}">
-                    <a class="page-link" href="{{ url_for('problem.list_problems', page=page_num, **request.args) }}">
+                    <a class="page-link" href="{{ url_for('problem.list_problems', page=page_num, **paging_args) }}">
                         {{ page_num }}
                     </a>
                 </li>
@@ -166,7 +194,7 @@
 
         {% if pagination.has_next %}
         <li class="page-item">
-            <a class="page-link" href="{{ url_for('problem.list_problems', page=pagination.next_num, **request.args) }}">
+            <a class="page-link" href="{{ url_for('problem.list_problems', page=pagination.next_num, **paging_args) }}">
                 下一页 <i class="bi bi-chevron-right"></i>
             </a>
         </li>
@@ -176,6 +204,27 @@
         </li>
         {% endif %}
     </ul>
+    {% if pagination.pages > 1 %}
+    <form class="d-flex align-items-center ms-3 gap-1" id="page-jump-form">
+        <input type="number" class="form-control form-control-sm" id="page-jump-input"
+               min="1" max="{{ pagination.pages }}" placeholder="页码"
+               style="width: 5em;" aria-label="跳转页码">
+        <span class="text-muted text-nowrap" style="font-size:.8rem">/{{ pagination.pages }}</span>
+        <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap">跳转</button>
+    </form>
+    <script>
+    document.getElementById('page-jump-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        var input = document.getElementById('page-jump-input');
+        var page = parseInt(input.value, 10);
+        if (page >= 1 && page <= {{ pagination.pages }}) {
+            var params = new URLSearchParams(window.location.search);
+            params.set('page', page);
+            window.location.href = window.location.pathname + '?' + params.toString();
+        }
+    });
+    </script>
+    {% endif %}
 </nav>
 {% endif %}
 

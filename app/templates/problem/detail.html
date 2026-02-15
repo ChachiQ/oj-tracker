@@ -47,7 +47,7 @@
 
 <div class="row g-4">
     <!-- Left Column: Problem Content -->
-    <div class="col-12 col-lg-8">
+    <div class="col-12 col-md-8">
         <!-- Tags -->
         {% if problem.tags and problem.tags|length > 0 %}
         <div class="chart-container">
@@ -131,7 +131,7 @@
     </div>
 
     <!-- Right Column: Submissions -->
-    <div class="col-12 col-lg-4">
+    <div class="col-12 col-md-4">
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-clock-history"></i> 提交记录</div>
             {% if submissions and submissions|length > 0 %}
@@ -152,55 +152,63 @@
                             </span>
                             <small class="text-muted ms-2">{{ sub.language or '' }}</small>
                         </div>
-                        <small class="text-muted">
-                            {{ sub.submitted_at.strftime('%m-%d %H:%M') if sub.submitted_at else '' }}
+                        <small class="text-muted" {% if sub.submitted_at %}data-bs-toggle="tooltip" data-bs-title="{{ sub.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}"{% endif %}>
+                            {{ sub.submitted_at|smarttime if sub.submitted_at else '' }}
                         </small>
                     </div>
-                    {% if sub.platform_account and sub.platform_account.student %}
-                    <small class="text-muted"><i class="bi bi-person"></i> {{ sub.platform_account.student.name }}</small>
-                    {% endif %}
-
-                    <!-- Execution Info -->
-                    {% if sub.time_ms is not none or sub.memory_kb is not none %}
-                    <div class="mt-1">
-                        {% if sub.time_ms is not none %}
-                        <small class="text-muted me-2"><i class="bi bi-stopwatch"></i> {{ sub.time_ms }}ms</small>
+                    <div class="d-flex justify-content-between align-items-center mt-1">
+                        <div>
+                            {% if sub.platform_account and sub.platform_account.student %}
+                            <small class="text-muted"><i class="bi bi-person"></i> {{ sub.platform_account.student.name }}</small>
+                            {% endif %}
+                        </div>
+                        {% if sub.time_ms is not none or sub.memory_kb is not none %}
+                        <div class="text-end">
+                            {% if sub.time_ms is not none %}
+                            <small class="text-muted me-2"><i class="bi bi-stopwatch"></i> {{ sub.time_ms }}ms</small>
+                            {% endif %}
+                            {% if sub.memory_kb is not none %}
+                            <small class="text-muted"><i class="bi bi-memory"></i> {{ sub.memory_kb }}KB</small>
+                            {% endif %}
+                        </div>
                         {% endif %}
-                        {% if sub.memory_kb is not none %}
-                        <small class="text-muted"><i class="bi bi-memory"></i> {{ sub.memory_kb }}KB</small>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    {% if sub.source_code or analysis_results.get(sub.id) %}
+                    <div class="mt-2 d-flex gap-2">
+                        {% if sub.source_code %}
+                        <button class="btn btn-sm btn-outline-secondary" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#code-{{ sub.id }}"
+                                aria-expanded="false" aria-controls="code-{{ sub.id }}">
+                            <i class="bi bi-code"></i> 查看代码
+                        </button>
+                        {% endif %}
+                        {% if analysis_results.get(sub.id) %}
+                        <button class="btn btn-sm btn-outline-info" type="button"
+                                data-bs-toggle="collapse" data-bs-target="#ai-{{ sub.id }}"
+                                aria-expanded="false" aria-controls="ai-{{ sub.id }}">
+                            <i class="bi bi-robot"></i> AI 分析
+                        </button>
                         {% endif %}
                     </div>
                     {% endif %}
 
                     <!-- Code Viewer (Collapsible) -->
                     {% if sub.source_code %}
-                    <div class="mt-2">
-                        <button class="btn btn-sm btn-outline-secondary" type="button"
-                                data-bs-toggle="collapse" data-bs-target="#code-{{ sub.id }}"
-                                aria-expanded="false" aria-controls="code-{{ sub.id }}">
-                            <i class="bi bi-code"></i> 查看代码
-                        </button>
-                        <div class="collapse mt-2" id="code-{{ sub.id }}">
-                            <pre class="code-viewer"><code>{{ sub.source_code }}</code></pre>
-                        </div>
+                    <div class="collapse mt-2" id="code-{{ sub.id }}">
+                        <pre class="code-viewer"><code>{{ sub.source_code }}</code></pre>
                     </div>
                     {% endif %}
 
-                    <!-- AI Analysis for Submission -->
+                    <!-- AI Analysis (Collapsible) -->
                     {% if analysis_results.get(sub.id) %}
-                    <div class="mt-2">
-                        <button class="btn btn-sm btn-outline-info" type="button"
-                                data-bs-toggle="collapse" data-bs-target="#ai-{{ sub.id }}"
-                                aria-expanded="false" aria-controls="ai-{{ sub.id }}">
-                            <i class="bi bi-robot"></i> AI 分析
-                        </button>
-                        <div class="collapse mt-2" id="ai-{{ sub.id }}">
-                            {% for result in analysis_results[sub.id] %}
-                            <div class="alert alert-info mb-1">
-                                <small>{{ result.summary }}</small>
-                            </div>
-                            {% endfor %}
+                    <div class="collapse mt-2" id="ai-{{ sub.id }}">
+                        {% for result in analysis_results[sub.id] %}
+                        <div class="alert alert-info mb-1">
+                            <small>{{ result.summary }}</small>
                         </div>
+                        {% endfor %}
                     </div>
                     {% endif %}
                 </div>

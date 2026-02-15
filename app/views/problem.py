@@ -2,6 +2,7 @@ import json
 
 from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
+from sqlalchemy import func, case
 from app.extensions import db
 from app.models import (
     Problem,
@@ -24,6 +25,13 @@ def list_problems():
     difficulty = request.args.get('difficulty', 0, type=int)
     search = request.args.get('q', '')
 
+    # Gather account IDs for current user's students
+    students = Student.query.filter_by(parent_id=current_user.id).all()
+    account_ids = []
+    for s in students:
+        for a in s.platform_accounts:
+            account_ids.append(a.id)
+
     query = Problem.query
     if platform:
         query = query.filter_by(platform=platform)
@@ -34,11 +42,68 @@ def list_problems():
     if search:
         query = query.filter(Problem.title.contains(search))
 
-    pagination = query.order_by(Problem.created_at.desc()).paginate(
-        page=page, per_page=20, error_out=False
-    )
+    # Subquery: latest submission time per problem for this user's accounts
+    if account_ids:
+        latest_sub = (
+            db.session.query(
+                Submission.problem_id_ref.label('problem_id'),
+                func.max(Submission.submitted_at).label('latest_at'),
+            )
+            .filter(Submission.platform_account_id.in_(account_ids))
+            .group_by(Submission.problem_id_ref)
+            .subquery()
+        )
+        query = query.outerjoin(
+            latest_sub, Problem.id == latest_sub.c.problem_id
+        ).order_by(
+            case((latest_sub.c.latest_at.is_(None), 1), else_=0),
+            latest_sub.c.latest_at.desc(),
+        )
+    else:
+        query = query.order_by(Problem.created_at.desc())
+
+    pagination = query.paginate(page=page, per_page=20, error_out=False)
     tags = Tag.query.order_by(Tag.stage, Tag.name).all()
     platforms = db.session.query(Problem.platform).distinct().all()
+
+    # Batch-fetch latest submission (time + status) for current page's problems
+    latest_submissions = {}
+    problem_ids = [p.id for p in pagination.items]
+    if account_ids and problem_ids:
+        # Subquery to get max submitted_at per problem
+        max_time = (
+            db.session.query(
+                Submission.problem_id_ref,
+                func.max(Submission.submitted_at).label('max_at'),
+            )
+            .filter(
+                Submission.platform_account_id.in_(account_ids),
+                Submission.problem_id_ref.in_(problem_ids),
+            )
+            .group_by(Submission.problem_id_ref)
+            .subquery()
+        )
+        rows = (
+            db.session.query(
+                Submission.problem_id_ref,
+                Submission.submitted_at,
+                Submission.status,
+            )
+            .join(
+                max_time,
+                db.and_(
+                    Submission.problem_id_ref == max_time.c.problem_id_ref,
+                    Submission.submitted_at == max_time.c.max_at,
+                ),
+            )
+            .filter(Submission.platform_account_id.in_(account_ids))
+            .all()
+        )
+        for row in rows:
+            latest_submissions[row.problem_id_ref] = {
+                'submitted_at': row.submitted_at,
+                'status': row.status,
+            }
 
     return render_template(
         'problem/list.html',
@@ -50,6 +115,7 @@ def list_problems():
         current_tag=tag_name,
         current_difficulty=difficulty,
         search=search,
+        latest_submissions=latest_submissions,
     )
 
 
