@@ -44,9 +44,23 @@ def init_scheduler(app):
             from app.analysis.problem_classifier import ProblemClassifier
             from app.models import Submission, AnalysisResult
 
+            # Auto-discover a user with AI API key configured
+            from app.models import UserSetting
+            ai_user_id = None
+            for key in ('api_key_zhipu', 'api_key_claude', 'api_key_openai'):
+                setting = UserSetting.query.filter_by(key=key).filter(
+                    UserSetting.value.isnot(None),
+                    UserSetting.value != '',
+                ).first()
+                if setting:
+                    ai_user_id = setting.user_id
+                    break
+
             # Classify unanalyzed problems
             classifier = ProblemClassifier(app)
-            classified = classifier.classify_unanalyzed(limit=20)
+            classified = classifier.classify_unanalyzed(
+                limit=20, user_id=ai_user_id,
+            )
             logger.info(f"Classified {classified} problems")
 
             # Analyze recent non-AC submissions without analysis

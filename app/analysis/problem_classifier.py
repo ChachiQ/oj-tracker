@@ -8,9 +8,11 @@ Results are persisted on the Problem model (M2M tags + difficulty) for future us
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 from flask import current_app
+from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import Problem, Tag, UserSetting
@@ -19,6 +21,8 @@ from .llm.config import MODEL_CONFIG
 from .prompts.problem_classify import build_classify_prompt
 
 logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 3
 
 
 class ProblemClassifier:
@@ -98,7 +102,9 @@ class ProblemClassifier:
     def classify_problem(self, problem_id: int, user_id: int = None) -> bool:
         """Classify a single problem using AI.
 
-        Skips problems that have already been analyzed (ai_analyzed=True).
+        Skips problems that have already been successfully analyzed
+        (ai_analyzed=True) unless they have an error recorded (eligible
+        for retry up to MAX_RETRIES).
 
         Args:
             problem_id: Database ID of the problem to classify.
@@ -108,7 +114,10 @@ class ProblemClassifier:
             True if classification was successful, False otherwise.
         """
         problem = Problem.query.get(problem_id)
-        if not problem or problem.ai_analyzed:
+        if not problem:
+            return False
+        # Skip already-analyzed problems that have no error
+        if problem.ai_analyzed and not problem.ai_analysis_error:
             return False
 
         provider, model = self._get_llm(user_id)
@@ -186,6 +195,7 @@ class ProblemClassifier:
                 problem.ai_problem_type = ""
 
             problem.ai_analyzed = True
+            problem.ai_analysis_error = None  # Clear any previous error
             db.session.commit()
             logger.info(
                 f"Classified problem {problem.platform}:{problem.problem_id} "
@@ -196,24 +206,78 @@ class ProblemClassifier:
             return True
 
         except Exception as e:
+            error_msg = str(e)[:500]
             logger.error(f"Problem classification failed for {problem_id}: {e}")
+            problem.ai_analysis_error = error_msg
+            problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
+            db.session.commit()
             return False
 
-    def classify_unanalyzed(self, limit: int = 20, user_id: int = None) -> int:
-        """Classify unanalyzed problems in batch.
+    def classify_unanalyzed(
+        self, limit: int = 20, user_id: int = None, max_workers: int = 4,
+    ) -> int:
+        """Classify unanalyzed problems in batch using concurrent threads.
 
-        Processes up to `limit` problems that have not yet been AI-analyzed.
+        Processes up to ``limit`` problems that have not yet been AI-analyzed
+        or that previously failed but are still eligible for retry.
 
         Args:
             limit: Maximum number of problems to classify in this batch.
             user_id: Optional user id to load per-user AI configuration.
+            max_workers: Number of concurrent threads (default 4).
 
         Returns:
             Number of problems successfully classified.
         """
-        problems = Problem.query.filter_by(ai_analyzed=False).limit(limit).all()
+        problems = (
+            Problem.query.filter(
+                or_(
+                    Problem.ai_analyzed.is_(False),
+                    db.and_(
+                        Problem.ai_analysis_error.isnot(None),
+                        Problem.ai_retry_count < MAX_RETRIES,
+                    ),
+                )
+            )
+            .limit(limit)
+            .all()
+        )
+
+        if not problems:
+            return 0
+
+        problem_ids = [p.id for p in problems]
+
+        # Use serial processing when only 1 worker or in-memory SQLite
+        db_uri = self.app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        use_serial = max_workers <= 1 or db_uri == 'sqlite:///:memory:'
+
+        if use_serial:
+            classified = 0
+            for pid in problem_ids:
+                if self.classify_problem(pid, user_id=user_id):
+                    classified += 1
+            return classified
+
+        app = self.app
+
+        def _classify_one(pid):
+            with app.app_context():
+                classifier = ProblemClassifier(app=app)
+                return classifier.classify_problem(pid, user_id=user_id)
+
         classified = 0
-        for p in problems:
-            if self.classify_problem(p.id, user_id=user_id):
-                classified += 1
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_classify_one, pid): pid
+                for pid in problem_ids
+            }
+            for future in as_completed(futures):
+                pid = futures[future]
+                try:
+                    if future.result():
+                        classified += 1
+                except Exception as e:
+                    logger.error(f"Thread error classifying {pid}: {e}")
+
         return classified

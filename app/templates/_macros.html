@@ -83,6 +83,15 @@
 
 {# student_selector - Student dropdown selector with responsive layout
    Params: students, selected_id, base_url, label, show_all #}
+{# difficulty_badge - Colored difficulty badge for 0-10 scale
+   Params: difficulty (integer 0-10) #}
+{% macro difficulty_badge(difficulty) %}
+{% set diff = difficulty|int if difficulty else 0 %}
+{% set labels = {0: '未评级', 1: '入门', 2: '入门+', 3: '普及-', 4: '普及', 5: '提高-', 6: '提高', 7: '省选-', 8: '省选', 9: 'NOI-', 10: 'NOI'} %}
+<span class="badge badge-diff-{{ diff }}">{{ labels.get(diff, '未评级') }} {{ diff }}</span>
+{% endmacro %}
+
+
 {% macro student_selector(students, selected_id, base_url, label='当前学生：', show_all=false) %}
 {% if students and students|length > 0 %}
 <div class="d-flex align-items-center flex-wrap gap-2">

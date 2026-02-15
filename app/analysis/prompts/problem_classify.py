@@ -8,11 +8,25 @@ Builds a prompt that instructs the LLM to:
 """
 from __future__ import annotations
 
+import time
+
 from app.models import Tag
+
+# Simple TTL cache for tag reference text
+_tag_ref_cache: dict[str, object] = {'text': '', 'expires_at': 0.0}
+_TAG_REF_TTL = 300  # 5 minutes
 
 
 def _build_tag_reference() -> str:
-    """Build a tag reference list from the Tag table for the prompt."""
+    """Build a tag reference list from the Tag table for the prompt.
+
+    Results are cached in memory for 5 minutes to avoid repeated DB queries
+    when classifying multiple problems in a batch.
+    """
+    now = time.monotonic()
+    if _tag_ref_cache['text'] and now < _tag_ref_cache['expires_at']:
+        return _tag_ref_cache['text']
+
     tags = Tag.query.order_by(Tag.stage, Tag.name).all()
     lines = []
     current_stage = None
@@ -26,7 +40,11 @@ def _build_tag_reference() -> str:
             label = stage_names.get(current_stage, f'Stage {current_stage}')
             lines.append(f"\n## Stage {current_stage} - {label}")
         lines.append(f"- {tag.name}: {tag.display_name}")
-    return '\n'.join(lines)
+
+    result = '\n'.join(lines)
+    _tag_ref_cache['text'] = result
+    _tag_ref_cache['expires_at'] = now + _TAG_REF_TTL
+    return result
 
 
 def build_classify_prompt(
