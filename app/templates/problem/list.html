@@ -76,7 +76,19 @@
                 <tr>
                     <th>平台</th>
                     <th>标题</th>
-                    <th class="{{ table_col_class('md') }}">难度</th>
+                    <th class="{{ table_col_class('md') }}">难度
+                        <span class="diff-hint-wrap">
+                            <i class="bi bi-question-circle text-muted" style="font-weight:normal; cursor:help;"></i>
+                            <span class="diff-hint-panel">
+                                <span class="badge badge-diff-1">1 入门</span> <span class="badge badge-diff-2">2 入门+</span><br>
+                                <span class="badge badge-diff-3">3 普及-</span> <span class="badge badge-diff-4">4 普及</span><br>
+                                <span class="badge badge-diff-5">5 提高-</span> <span class="badge badge-diff-6">6 提高</span><br>
+                                <span class="badge badge-diff-7">7 省选-</span> <span class="badge badge-diff-8">8 省选</span><br>
+                                <span class="badge badge-diff-9">9 NOI-</span> <span class="badge badge-diff-10">10 NOI</span><br>
+                                <span class="badge badge-diff-0">0 未评级</span>
+                            </span>
+                        </span>
+                    </th>
                     <th class="{{ table_col_class('lg') }}">知识点</th>
                     <th class="{{ table_col_class('lg') }}">AI 分类</th>
                     <th class="{{ table_col_class('md') }}">最近提交</th>

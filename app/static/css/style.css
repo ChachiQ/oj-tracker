@@ -149,6 +149,31 @@ main {
     color: white;
 }
 
+/* Difficulty hint hover panel */
+.diff-hint-wrap {
+    position: relative;
+    display: inline-block;
+}
+
+.diff-hint-panel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1050;
+    background: #fff;
+    border: 1px solid #e3e6f0;
+    border-radius: 0.35rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    padding: 0.5rem 0.65rem;
+    white-space: nowrap;
+    line-height: 2;
+}
+
+.diff-hint-wrap:hover .diff-hint-panel {
+    display: block;
+}
+
 /* Difficulty Badges (1-10 scale, Luogu-inspired) */
 .badge-diff-0 {
     background-color: #BFBFBF;
