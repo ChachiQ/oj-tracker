@@ -1,6 +1,7 @@
 import json
+from datetime import datetime
 
-from flask import Blueprint, jsonify, request, Response, stream_with_context
+from flask import Blueprint, jsonify, request, Response, stream_with_context, current_app
 from flask_login import login_required, current_user
 from app.models import Student, Problem, Submission, PlatformAccount, Tag, AnalysisResult
 from app.services.stats_service import StatsService
@@ -102,7 +103,7 @@ def submissions(student_id):
             'time_ms': sub.time_ms,
             'memory_kb': sub.memory_kb,
             'submitted_at': (
-                sub.submitted_at.strftime('%Y-%m-%d %H:%M:%S')
+                current_app.to_display_tz(sub.submitted_at).strftime('%Y-%m-%d %H:%M:%S')
                 if sub.submitted_at
                 else ''
             ),
@@ -179,10 +180,9 @@ def knowledge_assessment(student_id):
     ]
 
     if latest_log:
-        from datetime import timezone
-        latest_report_time = latest_log.created_at.replace(
-            tzinfo=timezone.utc
-        ).astimezone().strftime('%Y-%m-%d %H:%M')
+        latest_report_time = current_app.to_display_tz(
+            latest_log.created_at
+        ).strftime('%Y-%m-%d %H:%M')
         if account_ids:
             new_submissions_since_report = Submission.query.filter(
                 Submission.platform_account_id.in_(account_ids),
@@ -286,6 +286,26 @@ def _user_owns_problem(problem_id):
     return problem if has_sub else None
 
 
+def _safe_parse_result(result):
+    """Safely parse analysis result into API response dict."""
+    analysis = None
+    if result.result_json:
+        try:
+            analysis = json.loads(result.result_json)
+        except (json.JSONDecodeError, TypeError):
+            analysis = {'raw': result.result_json}
+    analyzed_at_str = None
+    if result.analyzed_at and isinstance(result.analyzed_at, datetime):
+        display_dt = current_app.to_display_tz(result.analyzed_at)
+        analyzed_at_str = display_dt.strftime('%Y-%m-%d %H:%M')
+    return {
+        'success': True,
+        'analysis': analysis,
+        'analyzed_at': analyzed_at_str,
+        'ai_model': result.ai_model,
+    }
+
+
 @api_bp.route('/problem/<int:problem_id>/solution', methods=['POST'])
 @login_required
 def problem_solution(problem_id):
@@ -305,12 +325,7 @@ def problem_solution(problem_id):
     if not result:
         return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
 
-    return jsonify({
-        'success': True,
-        'analysis': json.loads(result.result_json) if result.result_json else None,
-        'analyzed_at': result.analyzed_at.strftime('%Y-%m-%d %H:%M'),
-        'ai_model': result.ai_model,
-    })
+    return jsonify(_safe_parse_result(result))
 
 
 @api_bp.route('/problem/<int:problem_id>/full-solution', methods=['POST'])
@@ -332,12 +347,7 @@ def problem_full_solution(problem_id):
     if not result:
         return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
 
-    return jsonify({
-        'success': True,
-        'analysis': json.loads(result.result_json) if result.result_json else None,
-        'analyzed_at': result.analyzed_at.strftime('%Y-%m-%d %H:%M'),
-        'ai_model': result.ai_model,
-    })
+    return jsonify(_safe_parse_result(result))
 
 
 @api_bp.route('/submission/<int:submission_id>/review', methods=['POST'])
@@ -369,9 +379,4 @@ def submission_review(submission_id):
     if not result:
         return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
 
-    return jsonify({
-        'success': True,
-        'analysis': json.loads(result.result_json) if result.result_json else None,
-        'analyzed_at': result.analyzed_at.strftime('%Y-%m-%d %H:%M'),
-        'ai_model': result.ai_model,
-    })
+    return jsonify(_safe_parse_result(result))

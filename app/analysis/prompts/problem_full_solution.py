@@ -56,6 +56,13 @@ def build_problem_full_solution_prompt(
 
 {problem_text}
 
+要求：
+- approach 限 2-3 句话
+- code 只保留必要注释，不写多余空行
+- explanation 限 3-5 句关键说明，不要逐行解释
+- alternative_approaches 最多 2 个，每个一句话
+- 控制总回复在 2000 字以内
+
 请严格按以下 JSON 格式返回（不要包含任何 JSON 以外的文字）：
 {{
   "approach": "解题思路概述",

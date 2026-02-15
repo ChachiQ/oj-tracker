@@ -27,6 +27,9 @@ class BaseConfig:
     # AI budget control
     AI_MONTHLY_BUDGET = float(os.environ.get('AI_MONTHLY_BUDGET', '5.0'))
 
+    # Display timezone (integer UTC offset, default 8 = UTC+8 Beijing)
+    DISPLAY_TIMEZONE_OFFSET = int(os.environ.get('DISPLAY_TIMEZONE_OFFSET', '8'))
+
     # Scraper settings
     SCRAPER_RATE_LIMIT = float(os.environ.get('SCRAPER_RATE_LIMIT', '0.5'))
 

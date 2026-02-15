@@ -31,6 +31,28 @@ from .prompts.submission_review import build_submission_review_prompt
 logger = logging.getLogger(__name__)
 
 
+def _clean_llm_json(text: str) -> str:
+    """Extract JSON from LLM response that may be wrapped in markdown code blocks."""
+    if not text:
+        return text
+    stripped = text.strip()
+    # Strip ```json ... ``` or ``` ... ```
+    if stripped.startswith('```'):
+        first_nl = stripped.find('\n')
+        if first_nl != -1:
+            stripped = stripped[first_nl + 1:]
+        if stripped.endswith('```'):
+            stripped = stripped[:-3].rstrip()
+    # Fallback: if not starting with {, extract first { to last }
+    stripped = stripped.strip()
+    if stripped and stripped[0] != '{':
+        start = stripped.find('{')
+        end = stripped.rfind('}')
+        if start != -1 and end > start:
+            stripped = stripped[start:end + 1]
+    return stripped
+
+
 class AIAnalyzer:
     """Orchestrates AI analysis of submissions and problem journeys.
 
@@ -342,7 +364,15 @@ class AIAnalyzer:
             problem_id_ref=problem_id, analysis_type=analysis_type,
         ).first()
         if existing and not force:
-            return existing
+            if existing.result_json:
+                try:
+                    json.loads(existing.result_json)
+                    return existing
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Empty or invalid result_json → delete and re-analyze
+            db.session.delete(existing)
+            db.session.commit()
         if existing and force:
             db.session.delete(existing)
             db.session.commit()
@@ -370,10 +400,11 @@ class AIAnalyzer:
             provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model)
 
+            cleaned = _clean_llm_json(response.content)
             result = AnalysisResult(
                 problem_id_ref=problem_id,
                 analysis_type=analysis_type,
-                result_json=response.content,
+                result_json=cleaned,
                 ai_model=response.model,
                 token_cost=response.input_tokens + response.output_tokens,
                 cost_usd=response.cost,
@@ -381,10 +412,10 @@ class AIAnalyzer:
             )
 
             try:
-                parsed = json.loads(response.content)
+                parsed = json.loads(cleaned)
                 result.summary = parsed.get("approach", "")
             except json.JSONDecodeError:
-                result.summary = response.content[:500]
+                result.summary = (response.content or "")[:500]
 
             db.session.add(result)
             db.session.commit()
@@ -413,7 +444,15 @@ class AIAnalyzer:
             problem_id_ref=problem_id, analysis_type=analysis_type,
         ).first()
         if existing and not force:
-            return existing
+            if existing.result_json:
+                try:
+                    json.loads(existing.result_json)
+                    return existing
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Empty or invalid result_json → delete and re-analyze
+            db.session.delete(existing)
+            db.session.commit()
         if existing and force:
             db.session.delete(existing)
             db.session.commit()
@@ -439,12 +478,13 @@ class AIAnalyzer:
 
         try:
             provider, model = self._get_llm("basic", user_id=user_id)
-            response = provider.chat(messages, model=model, max_tokens=4096)
+            response = provider.chat(messages, model=model, max_tokens=8192)
 
+            cleaned = _clean_llm_json(response.content)
             result = AnalysisResult(
                 problem_id_ref=problem_id,
                 analysis_type=analysis_type,
-                result_json=response.content,
+                result_json=cleaned,
                 ai_model=response.model,
                 token_cost=response.input_tokens + response.output_tokens,
                 cost_usd=response.cost,
@@ -452,10 +492,10 @@ class AIAnalyzer:
             )
 
             try:
-                parsed = json.loads(response.content)
+                parsed = json.loads(cleaned)
                 result.summary = parsed.get("approach", "")
             except json.JSONDecodeError:
-                result.summary = response.content[:500]
+                result.summary = (response.content or "")[:500]
 
             db.session.add(result)
             db.session.commit()
@@ -484,7 +524,15 @@ class AIAnalyzer:
             submission_id=submission_id, analysis_type=analysis_type,
         ).first()
         if existing and not force:
-            return existing
+            if existing.result_json:
+                try:
+                    json.loads(existing.result_json)
+                    return existing
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Empty or invalid result_json → delete and re-analyze
+            db.session.delete(existing)
+            db.session.commit()
         if existing and force:
             db.session.delete(existing)
             db.session.commit()
@@ -522,10 +570,11 @@ class AIAnalyzer:
             provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model)
 
+            cleaned = _clean_llm_json(response.content)
             result = AnalysisResult(
                 submission_id=submission_id,
                 analysis_type=analysis_type,
-                result_json=response.content,
+                result_json=cleaned,
                 ai_model=response.model,
                 token_cost=response.input_tokens + response.output_tokens,
                 cost_usd=response.cost,
@@ -533,13 +582,13 @@ class AIAnalyzer:
             )
 
             try:
-                parsed = json.loads(response.content)
+                parsed = json.loads(cleaned)
                 result.summary = parsed.get("approach_analysis", "")
                 result.suggestions = json.dumps(
                     parsed.get("suggestions", []), ensure_ascii=False,
                 )
             except json.JSONDecodeError:
-                result.summary = response.content[:500]
+                result.summary = (response.content or "")[:500]
 
             db.session.add(result)
             db.session.commit()

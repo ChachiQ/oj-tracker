@@ -1,6 +1,6 @@
 import os
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from dotenv import load_dotenv
 from flask import Flask, redirect, url_for
@@ -64,29 +64,49 @@ def create_app(config_name=None):
     # Register blueprints
     _register_blueprints(app)
 
+    # Timezone helper
+    def to_display_tz(dt, _app=None):
+        """Convert a naive UTC datetime to the configured display timezone."""
+        target = _app or app
+        offset = target.config.get('DISPLAY_TIMEZONE_OFFSET', 8)
+        tz = timezone(timedelta(hours=offset))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(tz)
+
+    app.to_display_tz = to_display_tz
+
     # Register custom Jinja2 filters
     @app.template_filter('smarttime')
     def smarttime_filter(dt):
-        """将 datetime 格式化为微信风格的智能相对时间。"""
+        """将 datetime 格式化为微信风格的智能相对时间（时区感知）。"""
         if not dt:
             return '-'
-        now = datetime.now()
+        display_dt = to_display_tz(dt)
+        now = to_display_tz(datetime.utcnow())
         today = now.date()
-        dt_date = dt.date() if isinstance(dt, datetime) else dt
+        dt_date = display_dt.date()
         delta_days = (today - dt_date).days
 
         if delta_days == 0:
-            return dt.strftime('%H:%M')
+            return display_dt.strftime('%H:%M')
         elif delta_days == 1:
             return '昨天'
         elif delta_days == 2:
             return '前天'
         elif delta_days <= 7:
             return f'{delta_days}天前'
-        elif dt.year == now.year:
-            return dt.strftime('%m-%d')
+        elif display_dt.year == now.year:
+            return display_dt.strftime('%m-%d')
         else:
-            return dt.strftime('%Y-%m-%d')
+            return display_dt.strftime('%Y-%m-%d')
+
+    @app.template_filter('datefmt')
+    def datefmt_filter(dt, fmt='%Y-%m-%d %H:%M'):
+        """Format a UTC datetime in display timezone."""
+        if not dt:
+            return '-'
+        return to_display_tz(dt).strftime(fmt)
 
     # Inject version into all templates
     @app.context_processor

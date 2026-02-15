@@ -16,6 +16,17 @@ from app.models import (
 problem_bp = Blueprint('problem', __name__, url_prefix='/problem')
 
 
+def _is_valid_analysis(result):
+    """Check if an AnalysisResult has valid, non-empty JSON in result_json."""
+    if not result or not result.result_json:
+        return False
+    try:
+        parsed = json.loads(result.result_json)
+        return isinstance(parsed, dict) and len(parsed) > 0
+    except (json.JSONDecodeError, TypeError):
+        return False
+
+
 @problem_bp.route('/')
 @login_required
 def list_problems():
@@ -142,22 +153,27 @@ def detail(problem_id):
         else []
     )
 
-    # Get AI analysis results for submissions
+    # Get AI analysis results for submissions (exclude submission_review, shown separately)
     analysis_results = {}
     for sub in submissions:
-        results = AnalysisResult.query.filter_by(
-            submission_id=sub.id
+        results = AnalysisResult.query.filter(
+            AnalysisResult.submission_id == sub.id,
+            AnalysisResult.analysis_type != "submission_review",
         ).all()
         if results:
             analysis_results[sub.id] = results
 
-    # Get problem-level AI analyses
+    # Get problem-level AI analyses (filter out bad records with invalid JSON)
     solution_analysis = AnalysisResult.query.filter_by(
         problem_id_ref=problem.id, analysis_type="problem_solution",
     ).first()
+    if solution_analysis and not _is_valid_analysis(solution_analysis):
+        solution_analysis = None
     full_solution = AnalysisResult.query.filter_by(
         problem_id_ref=problem.id, analysis_type="problem_full_solution",
     ).first()
+    if full_solution and not _is_valid_analysis(full_solution):
+        full_solution = None
 
     # Get submission review results
     submission_reviews = {}

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from flask import current_app
 
@@ -235,7 +235,7 @@ class KnowledgeAnalyzer:
 
         return {
             "assessment": assessment,
-            "analyzed_at": log.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M"),
+            "analyzed_at": current_app.to_display_tz(log.created_at).strftime("%Y-%m-%d %H:%M"),
         }
 
     def get_all(self) -> list[dict]:
@@ -260,7 +260,7 @@ class KnowledgeAnalyzer:
             results.append({
                 "id": log.id,
                 "assessment": assessment,
-                "analyzed_at": log.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M"),
+                "analyzed_at": current_app.to_display_tz(log.created_at).strftime("%Y-%m-%d %H:%M"),
             })
         return results
 
