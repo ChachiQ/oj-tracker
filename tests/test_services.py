@@ -1,12 +1,13 @@
 """Tests for StatsService and SyncService."""
 
+import json
 import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
 from app.extensions import db
 from app.models import (
-    User, Student, PlatformAccount, Problem, Submission, Tag,
+    User, Student, PlatformAccount, Problem, Submission, Tag, AnalysisResult,
 )
 from app.services.stats_service import StatsService
 from app.services.sync_service import SyncService
@@ -295,3 +296,79 @@ class TestSyncService:
         service = SyncService()
         result = service.sync_account(acct_id)
         assert 'error' in result
+
+    @patch('app.services.sync_service.get_scraper_instance')
+    def test_sync_triggers_auto_analysis(self, mock_get_scraper, app, db):
+        """Sync should call _analyze_new_content when new items are found."""
+        user = User(username='sync_auto', email='syncauto@test.com')
+        user.set_password('pw')
+        db.session.add(user)
+        db.session.flush()
+        student = Student(parent_id=user.id, name='auto_kid')
+        db.session.add(student)
+        db.session.flush()
+        acct = PlatformAccount(
+            student_id=student.id,
+            platform='luogu',
+            platform_uid='auto_user',
+            is_active=True,
+        )
+        db.session.add(acct)
+        db.session.commit()
+        acct_id = acct.id
+
+        mock_scraper = MagicMock()
+        mock_scraper.SUPPORT_CODE_FETCH = False
+        scraped_subs = [
+            ScrapedSubmission(
+                platform_record_id='auto_001',
+                problem_id='P6000',
+                status='AC',
+                score=100,
+                language='C++',
+                source_code='#include <iostream>\nint main(){}',
+                submitted_at=datetime.utcnow(),
+            ),
+        ]
+        mock_scraper.fetch_submissions.return_value = iter(scraped_subs)
+        mock_scraper.fetch_problem.return_value = ScrapedProblem(
+            problem_id='P6000',
+            title='Auto Problem',
+            description='A test problem.',
+            difficulty_raw='1',
+        )
+        mock_scraper.map_difficulty.return_value = 1
+        mock_scraper.get_problem_url.return_value = 'https://example.com/P6000'
+        mock_get_scraper.return_value = mock_scraper
+
+        service = SyncService()
+        with patch.object(service, '_analyze_new_content') as mock_analyze:
+            result = service.sync_account(acct_id)
+            assert result['new_submissions'] == 1
+            mock_analyze.assert_called_once()
+
+    def test_analyze_new_content_skips_existing(self, app, db, sample_data):
+        """_analyze_new_content should skip problems already analyzed."""
+        pid = sample_data['problem_ids'][0]
+        # Pre-create an existing analysis
+        existing = AnalysisResult(
+            problem_id_ref=pid,
+            analysis_type="problem_solution",
+            result_json='{"approach":"test"}',
+            analyzed_at=datetime.utcnow(),
+        )
+        db.session.add(existing)
+        db.session.commit()
+
+        service = SyncService()
+        with patch('app.analysis.ai_analyzer.AIAnalyzer') as MockAnalyzer:
+            mock_instance = MockAnalyzer.return_value
+            mock_instance.analyze_problem_solution.return_value = None
+            mock_instance.review_submission.return_value = None
+            service._analyze_new_content(
+                sample_data['account_id'],
+                user_id=sample_data['user_id'],
+            )
+            # Should not call analyze_problem_solution for already-analyzed problem
+            for call_args in mock_instance.analyze_problem_solution.call_args_list:
+                assert call_args[0][0] != pid

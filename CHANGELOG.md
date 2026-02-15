@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.5.0 (2026-02-15) -- AI 题目分析 + 代码分析 + 知识评估增强
+
+### 新增
+- 题目思路分析：AI 分析解题思路、算法、复杂度、关键要点和常见错误（不含代码）
+- AI 解题：AI 生成完整 C++ 解法，含代码、逐段解释、复杂度分析和替代方法
+- 提交代码分析：AI 审查学生代码，评估代码质量、掌握程度，识别优缺点和改进建议
+- 同步后自动分析：新同步的题目和提交自动触发 AI 分析（每次最多各 10 条，防 token 爆炸）
+- 知识评估增强：报告 prompt 注入代码审查洞察，按标签聚合优缺点，提供更精准的掌握度评估
+- 3 个新 API 端点：`POST /api/problem/<id>/solution`、`POST /api/problem/<id>/full-solution`、`POST /api/submission/<id>/review`
+- 所有分析支持 `?force=1` 参数强制刷新（覆盖旧结果）
+- 题目详情页新增思路分析、AI 解题两个 card，提交记录新增代码分析按钮
+- 分析结果折叠显示，spinner 加载态，刷新按钮
+
+### 技术改进
+- `AnalysisResult` 模型新增 `problem_id_ref` FK，`submission_id` 改为 nullable
+- `Problem` 模型新增 `analysis_results` relationship
+- Alembic 迁移：`batch_alter_table` 兼容 SQLite
+- 3 个新 Prompt 模板：`problem_solution`、`problem_full_solution`、`submission_review`
+- `AIAnalyzer` 新增 `analyze_problem_solution()`、`analyze_problem_full_solution()`、`review_submission()` 方法
+- `SyncService._analyze_new_content()` 同步后自动触发分析
+- `KnowledgeAnalyzer._collect_submission_insights()` 收集代码审查洞察
+- `knowledge_assessment` prompt 新增 `submission_insights` 参数和代码分析 section
+- API 端点权限校验：problem 端点验证用户有该题提交，submission 端点验证所有权链
+
 ## v0.4.1 (2026-02-15) -- 知识图谱交互增强
 
 ### 新增

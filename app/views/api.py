@@ -2,7 +2,7 @@ import json
 
 from flask import Blueprint, jsonify, request, Response, stream_with_context
 from flask_login import login_required, current_user
-from app.models import Student, Problem, Submission, PlatformAccount, Tag
+from app.models import Student, Problem, Submission, PlatformAccount, Tag, AnalysisResult
 from app.services.stats_service import StatsService
 from app.analysis.engine import AnalysisEngine
 
@@ -260,4 +260,118 @@ def problem_list():
         'total': pagination.total,
         'page': page,
         'pages': pagination.pages,
+    })
+
+
+def _user_owns_problem(problem_id):
+    """Check that the current user has at least one submission for this problem."""
+    problem = Problem.query.get(problem_id)
+    if not problem:
+        return None
+
+    students = Student.query.filter_by(parent_id=current_user.id).all()
+    account_ids = []
+    for s in students:
+        for a in s.platform_accounts:
+            account_ids.append(a.id)
+
+    if not account_ids:
+        return None
+
+    has_sub = Submission.query.filter(
+        Submission.platform_account_id.in_(account_ids),
+        Submission.problem_id_ref == problem.id,
+    ).first()
+
+    return problem if has_sub else None
+
+
+@api_bp.route('/problem/<int:problem_id>/solution', methods=['POST'])
+@login_required
+def problem_solution(problem_id):
+    """Trigger AI solution approach analysis for a problem."""
+    problem = _user_owns_problem(problem_id)
+    if not problem:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    force = request.args.get('force', '0') == '1'
+
+    from app.analysis.ai_analyzer import AIAnalyzer
+    analyzer = AIAnalyzer()
+    result = analyzer.analyze_problem_solution(
+        problem_id, force=force, user_id=current_user.id,
+    )
+
+    if not result:
+        return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
+
+    return jsonify({
+        'success': True,
+        'analysis': json.loads(result.result_json) if result.result_json else None,
+        'analyzed_at': result.analyzed_at.strftime('%Y-%m-%d %H:%M'),
+        'ai_model': result.ai_model,
+    })
+
+
+@api_bp.route('/problem/<int:problem_id>/full-solution', methods=['POST'])
+@login_required
+def problem_full_solution(problem_id):
+    """Trigger AI full solution generation for a problem."""
+    problem = _user_owns_problem(problem_id)
+    if not problem:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    force = request.args.get('force', '0') == '1'
+
+    from app.analysis.ai_analyzer import AIAnalyzer
+    analyzer = AIAnalyzer()
+    result = analyzer.analyze_problem_full_solution(
+        problem_id, force=force, user_id=current_user.id,
+    )
+
+    if not result:
+        return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
+
+    return jsonify({
+        'success': True,
+        'analysis': json.loads(result.result_json) if result.result_json else None,
+        'analyzed_at': result.analyzed_at.strftime('%Y-%m-%d %H:%M'),
+        'ai_model': result.ai_model,
+    })
+
+
+@api_bp.route('/submission/<int:submission_id>/review', methods=['POST'])
+@login_required
+def submission_review(submission_id):
+    """Trigger AI code review for a submission."""
+    submission = Submission.query.get(submission_id)
+    if not submission:
+        return jsonify({'error': 'Not found'}), 404
+
+    # Verify ownership: submission -> account -> student -> parent
+    account = submission.platform_account
+    if not account or not account.student:
+        return jsonify({'error': 'Unauthorized'}), 403
+    if account.student.parent_id != current_user.id:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if not submission.source_code:
+        return jsonify({'error': '该提交没有源代码'}), 400
+
+    force = request.args.get('force', '0') == '1'
+
+    from app.analysis.ai_analyzer import AIAnalyzer
+    analyzer = AIAnalyzer()
+    result = analyzer.review_submission(
+        submission_id, force=force, user_id=current_user.id,
+    )
+
+    if not result:
+        return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
+
+    return jsonify({
+        'success': True,
+        'analysis': json.loads(result.result_json) if result.result_json else None,
+        'analyzed_at': result.analyzed_at.strftime('%Y-%m-%d %H:%M'),
+        'ai_model': result.ai_model,
     })

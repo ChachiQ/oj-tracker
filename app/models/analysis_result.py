@@ -12,7 +12,13 @@ class AnalysisResult(db.Model):
     submission_id = db.Column(
         db.Integer,
         db.ForeignKey('submission.id'),
-        nullable=False,
+        nullable=True,
+        index=True,
+    )
+    problem_id_ref = db.Column(
+        db.Integer,
+        db.ForeignKey('problem.id'),
+        nullable=True,
         index=True,
     )
     analysis_type = db.Column(db.String(50), nullable=False)
@@ -27,6 +33,7 @@ class AnalysisResult(db.Model):
 
     # Relationships
     submission = db.relationship('Submission', back_populates='analysis_results')
+    problem = db.relationship('Problem', back_populates='analysis_results')
 
     def __repr__(self) -> str:
         return (

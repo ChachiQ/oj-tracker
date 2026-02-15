@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from flask import current_app
 
 from app.extensions import db
-from app.models import Student, Submission, PlatformAccount, AnalysisLog
+from app.models import Student, Submission, PlatformAccount, AnalysisLog, AnalysisResult, Problem
 from .engine import AnalysisEngine
 from .weakness import WeaknessDetector
 from .analysis_log import AnalysisLogManager
@@ -74,6 +74,9 @@ class KnowledgeAnalyzer:
         yield {"step": "weakness", "message": "正在分析薄弱知识点..."}
         weaknesses = WeaknessDetector(self.student_id).detect()
 
+        # Step 2.5: Collect submission review insights
+        submission_insights = self._collect_submission_insights()
+
         # Step 3: Build prompt
         tag_count = len(top_tags)
         weak_count = len(weaknesses)
@@ -117,6 +120,7 @@ class KnowledgeAnalyzer:
             previous_assessment=previous_assessment,
             recent_stats=recent_stats,
             upcoming_contests=upcoming_contests if upcoming_contests else None,
+            submission_insights=submission_insights if submission_insights else None,
         )
 
         # Step 4: Call LLM
@@ -273,6 +277,96 @@ class KnowledgeAnalyzer:
         db.session.delete(log)
         db.session.commit()
         return True
+
+    def _collect_submission_insights(self) -> list[dict]:
+        """Collect code review insights grouped by tag for the student.
+
+        Returns:
+            List of dicts with tag_display, stage, strengths, issues, mastery_level.
+            At most 15 tags.
+        """
+        account_ids = [
+            a.id
+            for a in PlatformAccount.query.filter_by(
+                student_id=self.student_id
+            ).all()
+        ]
+        if not account_ids:
+            return []
+
+        # Get submission reviews for this student
+        reviews = (
+            AnalysisResult.query
+            .join(Submission, AnalysisResult.submission_id == Submission.id)
+            .filter(
+                AnalysisResult.analysis_type == "submission_review",
+                Submission.platform_account_id.in_(account_ids),
+            )
+            .order_by(AnalysisResult.analyzed_at.desc())
+            .limit(50)
+            .all()
+        )
+
+        if not reviews:
+            return []
+
+        # Group insights by tag
+        tag_insights = {}
+        for review in reviews:
+            try:
+                parsed = json.loads(review.result_json)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            submission = Submission.query.get(review.submission_id)
+            if not submission or not submission.problem_id_ref:
+                continue
+
+            problem = Problem.query.get(submission.problem_id_ref)
+            if not problem:
+                continue
+
+            for tag in problem.tags:
+                key = tag.name
+                if key not in tag_insights:
+                    tag_insights[key] = {
+                        "tag_display": tag.display_name,
+                        "stage": tag.stage,
+                        "strengths": [],
+                        "issues": [],
+                        "mastery_levels": [],
+                    }
+
+                for s in parsed.get("strengths", []):
+                    if s not in tag_insights[key]["strengths"]:
+                        tag_insights[key]["strengths"].append(s)
+                for issue in parsed.get("issues", []):
+                    desc = issue.get("description", str(issue)) if isinstance(issue, dict) else str(issue)
+                    if desc not in tag_insights[key]["issues"]:
+                        tag_insights[key]["issues"].append(desc)
+                ml = parsed.get("mastery_level")
+                if ml:
+                    tag_insights[key]["mastery_levels"].append(ml)
+
+        # Aggregate and return top 15
+        results = []
+        for key, info in tag_insights.items():
+            # Pick most common mastery level
+            mastery = None
+            if info["mastery_levels"]:
+                from collections import Counter
+                mastery = Counter(info["mastery_levels"]).most_common(1)[0][0]
+
+            results.append({
+                "tag_display": info["tag_display"],
+                "stage": info["stage"],
+                "strengths": info["strengths"][:3],
+                "issues": info["issues"][:3],
+                "mastery_level": mastery,
+            })
+
+        results.sort(key=lambda x: x["stage"])
+        return results[:15]
 
     def _get_stats_since(self, since_dt: datetime) -> dict:
         """Compute submission stats since a given datetime.

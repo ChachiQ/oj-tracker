@@ -44,6 +44,10 @@ class Problem(db.Model):
     submissions = db.relationship(
         'Submission', back_populates='problem', lazy='dynamic'
     )
+    analysis_results = db.relationship(
+        'AnalysisResult', back_populates='problem',
+        cascade='all, delete-orphan', lazy='dynamic',
+    )
 
     def __repr__(self) -> str:
         return f'<Problem {self.platform}:{self.problem_id} {self.title!r}>'

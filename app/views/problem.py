@@ -151,6 +151,23 @@ def detail(problem_id):
         if results:
             analysis_results[sub.id] = results
 
+    # Get problem-level AI analyses
+    solution_analysis = AnalysisResult.query.filter_by(
+        problem_id_ref=problem.id, analysis_type="problem_solution",
+    ).first()
+    full_solution = AnalysisResult.query.filter_by(
+        problem_id_ref=problem.id, analysis_type="problem_full_solution",
+    ).first()
+
+    # Get submission review results
+    submission_reviews = {}
+    for sub in submissions:
+        review = AnalysisResult.query.filter_by(
+            submission_id=sub.id, analysis_type="submission_review",
+        ).first()
+        if review:
+            submission_reviews[sub.id] = review
+
     # Parse AI tags
     ai_tags = []
     if problem.ai_tags:
@@ -164,5 +181,8 @@ def detail(problem_id):
         problem=problem,
         submissions=submissions,
         analysis_results=analysis_results,
+        solution_analysis=solution_analysis,
+        full_solution=full_solution,
+        submission_reviews=submission_reviews,
         ai_tags=ai_tags,
     )

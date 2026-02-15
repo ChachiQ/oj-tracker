@@ -24,6 +24,9 @@ from app.models import (
 from .llm import get_provider
 from .prompts.single_submission import build_single_submission_prompt
 from .prompts.problem_journey import build_problem_journey_prompt
+from .prompts.problem_solution import build_problem_solution_prompt
+from .prompts.problem_full_solution import build_problem_full_solution_prompt
+from .prompts.submission_review import build_submission_review_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -318,6 +321,232 @@ class AIAnalyzer:
             logger.error(
                 f"Journey analysis failed for problem {problem_db_id}: {e}"
             )
+            return None
+
+    def analyze_problem_solution(
+        self, problem_id: int, force: bool = False, user_id: int = None,
+    ) -> AnalysisResult | None:
+        """Analyze a problem's solution approach (no code).
+
+        Args:
+            problem_id: Database ID of the problem.
+            force: If True, delete existing analysis and re-analyze.
+            user_id: Optional user id for per-user AI config.
+
+        Returns:
+            AnalysisResult instance, or None if analysis cannot be performed.
+        """
+        analysis_type = "problem_solution"
+
+        existing = AnalysisResult.query.filter_by(
+            problem_id_ref=problem_id, analysis_type=analysis_type,
+        ).first()
+        if existing and not force:
+            return existing
+        if existing and force:
+            db.session.delete(existing)
+            db.session.commit()
+
+        if not self._check_budget():
+            logger.warning("AI monthly budget exceeded, skipping problem solution analysis")
+            return None
+
+        problem = Problem.query.get(problem_id)
+        if not problem or not problem.description:
+            return None
+
+        messages = build_problem_solution_prompt(
+            problem_title=problem.title or problem.problem_id,
+            problem_description=problem.description,
+            input_desc=problem.input_desc,
+            output_desc=problem.output_desc,
+            examples=problem.examples,
+            hint=problem.hint,
+            difficulty=problem.difficulty,
+            problem_type=problem.ai_problem_type,
+        )
+
+        try:
+            provider, model = self._get_llm("basic", user_id=user_id)
+            response = provider.chat(messages, model=model)
+
+            result = AnalysisResult(
+                problem_id_ref=problem_id,
+                analysis_type=analysis_type,
+                result_json=response.content,
+                ai_model=response.model,
+                token_cost=response.input_tokens + response.output_tokens,
+                cost_usd=response.cost,
+                analyzed_at=datetime.utcnow(),
+            )
+
+            try:
+                parsed = json.loads(response.content)
+                result.summary = parsed.get("approach", "")
+            except json.JSONDecodeError:
+                result.summary = response.content[:500]
+
+            db.session.add(result)
+            db.session.commit()
+            return result
+
+        except Exception as e:
+            logger.error(f"Problem solution analysis failed for {problem_id}: {e}")
+            return None
+
+    def analyze_problem_full_solution(
+        self, problem_id: int, force: bool = False, user_id: int = None,
+    ) -> AnalysisResult | None:
+        """Generate a complete AI solution for a problem.
+
+        Args:
+            problem_id: Database ID of the problem.
+            force: If True, delete existing analysis and re-analyze.
+            user_id: Optional user id for per-user AI config.
+
+        Returns:
+            AnalysisResult instance, or None if analysis cannot be performed.
+        """
+        analysis_type = "problem_full_solution"
+
+        existing = AnalysisResult.query.filter_by(
+            problem_id_ref=problem_id, analysis_type=analysis_type,
+        ).first()
+        if existing and not force:
+            return existing
+        if existing and force:
+            db.session.delete(existing)
+            db.session.commit()
+
+        if not self._check_budget():
+            logger.warning("AI monthly budget exceeded, skipping full solution analysis")
+            return None
+
+        problem = Problem.query.get(problem_id)
+        if not problem or not problem.description:
+            return None
+
+        messages = build_problem_full_solution_prompt(
+            problem_title=problem.title or problem.problem_id,
+            problem_description=problem.description,
+            input_desc=problem.input_desc,
+            output_desc=problem.output_desc,
+            examples=problem.examples,
+            hint=problem.hint,
+            difficulty=problem.difficulty,
+            problem_type=problem.ai_problem_type,
+        )
+
+        try:
+            provider, model = self._get_llm("basic", user_id=user_id)
+            response = provider.chat(messages, model=model, max_tokens=4096)
+
+            result = AnalysisResult(
+                problem_id_ref=problem_id,
+                analysis_type=analysis_type,
+                result_json=response.content,
+                ai_model=response.model,
+                token_cost=response.input_tokens + response.output_tokens,
+                cost_usd=response.cost,
+                analyzed_at=datetime.utcnow(),
+            )
+
+            try:
+                parsed = json.loads(response.content)
+                result.summary = parsed.get("approach", "")
+            except json.JSONDecodeError:
+                result.summary = response.content[:500]
+
+            db.session.add(result)
+            db.session.commit()
+            return result
+
+        except Exception as e:
+            logger.error(f"Full solution analysis failed for {problem_id}: {e}")
+            return None
+
+    def review_submission(
+        self, submission_id: int, force: bool = False, user_id: int = None,
+    ) -> AnalysisResult | None:
+        """Review a student's code submission.
+
+        Args:
+            submission_id: Database ID of the submission.
+            force: If True, delete existing review and re-analyze.
+            user_id: Optional user id for per-user AI config.
+
+        Returns:
+            AnalysisResult instance, or None if review cannot be performed.
+        """
+        analysis_type = "submission_review"
+
+        existing = AnalysisResult.query.filter_by(
+            submission_id=submission_id, analysis_type=analysis_type,
+        ).first()
+        if existing and not force:
+            return existing
+        if existing and force:
+            db.session.delete(existing)
+            db.session.commit()
+
+        if not self._check_budget():
+            logger.warning("AI monthly budget exceeded, skipping submission review")
+            return None
+
+        submission = Submission.query.get(submission_id)
+        if not submission or not submission.source_code:
+            return None
+
+        problem = submission.problem
+        student = (
+            submission.platform_account.student
+            if submission.platform_account
+            else None
+        )
+
+        messages = build_submission_review_prompt(
+            problem_title=problem.title if problem else "Unknown",
+            problem_description=problem.description if problem else None,
+            source_code=submission.source_code,
+            status=submission.status,
+            score=submission.score,
+            language=submission.language,
+            student_age=student.age if student else None,
+            student_grade=student.grade if student else None,
+        )
+
+        try:
+            if not user_id and student and hasattr(student, 'parent_id'):
+                user_id = student.parent_id
+
+            provider, model = self._get_llm("basic", user_id=user_id)
+            response = provider.chat(messages, model=model)
+
+            result = AnalysisResult(
+                submission_id=submission_id,
+                analysis_type=analysis_type,
+                result_json=response.content,
+                ai_model=response.model,
+                token_cost=response.input_tokens + response.output_tokens,
+                cost_usd=response.cost,
+                analyzed_at=datetime.utcnow(),
+            )
+
+            try:
+                parsed = json.loads(response.content)
+                result.summary = parsed.get("approach_analysis", "")
+                result.suggestions = json.dumps(
+                    parsed.get("suggestions", []), ensure_ascii=False,
+                )
+            except json.JSONDecodeError:
+                result.summary = response.content[:500]
+
+            db.session.add(result)
+            db.session.commit()
+            return result
+
+        except Exception as e:
+            logger.error(f"Submission review failed for {submission_id}: {e}")
             return None
 
     def get_monthly_cost(self) -> float:

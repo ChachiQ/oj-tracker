@@ -100,12 +100,16 @@ class SyncService:
             db.session.commit()
 
             # AI-classify newly synced problems (best-effort, after commit)
+            user_id = (
+                account.student.parent_id
+                if account.student else None
+            )
             if stats['new_problems'] > 0:
-                user_id = (
-                    account.student.parent_id
-                    if account.student else None
-                )
                 self._classify_new_problems(account.platform, user_id=user_id)
+
+            # Auto-analyze new content (best-effort, after commit)
+            if stats['new_submissions'] > 0 or stats['new_problems'] > 0:
+                self._analyze_new_content(account.id, user_id=user_id)
 
         except Exception as e:
             logger.error(f"Sync failed for account {account_id}: {e}")
@@ -203,6 +207,82 @@ class SyncService:
                     logger.debug(f"AI classify skipped for {p.problem_id}: {e}")
         except Exception as e:
             logger.debug(f"AI classification unavailable: {e}")
+
+    def _analyze_new_content(self, account_id: int, user_id: int = None) -> None:
+        """Best-effort AI analysis of new problems and submissions."""
+        try:
+            from app.analysis.ai_analyzer import AIAnalyzer
+            from app.models import AnalysisResult
+
+            analyzer = AIAnalyzer()
+
+            # Analyze problems that have descriptions but no solution analysis
+            account = PlatformAccount.query.get(account_id)
+            if not account:
+                return
+
+            account_ids = [account.id]
+
+            # Find problems with submissions from this account, that have
+            # description but no problem_solution analysis yet
+            problem_ids = (
+                db.session.query(Submission.problem_id_ref)
+                .filter(
+                    Submission.platform_account_id.in_(account_ids),
+                    Submission.problem_id_ref.isnot(None),
+                )
+                .distinct()
+                .all()
+            )
+            problem_ids = [pid for (pid,) in problem_ids]
+
+            analyzed_count = 0
+            for pid in problem_ids:
+                if analyzed_count >= 10:
+                    break
+                existing = AnalysisResult.query.filter_by(
+                    problem_id_ref=pid, analysis_type="problem_solution",
+                ).first()
+                if existing:
+                    continue
+                problem = Problem.query.get(pid)
+                if not problem or not problem.description:
+                    continue
+                try:
+                    analyzer.analyze_problem_solution(pid, user_id=user_id)
+                    analyzed_count += 1
+                except Exception as e:
+                    logger.debug(f"Auto problem analysis skipped for {pid}: {e}")
+
+            # Review submissions with source code that haven't been reviewed
+            submissions = (
+                Submission.query.filter(
+                    Submission.platform_account_id.in_(account_ids),
+                    Submission.source_code.isnot(None),
+                    Submission.source_code != '',
+                )
+                .order_by(Submission.submitted_at.desc())
+                .limit(20)
+                .all()
+            )
+
+            review_count = 0
+            for sub in submissions:
+                if review_count >= 10:
+                    break
+                existing = AnalysisResult.query.filter_by(
+                    submission_id=sub.id, analysis_type="submission_review",
+                ).first()
+                if existing:
+                    continue
+                try:
+                    analyzer.review_submission(sub.id, user_id=user_id)
+                    review_count += 1
+                except Exception as e:
+                    logger.debug(f"Auto submission review skipped for {sub.id}: {e}")
+
+        except Exception as e:
+            logger.debug(f"Auto-analysis unavailable: {e}")
 
     def sync_all_accounts(self, student_id: int = None) -> dict:
         """Sync all active accounts, optionally filtered by student."""

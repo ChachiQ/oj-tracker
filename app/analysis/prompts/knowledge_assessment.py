@@ -19,6 +19,7 @@ def build_knowledge_assessment_prompt(
     previous_assessment: dict | None = None,
     recent_stats: dict | None = None,
     upcoming_contests: list[dict] | None = None,
+    submission_insights: list[dict] | None = None,
 ) -> list[dict]:
     """Build prompt messages for knowledge assessment.
 
@@ -34,6 +35,7 @@ def build_knowledge_assessment_prompt(
         previous_assessment: Full assessment dict from the last report, or None.
         recent_stats: Recent activity stats since last report, or None.
         upcoming_contests: List of upcoming contest dicts, or None.
+        submission_insights: List of per-tag code review insights, or None.
 
     Returns:
         List of message dicts suitable for LLM chat API.
@@ -132,6 +134,24 @@ def build_knowledge_assessment_prompt(
 - 通过率: {recent_stats.get('pass_rate', 0)}%
 """
 
+    # Format submission insights
+    insights_section = ""
+    if submission_insights:
+        insight_lines = []
+        for ins in submission_insights:
+            parts = [f"- {ins['tag_display']} (阶段{ins['stage']})"]
+            if ins.get('strengths'):
+                parts.append(f"  优点: {'; '.join(ins['strengths'][:3])}")
+            if ins.get('issues'):
+                parts.append(f"  问题: {'; '.join(ins['issues'][:3])}")
+            if ins.get('mastery_level'):
+                parts.append(f"  掌握度: {ins['mastery_level']}")
+            insight_lines.append("\n".join(parts))
+        insights_section = f"""
+## AI 代码分析洞察（基于学生代码审查）
+{chr(10).join(insight_lines)}
+"""
+
     # Format upcoming contests
     contest_section = ""
     if upcoming_contests:
@@ -163,7 +183,7 @@ def build_knowledge_assessment_prompt(
 
 ## 薄弱知识点
 {weak_text}
-{prev_section}{recent_section}{contest_section}
+{prev_section}{recent_section}{insights_section}{contest_section}
 请严格按以下 JSON 格式返回评估结果（不要包含任何 JSON 以外的文字）：
 ```json
 {{
@@ -194,6 +214,7 @@ def build_knowledge_assessment_prompt(
 4. 语气专业但鼓励，面向家长阅读
 5. encouragement 要具体提到学生的实际进步，肯定努力
 6. 如有近期赛事，结合当前水平给出针对性备赛建议；无赛事时 contest_preparation 返回空数组 []
-7. 如有上次评估结果，对比分析进步和变化""",
+7. 如有上次评估结果，对比分析进步和变化
+8. 如有AI代码分析洞察，结合代码审查中发现的具体优缺点来评估知识掌握程度""",
         }
     ]
