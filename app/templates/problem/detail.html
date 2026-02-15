@@ -292,165 +292,172 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_scripts %}
 <script>
-const CSRF_TOKEN = '{{ csrf_token() }}';
-const PROBLEM_ID = {{ problem.id }};
+var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+var CSRF_TOKEN = csrfMeta ? csrfMeta.content : '';
+var PROBLEM_ID = {{ problem.id }};
 
-function renderSolution(data, containerId) {
-    const container = document.getElementById(containerId);
+function renderMeta(aiModel, analyzedAt) {
+    return '<div class="border-top mt-3 pt-2">' +
+        '<small class="text-muted"><i class="bi bi-robot"></i> ' + (aiModel || '-') +
+        ' &middot; <i class="bi bi-clock"></i> ' + (analyzedAt || '-') + '</small></div>';
+}
+
+function renderSolution(data, containerId, aiModel, analyzedAt) {
+    var container = document.getElementById(containerId);
     if (!data) { container.innerHTML = '<div class="alert alert-warning">无分析结果</div>'; return; }
-    let html = '';
-    if (data.approach) html += `<p><strong>解题思路：</strong>${data.approach}</p>`;
-    if (data.algorithm) html += `<p><strong>核心算法：</strong><span class="badge bg-info">${data.algorithm}</span></p>`;
-    if (data.complexity) html += `<p><strong>复杂度：</strong>时间 ${data.complexity.time || '-'}，空间 ${data.complexity.space || '-'}</p>`;
+    var html = '';
+    if (data.approach) html += '<p><strong>解题思路：</strong>' + data.approach + '</p>';
+    if (data.algorithm) html += '<p><strong>核心算法：</strong><span class="badge bg-info">' + data.algorithm + '</span></p>';
+    if (data.complexity) html += '<p><strong>复杂度：</strong>时间 ' + (data.complexity.time || '-') + '，空间 ' + (data.complexity.space || '-') + '</p>';
     if (data.thinking_steps && data.thinking_steps.length) {
         html += '<p><strong>思考步骤：</strong></p><ol>';
-        data.thinking_steps.forEach(s => html += `<li>${s}</li>`);
+        data.thinking_steps.forEach(function(s) { html += '<li>' + s + '</li>'; });
         html += '</ol>';
     }
     if (data.key_points && data.key_points.length) {
         html += '<p><strong>关键要点：</strong></p><ul>';
-        data.key_points.forEach(p => html += `<li>${p}</li>`);
+        data.key_points.forEach(function(p) { html += '<li>' + p + '</li>'; });
         html += '</ul>';
     }
     if (data.common_pitfalls && data.common_pitfalls.length) {
         html += '<p><strong>常见错误：</strong></p><ul class="text-danger">';
-        data.common_pitfalls.forEach(p => html += `<li>${p}</li>`);
+        data.common_pitfalls.forEach(function(p) { html += '<li>' + p + '</li>'; });
         html += '</ul>';
     }
+    if (aiModel || analyzedAt) html += renderMeta(aiModel, analyzedAt);
     container.innerHTML = html;
 }
 
-function renderFullSolution(data, containerId) {
-    const container = document.getElementById(containerId);
+function renderFullSolution(data, containerId, aiModel, analyzedAt) {
+    var container = document.getElementById(containerId);
     if (!data) { container.innerHTML = '<div class="alert alert-warning">无分析结果</div>'; return; }
-    let html = '';
-    if (data.approach) html += `<p><strong>解题思路：</strong>${data.approach}</p>`;
-    if (data.code) html += `<p><strong>代码：</strong></p><pre class="code-viewer"><code>${escapeHtml(data.code)}</code></pre>`;
-    if (data.explanation) html += `<p><strong>代码解释：</strong></p><div class="report-content">${data.explanation}</div>`;
-    if (data.complexity) html += `<p><strong>复杂度：</strong>时间 ${data.complexity.time || '-'}，空间 ${data.complexity.space || '-'}</p>`;
+    var html = '';
+    if (data.approach) html += '<p><strong>解题思路：</strong>' + data.approach + '</p>';
+    if (data.code) html += '<p><strong>代码：</strong></p><pre class="code-viewer"><code>' + escapeHtml(data.code) + '</code></pre>';
+    if (data.explanation) html += '<p><strong>代码解释：</strong></p><div class="report-content">' + data.explanation + '</div>';
+    if (data.complexity) html += '<p><strong>复杂度：</strong>时间 ' + (data.complexity.time || '-') + '，空间 ' + (data.complexity.space || '-') + '</p>';
     if (data.alternative_approaches && data.alternative_approaches.length) {
         html += '<p><strong>替代方法：</strong></p><ul>';
-        data.alternative_approaches.forEach(a => html += `<li><strong>${a.name}：</strong>${a.brief}</li>`);
+        data.alternative_approaches.forEach(function(a) { html += '<li><strong>' + a.name + '：</strong>' + a.brief + '</li>'; });
         html += '</ul>';
     }
+    if (aiModel || analyzedAt) html += renderMeta(aiModel, analyzedAt);
     container.innerHTML = html;
 }
 
-function renderReview(data, containerId) {
-    const container = document.getElementById(containerId);
+function renderReview(data, containerId, aiModel, analyzedAt) {
+    var container = document.getElementById(containerId);
     if (!data) { container.innerHTML = '<div class="alert alert-warning">无分析结果</div>'; return; }
-    let html = '';
-    if (data.approach_analysis) html += `<p><strong>思路分析：</strong>${data.approach_analysis}</p>`;
+    var html = '';
+    if (data.approach_analysis) html += '<p><strong>思路分析：</strong>' + data.approach_analysis + '</p>';
     if (data.code_quality) {
-        const qColors = {'优秀':'success','良好':'primary','一般':'warning','需改进':'danger'};
-        html += `<p><strong>代码质量：</strong><span class="badge bg-${qColors[data.code_quality]||'secondary'}">${data.code_quality}</span></p>`;
+        var qColors = {'优秀':'success','良好':'primary','一般':'warning','需改进':'danger'};
+        html += '<p><strong>代码质量：</strong><span class="badge bg-' + (qColors[data.code_quality]||'secondary') + '">' + data.code_quality + '</span></p>';
     }
     if (data.mastery_level) {
-        const mColors = {'熟练':'success','掌握':'primary','了解':'warning','不足':'danger'};
-        html += `<p><strong>掌握程度：</strong><span class="badge bg-${mColors[data.mastery_level]||'secondary'}">${data.mastery_level}</span></p>`;
+        var mColors = {'熟练':'success','掌握':'primary','了解':'warning','不足':'danger'};
+        html += '<p><strong>掌握程度：</strong><span class="badge bg-' + (mColors[data.mastery_level]||'secondary') + '">' + data.mastery_level + '</span></p>';
     }
     if (data.strengths && data.strengths.length) {
         html += '<p class="mb-1"><strong>优点：</strong></p><ul class="text-success">';
-        data.strengths.forEach(s => html += `<li>${s}</li>`);
+        data.strengths.forEach(function(s) { html += '<li>' + s + '</li>'; });
         html += '</ul>';
     }
     if (data.issues && data.issues.length) {
         html += '<p class="mb-1"><strong>问题：</strong></p><ul class="text-danger">';
-        data.issues.forEach(i => html += `<li><strong>[${i.type}]</strong> ${i.description}${i.location ? ' ('+i.location+')' : ''}</li>`);
+        data.issues.forEach(function(i) { html += '<li><strong>[' + i.type + ']</strong> ' + i.description + (i.location ? ' (' + i.location + ')' : '') + '</li>'; });
         html += '</ul>';
     }
     if (data.suggestions && data.suggestions.length) {
         html += '<p class="mb-1"><strong>改进建议：</strong></p><ul>';
-        data.suggestions.forEach(s => html += `<li>${s}</li>`);
+        data.suggestions.forEach(function(s) { html += '<li>' + s + '</li>'; });
         html += '</ul>';
     }
     if (data.knowledge_demonstrated && data.knowledge_demonstrated.length) {
         html += '<p><strong>体现知识点：</strong> ';
-        data.knowledge_demonstrated.forEach(k => html += `<span class="badge bg-light text-dark border me-1">${k}</span>`);
+        data.knowledge_demonstrated.forEach(function(k) { html += '<span class="badge bg-light text-dark border me-1">' + k + '</span>'; });
         html += '</p>';
     }
+    if (aiModel || analyzedAt) html += renderMeta(aiModel, analyzedAt);
     container.innerHTML = html;
 }
 
 function escapeHtml(text) {
-    const div = document.createElement('div');
+    var div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
+function apiPost(url) {
+    return fetch(url, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': CSRF_TOKEN,
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    }).then(function(r) {
+        if (!r.ok) return r.text().then(function(t) { throw new Error('HTTP ' + r.status); });
+        return r.json();
+    });
+}
+
 function triggerAnalysis(type, force) {
-    const key = type === 'full-solution' ? 'fullsolution' : 'solution';
-    const loadingEl = document.getElementById(`${key}-loading`);
-    const resultEl = document.getElementById(`${key}-result`);
-    const btnEl = document.getElementById(`btn-${type}`);
+    var key = type === 'full-solution' ? 'fullsolution' : 'solution';
+    var loadingEl = document.getElementById(key + '-loading');
+    var resultEl = document.getElementById(key + '-result');
+    var btnEl = document.getElementById('btn-' + type);
 
     loadingEl.classList.remove('d-none');
     if (btnEl) btnEl.disabled = true;
 
-    const url = `/api/problem/${PROBLEM_ID}/${type}` + (force ? '?force=1' : '');
-    fetch(url, {
-        method: 'POST',
-        headers: {'X-CSRFToken': CSRF_TOKEN},
-    })
-    .then(r => r.json())
-    .then(data => {
+    var url = '/api/problem/' + PROBLEM_ID + '/' + type + (force ? '?force=1' : '');
+    apiPost(url)
+    .then(function(data) {
         loadingEl.classList.add('d-none');
         if (data.success) {
-            if (type === 'full-solution') renderFullSolution(data.analysis, 'fullsolution-result');
-            else renderSolution(data.analysis, 'solution-result');
+            if (type === 'full-solution') renderFullSolution(data.analysis, 'fullsolution-result', data.ai_model, data.analyzed_at);
+            else renderSolution(data.analysis, 'solution-result', data.ai_model, data.analyzed_at);
             resultEl.classList.add('show');
-            if (data.ai_model) {
-                const modelBadge = `<small class="text-muted d-block mt-2">模型: ${data.ai_model} | ${data.analyzed_at}</small>`;
-                resultEl.innerHTML += modelBadge;
-            }
         } else {
-            resultEl.innerHTML = `<div class="alert alert-danger">${data.error || '分析失败'}</div>`;
+            resultEl.innerHTML = '<div class="alert alert-danger">' + (data.error || '分析失败') + '</div>';
             resultEl.classList.add('show');
         }
         if (btnEl) btnEl.disabled = false;
     })
-    .catch(err => {
+    .catch(function(err) {
         loadingEl.classList.add('d-none');
-        resultEl.innerHTML = `<div class="alert alert-danger">请求失败: ${err.message}</div>`;
+        resultEl.innerHTML = '<div class="alert alert-danger">请求失败: ' + err.message + '</div>';
         resultEl.classList.add('show');
         if (btnEl) btnEl.disabled = false;
     });
 }
 
 function triggerReview(submissionId, force) {
-    const loadingEl = document.getElementById(`review-loading-${submissionId}`);
-    const resultEl = document.getElementById(`review-${submissionId}`);
-    const btnEl = document.getElementById(`btn-review-${submissionId}`);
+    var loadingEl = document.getElementById('review-loading-' + submissionId);
+    var resultEl = document.getElementById('review-' + submissionId);
+    var btnEl = document.getElementById('btn-review-' + submissionId);
 
     loadingEl.classList.remove('d-none');
     if (btnEl) btnEl.disabled = true;
 
-    const url = `/api/submission/${submissionId}/review` + (force ? '?force=1' : '');
-    fetch(url, {
-        method: 'POST',
-        headers: {'X-CSRFToken': CSRF_TOKEN},
-    })
-    .then(r => r.json())
-    .then(data => {
+    var url = '/api/submission/' + submissionId + '/review' + (force ? '?force=1' : '');
+    apiPost(url)
+    .then(function(data) {
         loadingEl.classList.add('d-none');
         if (data.success) {
-            renderReview(data.analysis, `review-${submissionId}`);
+            renderReview(data.analysis, 'review-' + submissionId, data.ai_model, data.analyzed_at);
             resultEl.classList.add('show');
-            if (data.ai_model) {
-                const modelBadge = `<small class="text-muted d-block mt-2">模型: ${data.ai_model} | ${data.analyzed_at}</small>`;
-                resultEl.innerHTML += modelBadge;
-            }
         } else {
-            resultEl.innerHTML = `<div class="alert alert-danger">${data.error || '分析失败'}</div>`;
+            resultEl.innerHTML = '<div class="alert alert-danger">' + (data.error || '分析失败') + '</div>';
             resultEl.classList.add('show');
         }
         if (btnEl) btnEl.disabled = false;
     })
-    .catch(err => {
+    .catch(function(err) {
         loadingEl.classList.add('d-none');
-        resultEl.innerHTML = `<div class="alert alert-danger">请求失败: ${err.message}</div>`;
+        resultEl.innerHTML = '<div class="alert alert-danger">请求失败: ' + err.message + '</div>';
         resultEl.classList.add('show');
         if (btnEl) btnEl.disabled = false;
     });
@@ -460,29 +467,29 @@ function triggerReview(submissionId, force) {
 document.addEventListener('DOMContentLoaded', function() {
     {% if solution_analysis and solution_analysis.result_json %}
     try {
-        const solData = JSON.parse({{ solution_analysis.result_json | tojson }});
-        renderSolution(solData, 'solution-result');
-        const solMeta = '<small class="text-muted d-block mt-2">模型: {{ solution_analysis.ai_model }} | {{ solution_analysis.analyzed_at.strftime("%Y-%m-%d %H:%M") }}</small>';
-        document.getElementById('solution-result').innerHTML += solMeta;
+        var solData = JSON.parse({{ solution_analysis.result_json | tojson }});
+        renderSolution(solData, 'solution-result',
+            '{{ solution_analysis.ai_model or "" }}',
+            '{{ solution_analysis.analyzed_at.strftime("%Y-%m-%d %H:%M") }}');
     } catch(e) {}
     {% endif %}
 
     {% if full_solution and full_solution.result_json %}
     try {
-        const fsData = JSON.parse({{ full_solution.result_json | tojson }});
-        renderFullSolution(fsData, 'fullsolution-result');
-        const fsMeta = '<small class="text-muted d-block mt-2">模型: {{ full_solution.ai_model }} | {{ full_solution.analyzed_at.strftime("%Y-%m-%d %H:%M") }}</small>';
-        document.getElementById('fullsolution-result').innerHTML += fsMeta;
+        var fsData = JSON.parse({{ full_solution.result_json | tojson }});
+        renderFullSolution(fsData, 'fullsolution-result',
+            '{{ full_solution.ai_model or "" }}',
+            '{{ full_solution.analyzed_at.strftime("%Y-%m-%d %H:%M") }}');
     } catch(e) {}
     {% endif %}
 
     {% for sub_id, review in submission_reviews.items() %}
     {% if review.result_json %}
     try {
-        const revData{{ sub_id }} = JSON.parse({{ review.result_json | tojson }});
-        renderReview(revData{{ sub_id }}, 'review-{{ sub_id }}');
-        const revMeta{{ sub_id }} = '<small class="text-muted d-block mt-2">模型: {{ review.ai_model }} | {{ review.analyzed_at.strftime("%Y-%m-%d %H:%M") }}</small>';
-        document.getElementById('review-{{ sub_id }}').innerHTML += revMeta{{ sub_id }};
+        var revData_{{ sub_id }} = JSON.parse({{ review.result_json | tojson }});
+        renderReview(revData_{{ sub_id }}, 'review-{{ sub_id }}',
+            '{{ review.ai_model or "" }}',
+            '{{ review.analyzed_at.strftime("%Y-%m-%d %H:%M") }}');
     } catch(e) {}
     {% endif %}
     {% endfor %}
