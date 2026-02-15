@@ -27,9 +27,9 @@ MODEL_CONFIG = {
                 "output_price": 1.60,
                 "tier": "basic",
             },
-            "gpt-5": {
-                "input_price": 1.25,
-                "output_price": 10.0,
+            "gpt-5.2": {
+                "input_price": 1.75,
+                "output_price": 14.0,
                 "tier": "advanced",
             },
         }

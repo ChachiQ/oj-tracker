@@ -458,8 +458,8 @@ class TestAIAnalyzerUserConfig:
             analyzer = AIAnalyzer(app)
 
             _, basic_model = analyzer._get_llm('basic', user_id=uid)
-            assert basic_model == 'gpt-4o-mini'
+            assert basic_model == 'gpt-4.1-mini'
 
             mock_gp.reset_mock()
             _, advanced_model = analyzer._get_llm('advanced', user_id=uid)
-            assert advanced_model == 'gpt-4o'
+            assert advanced_model == 'gpt-5.2'
