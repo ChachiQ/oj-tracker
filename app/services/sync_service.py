@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from app.extensions import db
 from app.models import PlatformAccount, Submission, Problem, Tag
 from app.scrapers import get_scraper_instance
+from app.services.tag_mapper import TagMapper
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,10 @@ class SyncService:
             account.consecutive_sync_failures = 0
             db.session.commit()
 
+            # AI-classify newly synced problems (best-effort, after commit)
+            if stats['new_problems'] > 0:
+                self._classify_new_problems(account.platform)
+
         except Exception as e:
             logger.error(f"Sync failed for account {account_id}: {e}")
             db.session.rollback()
@@ -151,15 +157,19 @@ class SyncService:
                     url=scraped.url or scraper.get_problem_url(problem_id),
                     source=scraped.source,
                 )
+                # Store original platform tags for future re-mapping
+                if scraped.tags:
+                    problem.platform_tags = json.dumps(
+                        scraped.tags, ensure_ascii=False
+                    )
+
                 db.session.add(problem)
                 db.session.flush()
 
-                # Map tags
-                for tag_name in scraped.tags:
-                    tag = Tag.query.filter_by(name=tag_name).first()
-                    if not tag:
-                        tag = Tag.query.filter_by(display_name=tag_name).first()
-                    if tag:
+                # Map tags via TagMapper
+                mapper = TagMapper(platform)
+                for tag in mapper.map_tags(scraped.tags):
+                    if tag not in problem.tags:
                         problem.tags.append(tag)
 
                 return problem
@@ -169,6 +179,26 @@ class SyncService:
             )
 
         return None
+
+    def _classify_new_problems(self, platform: str) -> None:
+        """Best-effort AI classification of unanalyzed problems."""
+        try:
+            from app.analysis.problem_classifier import ProblemClassifier
+            classifier = ProblemClassifier()
+            problems = (
+                Problem.query
+                .filter_by(platform=platform, ai_analyzed=False)
+                .order_by(Problem.created_at.desc())
+                .limit(20)
+                .all()
+            )
+            for p in problems:
+                try:
+                    classifier.classify_problem(p.id)
+                except Exception as e:
+                    logger.debug(f"AI classify skipped for {p.problem_id}: {e}")
+        except Exception as e:
+            logger.debug(f"AI classification unavailable: {e}")
 
     def sync_all_accounts(self, student_id: int = None) -> dict:
         """Sync all active accounts, optionally filtered by student."""

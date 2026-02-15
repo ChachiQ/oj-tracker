@@ -28,6 +28,7 @@ class Problem(db.Model):
     difficulty_raw = db.Column(db.String(50), nullable=True)
     url = db.Column(db.String(500), nullable=True)
     source = db.Column(db.String(200), nullable=True)
+    platform_tags = db.Column(db.Text, nullable=True)  # JSON: raw tags from scraper
     ai_tags = db.Column(db.Text, nullable=True)
     ai_problem_type = db.Column(db.String(200), nullable=True)
     ai_analyzed = db.Column(db.Boolean, nullable=False, default=False)

@@ -27,9 +27,17 @@
                 <select class="form-select form-select-sm" id="filter-tag" name="tag">
                     <option value="">全部标签</option>
                     {% if tags %}
+                    {% set stage_names = {1: '语法基础 Basics', 2: '基础算法 Elementary', 3: 'CSP-J', 4: 'CSP-S', 5: '省选 Provincial', 6: 'NOI'} %}
+                    {% set ns = namespace(current_stage=None) %}
                     {% for tag in tags %}
-                    <option value="{{ tag }}" {% if request.args.get('tag') == tag %}selected{% endif %}>{{ tag }}</option>
+                        {% if tag.stage != ns.current_stage %}
+                            {% if ns.current_stage is not none %}</optgroup>{% endif %}
+                            {% set ns.current_stage = tag.stage %}
+                            <optgroup label="Stage {{ tag.stage }} - {{ stage_names.get(tag.stage, 'Other') }}">
+                        {% endif %}
+                        <option value="{{ tag.name }}" {% if request.args.get('tag') == tag.name %}selected{% endif %}>{{ tag.display_name }}</option>
                     {% endfor %}
+                    {% if ns.current_stage is not none %}</optgroup>{% endif %}
                     {% endif %}
                 </select>
             </div>
@@ -110,7 +118,7 @@
                     <td class="{{ table_col_class('lg') }}">
                         {% if problem.tags %}
                             {% for tag in problem.tags[:3] %}
-                            <span class="badge bg-light text-dark border">{{ tag }}</span>
+                            <span class="badge bg-light text-dark border">{{ tag.display_name }}</span>
                             {% endfor %}
                             {% if problem.tags|length > 3 %}
                             <span class="badge bg-light text-muted border">+{{ problem.tags|length - 3 }}</span>

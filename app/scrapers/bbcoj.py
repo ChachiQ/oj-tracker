@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import Generator
 
@@ -254,22 +255,30 @@ class BBCOJScraper(BaseScraper):
             source = problem.get('source', None)
             difficulty_raw = problem.get('difficulty', None)
 
-            # Parse examples
+            # Parse examples — HOJ returns XML-tagged string:
+            #   "<input>...</input><output>...</output><input>...</input><output>...</output>"
             examples_parts = []
-            samples = problem.get('examples', [])
-            if isinstance(samples, list):
+            samples = problem.get('examples', '')
+            if isinstance(samples, str) and samples:
+                inputs = re.findall(r'<input>(.*?)</input>', samples, re.DOTALL)
+                outputs = re.findall(r'<output>(.*?)</output>', samples, re.DOTALL)
+                for i, (inp, out) in enumerate(zip(inputs, outputs)):
+                    examples_parts.append(
+                        f"输入样例 {i + 1}:\n{inp}\n输出样例 {i + 1}:\n{out}"
+                    )
+            elif isinstance(samples, list):
                 for i, sample in enumerate(samples):
                     if isinstance(sample, dict):
                         inp = sample.get('input', '')
                         out = sample.get('output', '')
-                        examples_parts.append(f"输入样例 {i + 1}:\n{inp}\n输出样例 {i + 1}:\n{out}")
-                    elif isinstance(sample, str):
-                        examples_parts.append(sample)
+                        examples_parts.append(
+                            f"输入样例 {i + 1}:\n{inp}\n输出样例 {i + 1}:\n{out}"
+                        )
             examples = '\n\n'.join(examples_parts) if examples_parts else None
 
-            # Tags
+            # Tags — HOJ may place tags at result level or inside problem
             tags = []
-            tag_list = problem.get('tags', [])
+            tag_list = result.get('tags') or problem.get('tags') or []
             if isinstance(tag_list, list):
                 for tag in tag_list:
                     if isinstance(tag, dict):
