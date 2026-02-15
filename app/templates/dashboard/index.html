@@ -24,6 +24,7 @@
         {{ stat_card('通过 (AC)', '--', 'success', 'bi-check-circle', '', 'stat-ac') }}
         {{ stat_card('本周提交', '--', 'warning', 'bi-calendar-week', '', 'stat-week') }}
         {{ stat_card('连续天数', '--', 'primary', 'bi-fire', '#6f42c1', 'stat-streak') }}
+        {{ stat_card('首次AC率', '--', 'info', 'bi-bullseye', '#36b9cc', 'stat-first-ac') }}
     </div>
 
     <!-- Row 1: Radar + Heatmap -->
@@ -36,12 +37,32 @@
         </div>
     </div>
 
-    <!-- Row 2: Difficulty Distribution + Recent Submissions -->
+    <!-- Row 2: Difficulty Distribution + Status Distribution -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-lg-5">
             {{ chart_box('difficulty-chart', '难度分布', 'bi-bar-chart') }}
         </div>
         <div class="col-12 col-lg-7">
+            {{ chart_box('status-chart', '提交状态分布', 'bi-pie-chart') }}
+        </div>
+    </div>
+
+    <!-- Row 3: Weekly Trend + Platform Stats -->
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-lg-7">
+            {{ chart_box('trend-chart', '周趋势', 'bi-graph-up') }}
+        </div>
+        <div class="col-12 col-lg-5">
+            <div class="chart-container">
+                <div class="chart-title"><i class="bi bi-hdd-stack"></i> 平台分布</div>
+                <div id="platform-stats"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Row 4: Recent Submissions -->
+    <div class="row g-3 mb-4">
+        <div class="col-12">
             <div class="chart-container">
                 <div class="chart-title"><i class="bi bi-clock-history"></i> 最近提交</div>
                 <div class="table-responsive">
@@ -67,7 +88,7 @@
         </div>
     </div>
 
-    <!-- Row 3: Weakness Alerts -->
+    <!-- Row 5: Weakness Alerts -->
     <div class="chart-container" id="weakness-section" style="display: none;">
         <div class="chart-title"><i class="bi bi-exclamation-triangle text-danger"></i> 薄弱环节提醒</div>
         <div class="row g-3" id="weakness-cards"></div>

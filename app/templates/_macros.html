@@ -6,7 +6,7 @@
 {# stat_card - Dashboard/Report stat card with responsive columns
    Params: label, value, color, icon, border_color, value_id #}
 {% macro stat_card(label, value, color='primary', icon='', border_color='', value_id='') %}
-<div class="col-6 col-md-6 col-xl-3">
+<div class="col-6 col-md-4 col-xl">
     <div class="card stat-card border-0 h-100" style="border-left-color: {{ border_color if border_color else 'var(--' ~ color ~ '-color)' }} !important;">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-center">

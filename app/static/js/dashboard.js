@@ -18,6 +18,9 @@ document.addEventListener('DOMContentLoaded', function () {
             initRadarChart(data.tag_scores || {});
             initHeatmap(data.heatmap || []);
             initDifficultyChart(data.difficulty_dist || {});
+            initStatusChart(data.status_dist || {});
+            initTrendChart(data.weekly_trend || []);
+            initPlatformStats(data.platform_stats || []);
             initRecentSubmissions(data.recent_submissions || []);
             initWeaknessAlerts(data.weaknesses || []);
         })
@@ -58,6 +61,8 @@ function updateStatCards(data) {
     setTextSafe('stat-ac', stats.ac_count || 0);
     setTextSafe('stat-week', stats.week_submissions || 0);
     setTextSafe('stat-streak', stats.streak_days || 0);
+    var firstAc = data.first_ac_rate || 0;
+    setTextSafe('stat-first-ac', firstAc + '%');
 }
 
 /**
@@ -391,6 +396,205 @@ function initWeaknessAlerts(weaknesses) {
 }
 
 /**
+ * Initialize status distribution doughnut chart
+ */
+function initStatusChart(statusDist) {
+    var container = document.getElementById('status-chart');
+    if (!container) return;
+    var chart = echarts.init(container);
+
+    var keys = Object.keys(statusDist);
+    if (keys.length === 0) {
+        container.innerHTML = '<div class="text-center text-muted py-5">暂无提交状态数据</div>';
+        return;
+    }
+
+    var statusColors = {
+        'AC': '#1cc88a', 'WA': '#e74a3b', 'TLE': '#f6c23e',
+        'MLE': '#fd7e14', 'RE': '#6f42c1', 'CE': '#858796'
+    };
+    var totalCount = 0;
+    var pieData = [];
+    for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        var v = statusDist[k];
+        totalCount += v;
+        pieData.push({
+            name: k, value: v,
+            itemStyle: { color: statusColors[k] || '#adb5bd' }
+        });
+    }
+
+    var mobile = isMobile();
+    var option = {
+        title: {
+            text: '提交状态分布',
+            left: 'center',
+            textStyle: { fontSize: mobile ? 12 : 14, color: '#5a5c69' }
+        },
+        tooltip: {
+            trigger: 'item',
+            formatter: '{b}: {c} ({d}%)'
+        },
+        graphic: [{
+            type: 'text',
+            left: 'center',
+            top: 'center',
+            style: {
+                text: totalCount.toString(),
+                fontSize: mobile ? 18 : 24,
+                fontWeight: 'bold',
+                fill: '#5a5c69',
+                textAlign: 'center'
+            }
+        }],
+        series: [{
+            type: 'pie',
+            radius: mobile ? ['35%', '55%'] : ['40%', '65%'],
+            center: ['50%', '55%'],
+            avoidLabelOverlap: true,
+            label: {
+                show: !mobile,
+                formatter: '{b}: {c}'
+            },
+            emphasis: {
+                label: { show: true, fontWeight: 'bold' }
+            },
+            data: pieData
+        }]
+    };
+    chart.setOption(option);
+    window.addEventListener('resize', function () { chart.resize(); });
+}
+
+/**
+ * Initialize weekly trend dual-axis chart
+ */
+function initTrendChart(weeklyTrend) {
+    var container = document.getElementById('trend-chart');
+    if (!container) return;
+    var chart = echarts.init(container);
+
+    if (!weeklyTrend || weeklyTrend.length === 0) {
+        container.innerHTML = '<div class="text-center text-muted py-5">暂无周趋势数据</div>';
+        return;
+    }
+
+    var weeks = weeklyTrend.map(function (w) { return w.week; });
+    var submissions = weeklyTrend.map(function (w) { return w.submissions; });
+    var acCounts = weeklyTrend.map(function (w) { return w.ac_count; });
+    var passRates = weeklyTrend.map(function (w) { return w.pass_rate; });
+
+    var mobile = isMobile();
+    var option = {
+        title: {
+            text: '周趋势（最近12周）',
+            left: 'center',
+            textStyle: { fontSize: mobile ? 12 : 14, color: '#5a5c69' }
+        },
+        tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'cross' }
+        },
+        legend: {
+            data: ['提交量', 'AC量', '通过率'],
+            bottom: 0,
+            textStyle: { fontSize: mobile ? 10 : 11 }
+        },
+        grid: {
+            left: '3%', right: '4%', bottom: mobile ? '15%' : '12%',
+            containLabel: true
+        },
+        xAxis: {
+            type: 'category',
+            data: weeks,
+            axisLabel: {
+                fontSize: mobile ? 8 : 10,
+                rotate: mobile ? 45 : 30,
+                formatter: function (v) {
+                    // Shorten "2025-W03" to "W03"
+                    var parts = v.split('-');
+                    return parts.length > 1 ? parts[1] : v;
+                }
+            }
+        },
+        yAxis: [
+            {
+                type: 'value',
+                name: '数量',
+                nameTextStyle: { fontSize: mobile ? 9 : 11 },
+                axisLabel: { fontSize: mobile ? 9 : 11 }
+            },
+            {
+                type: 'value',
+                name: '通过率',
+                nameTextStyle: { fontSize: mobile ? 9 : 11 },
+                axisLabel: { fontSize: mobile ? 9 : 11, formatter: '{value}%' },
+                max: 100
+            }
+        ],
+        series: [
+            {
+                name: '提交量',
+                type: 'bar',
+                data: submissions,
+                itemStyle: { color: 'rgba(78,115,223,0.7)' },
+                barWidth: '30%'
+            },
+            {
+                name: 'AC量',
+                type: 'bar',
+                data: acCounts,
+                itemStyle: { color: 'rgba(28,200,138,0.7)' },
+                barWidth: '30%'
+            },
+            {
+                name: '通过率',
+                type: 'line',
+                yAxisIndex: 1,
+                data: passRates,
+                smooth: true,
+                lineStyle: { color: '#f6c23e', width: 2 },
+                itemStyle: { color: '#f6c23e' },
+                symbol: 'circle',
+                symbolSize: 6
+            }
+        ]
+    };
+    chart.setOption(option);
+    window.addEventListener('resize', function () { chart.resize(); });
+}
+
+/**
+ * Initialize platform stats table
+ */
+function initPlatformStats(platformStats) {
+    var container = document.getElementById('platform-stats');
+    if (!container) return;
+
+    if (!platformStats || platformStats.length === 0) {
+        container.innerHTML = '<div class="text-center text-muted py-5">暂无平台数据</div>';
+        return;
+    }
+
+    var html = '<table class="table table-sm table-hover mb-0">';
+    html += '<thead><tr><th>平台</th><th>提交</th><th>AC</th><th>通过率</th></tr></thead>';
+    html += '<tbody>';
+    for (var i = 0; i < platformStats.length; i++) {
+        var p = platformStats[i];
+        var rateClass = p.pass_rate >= 50 ? 'text-success' : p.pass_rate >= 30 ? 'text-warning' : 'text-danger';
+        html += '<tr>';
+        html += '<td><span class="badge bg-dark">' + escapeHtml(p.platform) + '</span></td>';
+        html += '<td>' + p.submissions + '</td>';
+        html += '<td>' + p.ac_count + '</td>';
+        html += '<td class="' + rateClass + ' fw-bold">' + p.pass_rate + '%</td>';
+        html += '</tr>';
+    }
+    html += '</tbody></table>';
+    container.innerHTML = html;
+}
+
+/**
  * Show empty data state
  */
 function showEmptyState() {
@@ -408,6 +612,7 @@ function showEmptyState() {
     setTextSafe('stat-ac', 0);
     setTextSafe('stat-week', 0);
     setTextSafe('stat-streak', 0);
+    setTextSafe('stat-first-ac', '0%');
 }
 
 /* Helper Functions */

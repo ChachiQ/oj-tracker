@@ -1,7 +1,17 @@
 /**
  * OJ Tracker - Knowledge Graph Visualization
  * Uses ECharts force-directed graph to display knowledge points
+ * Features: dependency chain highlighting, efficiency metrics, problem list jump links
  */
+
+// Module-level state for dependency highlighting
+var _graphChart = null;
+var _graphNodes = [];
+var _graphLinks = [];
+var _prerequisiteMap = {};  // nodeId -> [prerequisite nodeIds]
+var _dependentMap = {};     // nodeId -> [dependent nodeIds]
+var _highlightedNode = null;
+
 document.addEventListener('DOMContentLoaded', function () {
     var graphContainer = document.getElementById('knowledge-graph');
     var studentId = graphContainer ? graphContainer.dataset.studentId : null;
@@ -64,12 +74,187 @@ var STATUS_LABELS = {
 };
 
 /**
+ * Build prerequisite and dependent maps from links data
+ */
+function buildDependencyMaps(linksList) {
+    _prerequisiteMap = {};
+    _dependentMap = {};
+    for (var i = 0; i < linksList.length; i++) {
+        var link = linksList[i];
+        var src = String(link.source);
+        var tgt = String(link.target);
+        // target depends on source (source is prerequisite of target)
+        if (!_prerequisiteMap[tgt]) _prerequisiteMap[tgt] = [];
+        _prerequisiteMap[tgt].push(src);
+        if (!_dependentMap[src]) _dependentMap[src] = [];
+        _dependentMap[src].push(tgt);
+    }
+}
+
+/**
+ * Recursively find all ancestors (prerequisites) of a node
+ */
+function findAllAncestors(nodeId, visited) {
+    if (!visited) visited = {};
+    if (visited[nodeId]) return [];
+    visited[nodeId] = true;
+    var result = [];
+    var prereqs = _prerequisiteMap[nodeId] || [];
+    for (var i = 0; i < prereqs.length; i++) {
+        result.push(prereqs[i]);
+        result = result.concat(findAllAncestors(prereqs[i], visited));
+    }
+    return result;
+}
+
+/**
+ * Recursively find all descendants (dependents) of a node
+ */
+function findAllDescendants(nodeId, visited) {
+    if (!visited) visited = {};
+    if (visited[nodeId]) return [];
+    visited[nodeId] = true;
+    var result = [];
+    var deps = _dependentMap[nodeId] || [];
+    for (var i = 0; i < deps.length; i++) {
+        result.push(deps[i]);
+        result = result.concat(findAllDescendants(deps[i], visited));
+    }
+    return result;
+}
+
+/**
+ * Highlight dependency chain for a clicked node, or restore all if same node clicked again
+ */
+function toggleDependencyHighlight(nodeId) {
+    if (!_graphChart) return;
+
+    // If clicking the same node again, or clicking blank, restore
+    if (_highlightedNode === nodeId) {
+        restoreGraph();
+        return;
+    }
+
+    _highlightedNode = nodeId;
+
+    var ancestors = findAllAncestors(nodeId, {});
+    var descendants = findAllDescendants(nodeId, {});
+    var relatedSet = {};
+    relatedSet[nodeId] = true;
+    for (var i = 0; i < ancestors.length; i++) relatedSet[ancestors[i]] = true;
+    for (var j = 0; j < descendants.length; j++) relatedSet[descendants[j]] = true;
+
+    // Update node styles
+    var updatedNodes = _graphNodes.map(function (n) {
+        var isRelated = relatedSet[n.id];
+        return {
+            id: n.id,
+            name: n.name,
+            symbolSize: n.symbolSize,
+            category: n.category,
+            itemStyle: {
+                color: n.itemStyle.color,
+                borderColor: isRelated ? '#333' : '#fff',
+                borderWidth: isRelated ? 2 : 1,
+                opacity: isRelated ? 1 : 0.15
+            },
+            label: {
+                show: isRelated || n.label.show,
+                fontSize: n.label.fontSize,
+                color: n.label.color,
+                opacity: isRelated ? 1 : 0.15
+            },
+            tooltip: n.tooltip,
+            _data: n._data
+        };
+    });
+
+    // Update link styles
+    var updatedLinks = _graphLinks.map(function (l) {
+        var src = typeof l.source === 'object' ? l.source.id : String(l.source);
+        var tgt = typeof l.target === 'object' ? l.target.id : String(l.target);
+        var isRelated = relatedSet[src] && relatedSet[tgt];
+        return {
+            source: src,
+            target: tgt,
+            lineStyle: {
+                opacity: isRelated ? 0.8 : 0.05,
+                width: isRelated ? 2.5 : 1,
+                curveness: 0.2,
+                color: isRelated ? '#4e73df' : '#adb5bd'
+            }
+        };
+    });
+
+    _graphChart.setOption({
+        series: [{
+            data: updatedNodes,
+            links: updatedLinks
+        }]
+    });
+}
+
+/**
+ * Restore graph to original state
+ */
+function restoreGraph() {
+    if (!_graphChart) return;
+    _highlightedNode = null;
+
+    var restoredNodes = _graphNodes.map(function (n) {
+        return {
+            id: n.id,
+            name: n.name,
+            symbolSize: n.symbolSize,
+            category: n.category,
+            itemStyle: {
+                color: n.itemStyle.color,
+                borderColor: '#fff',
+                borderWidth: 1,
+                opacity: 1
+            },
+            label: {
+                show: n.label.show,
+                fontSize: n.label.fontSize,
+                color: n.label.color,
+                opacity: 1
+            },
+            tooltip: n.tooltip,
+            _data: n._data
+        };
+    });
+
+    var restoredLinks = _graphLinks.map(function (l) {
+        var src = typeof l.source === 'object' ? l.source.id : String(l.source);
+        var tgt = typeof l.target === 'object' ? l.target.id : String(l.target);
+        return {
+            source: src,
+            target: tgt,
+            lineStyle: {
+                opacity: 0.3,
+                width: 1,
+                curveness: 0.2,
+                color: '#adb5bd'
+            }
+        };
+    });
+
+    _graphChart.setOption({
+        series: [{
+            data: restoredNodes,
+            links: restoredLinks
+        }]
+    });
+}
+
+/**
  * Initialize the knowledge graph using ECharts force-directed layout
  */
 function initKnowledgeGraph(data) {
     var container = document.getElementById('knowledge-graph');
     if (!container) return;
     var chart = echarts.init(container);
+    _graphChart = chart;
 
     var nodesList = data.nodes || [];
     var linksList = data.links || [];
@@ -80,6 +265,9 @@ function initKnowledgeGraph(data) {
             '<p class="mt-2">暂无知识图谱数据</p></div>';
         return;
     }
+
+    // Build dependency maps
+    buildDependencyMaps(linksList);
 
     // Build categories from stages
     var categories = [];
@@ -126,6 +314,9 @@ function initKnowledgeGraph(data) {
         };
     });
 
+    // Store for highlight operations
+    _graphNodes = nodes;
+
     // Process links
     var links = linksList.map(function (l) {
         return {
@@ -139,6 +330,8 @@ function initKnowledgeGraph(data) {
             }
         };
     });
+
+    _graphLinks = links;
 
     var mobile = isMobile();
     var tablet = isTablet();
@@ -200,10 +393,16 @@ function initKnowledgeGraph(data) {
 
     chart.setOption(option);
 
-    // Click handler to show detail panel
+    // Click handler to show detail panel and highlight dependencies
     chart.on('click', function (params) {
         if (params.dataType === 'node' && params.data && params.data._data) {
             showNodeDetail(params.data._data);
+            toggleDependencyHighlight(params.data.id);
+        } else {
+            // Click on blank area — restore
+            restoreGraph();
+            var panel = document.getElementById('node-detail-panel');
+            if (panel) panel.style.display = 'none';
         }
     });
 
@@ -222,15 +421,21 @@ function showNodeDetail(nodeData) {
     var statusColor = STATUS_COLORS[status] || '#d1d3e2';
     var stageName = STAGE_NAMES[nodeData.stage] || ('阶段' + nodeData.stage);
     var passRate = nodeData.pass_rate || 0;
+    var firstAcRate = nodeData.first_ac_rate || 0;
+    var avgAttempts = nodeData.avg_attempts || 0;
 
     var progressClass = 'bg-success';
     if (passRate < 30) progressClass = 'bg-danger';
     else if (passRate < 50) progressClass = 'bg-warning';
 
+    var firstAcClass = 'bg-success';
+    if (firstAcRate < 30) firstAcClass = 'bg-danger';
+    else if (firstAcRate < 50) firstAcClass = 'bg-warning';
+
     var html = '<div class="card">';
     html += '<div class="card-header d-flex justify-content-between align-items-center">';
     html += '<h6 class="mb-0 fw-bold">' + escapeHtml(nodeData.name) + '</h6>';
-    html += '<button type="button" class="btn-close btn-close-sm" onclick="document.getElementById(\'node-detail-panel\').style.display=\'none\'"></button>';
+    html += '<button type="button" class="btn-close btn-close-sm" onclick="document.getElementById(\'node-detail-panel\').style.display=\'none\'; restoreGraph();"></button>';
     html += '</div>';
     html += '<div class="card-body">';
 
@@ -241,19 +446,39 @@ function showNodeDetail(nodeData) {
 
     // Info rows
     html += '<table class="table table-sm table-borderless mb-3">';
-    html += '<tr><td class="text-muted" style="width: 70px;">阶段</td><td>' + stageName + '</td></tr>';
+    html += '<tr><td class="text-muted" style="width: 80px;">阶段</td><td>' + stageName + '</td></tr>';
     if (nodeData.category) {
         html += '<tr><td class="text-muted">分类</td><td>' + escapeHtml(nodeData.category) + '</td></tr>';
     }
     html += '<tr><td class="text-muted">评分</td><td><strong>' + (nodeData.score || 0) + '</strong> / 100</td></tr>';
     html += '<tr><td class="text-muted">已通过</td><td>' + (nodeData.solved || 0) + ' 题</td></tr>';
     html += '<tr><td class="text-muted">已尝试</td><td>' + (nodeData.attempted || 0) + ' 题</td></tr>';
-    html += '<tr><td class="text-muted">通过率</td><td>' + passRate + '%</td></tr>';
     html += '</table>';
 
-    // Progress bar
-    html += '<div class="progress mb-3" style="height: 8px;">';
+    // Pass rate progress bar
+    html += '<div class="mb-2">';
+    html += '<div class="d-flex justify-content-between"><small class="text-muted">通过率</small><small>' + passRate + '%</small></div>';
+    html += '<div class="progress" style="height: 6px;">';
     html += '<div class="progress-bar ' + progressClass + '" style="width: ' + passRate + '%;"></div>';
+    html += '</div></div>';
+
+    // First AC rate progress bar
+    html += '<div class="mb-2">';
+    html += '<div class="d-flex justify-content-between"><small class="text-muted">首次AC率</small><small>' + firstAcRate + '%</small></div>';
+    html += '<div class="progress" style="height: 6px;">';
+    html += '<div class="progress-bar ' + firstAcClass + '" style="width: ' + firstAcRate + '%;"></div>';
+    html += '</div></div>';
+
+    // Average attempts
+    html += '<div class="mb-3">';
+    html += '<div class="d-flex justify-content-between"><small class="text-muted">平均尝试次数</small><small>' + avgAttempts + ' 次</small></div>';
+    html += '</div>';
+
+    // Jump to problem list link
+    html += '<div class="mb-3">';
+    html += '<a href="/problem/?tag_name=' + encodeURIComponent(nodeData.id) + '" class="btn btn-outline-primary btn-sm w-100">';
+    html += '<i class="bi bi-search"></i> 查看所有相关题目';
+    html += '</a>';
     html += '</div>';
 
     // Recommended problems

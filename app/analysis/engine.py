@@ -13,6 +13,17 @@ from app.extensions import db
 from app.models import Student, Submission, Problem, Tag, PlatformAccount
 
 
+# Stage-adaptive 5-factor weights: (count, pass_rate, difficulty, first_ac, efficiency)
+STAGE_WEIGHTS = {
+    1: (0.30, 0.30, 0.15, 0.15, 0.10),  # Basics: emphasize volume and pass rate
+    2: (0.30, 0.30, 0.15, 0.15, 0.10),
+    3: (0.20, 0.25, 0.30, 0.15, 0.10),  # Intermediate: default balanced
+    4: (0.20, 0.25, 0.30, 0.15, 0.10),
+    5: (0.10, 0.20, 0.35, 0.20, 0.15),  # Advanced: emphasize difficulty and efficiency
+    6: (0.10, 0.20, 0.35, 0.20, 0.15),
+}
+
+
 class AnalysisEngine:
     """Core statistics engine for computing student metrics.
 
@@ -190,20 +201,31 @@ class AnalysisEngine:
         daily = Counter(s.submitted_at.strftime("%Y-%m-%d") for s in recent)
         return [{"date": k, "count": v} for k, v in sorted(daily.items())]
 
+    @staticmethod
+    def _time_decay(submitted_at):
+        """Compute time decay weight for a submission.
+
+        Returns a weight between 0.5 and 1.0:
+        - Within 90 days: linear decay from 1.0 to 0.5
+        - Beyond 90 days: fixed 0.5
+        """
+        if not submitted_at:
+            return 0.5
+        days_ago = (datetime.utcnow() - submitted_at).days
+        return 0.5 + 0.5 * max(0, 1 - days_ago / 90)
+
     def get_tag_scores(self) -> dict:
         """Calculate ability scores per tag/knowledge point for radar chart.
 
-        Score formula (weighted 0-100):
-            - pass_count_weight * 20: How many problems solved with this tag
-            - pass_rate_weight * 25: AC rate for problems with this tag
-            - difficulty_weight * 30: Max difficulty solved
-            - first_ac_rate * 15: Rate of first-attempt ACs
-            - avg_attempts * 10: Efficiency (fewer attempts = higher score)
+        Features time-decayed metrics and stage-adaptive weighting.
 
         Returns:
             Dict mapping tag_name to dict with keys: score, display_name, stage,
-            solved, attempted, pass_rate, first_ac_rate, avg_attempts.
+            solved, attempted, pass_rate, first_ac_rate, avg_attempts, recent_activity.
         """
+        now = datetime.utcnow()
+        thirty_days_ago = now - timedelta(days=30)
+
         # Group submissions by problem
         problem_submissions = defaultdict(list)
         for s in self.submissions:
@@ -220,6 +242,13 @@ class AnalysisEngine:
                 "total_attempts_to_ac": 0,
                 "ac_problems": 0,
                 "max_difficulty": 0,
+                "weighted_solved": 0.0,
+                "weighted_attempted": 0.0,
+                "weighted_ac_subs": 0.0,
+                "weighted_total_subs": 0.0,
+                "weighted_first_ac": 0.0,
+                "weighted_attempts_to_ac": 0.0,
+                "has_recent": False,
             }
         )
 
@@ -244,17 +273,30 @@ class AnalysisEngine:
                         attempts_to_ac = i + 1
                         break
 
+            # Time decay based on most recent submission for this problem
+            most_recent = subs_sorted[-1].submitted_at if subs_sorted else None
+            decay = self._time_decay(most_recent)
+            is_recent = most_recent and most_recent >= thirty_days_ago
+
             for tag in tags:
                 stats = tag_stats[tag.name]
                 stats["attempted"] += 1
                 stats["total_subs"] += len(subs)
                 stats["ac_subs"] += sum(1 for s in subs if s.status == "AC")
+                stats["weighted_attempted"] += decay
+                stats["weighted_total_subs"] += len(subs) * decay
+                stats["weighted_ac_subs"] += sum(1 for s in subs if s.status == "AC") * decay
+                if is_recent:
+                    stats["has_recent"] = True
                 if has_ac:
                     stats["solved"] += 1
                     stats["ac_problems"] += 1
                     stats["total_attempts_to_ac"] += attempts_to_ac
+                    stats["weighted_solved"] += decay
+                    stats["weighted_attempts_to_ac"] += attempts_to_ac * decay
                     if first_is_ac:
                         stats["first_ac"] += 1
+                        stats["weighted_first_ac"] += decay
                     stats["max_difficulty"] = max(
                         stats["max_difficulty"], problem.difficulty or 0
                     )
@@ -279,22 +321,39 @@ class AnalysisEngine:
                 else 0
             )
 
-            # Normalize individual component scores to 0-100
-            count_score = min(solved * 10, 100)  # Cap at 10 problems
-            rate_score = pass_rate * 100
-            diff_score = min(stats["max_difficulty"] * 10, 100)
-            first_score = first_ac_rate * 100
-            attempt_score = (
-                max(0, 100 - (avg_attempts - 1) * 20) if avg_attempts > 0 else 0
+            # Time-weighted metrics for scoring
+            w_attempted = stats["weighted_attempted"]
+            w_solved = stats["weighted_solved"]
+            w_pass_rate = w_solved / w_attempted if w_attempted > 0 else 0
+            w_first_ac_rate = (
+                stats["weighted_first_ac"] / w_solved
+                if w_solved > 0
+                else 0
+            )
+            w_avg_attempts = (
+                stats["weighted_attempts_to_ac"] / w_solved
+                if w_solved > 0
+                else 0
             )
 
-            # Weighted total
+            # Normalize individual component scores to 0-100 (time-weighted)
+            count_score = min(w_solved * 10, 100)
+            rate_score = w_pass_rate * 100
+            diff_score = min(stats["max_difficulty"] * 10, 100)
+            first_score = w_first_ac_rate * 100
+            attempt_score = (
+                max(0, 100 - (w_avg_attempts - 1) * 20) if w_avg_attempts > 0 else 0
+            )
+
+            # Stage-adaptive weights
+            stage = tag.stage or 3
+            weights = STAGE_WEIGHTS.get(stage, STAGE_WEIGHTS[3])
             total_score = (
-                count_score * 0.20
-                + rate_score * 0.25
-                + diff_score * 0.30
-                + first_score * 0.15
-                + attempt_score * 0.10
+                count_score * weights[0]
+                + rate_score * weights[1]
+                + diff_score * weights[2]
+                + first_score * weights[3]
+                + attempt_score * weights[4]
             )
 
             result[tag_name] = {
@@ -306,6 +365,7 @@ class AnalysisEngine:
                 "pass_rate": round(pass_rate * 100, 1),
                 "first_ac_rate": round(first_ac_rate * 100, 1),
                 "avg_attempts": round(avg_attempts, 1),
+                "recent_activity": stats["has_recent"],
             }
 
         return result

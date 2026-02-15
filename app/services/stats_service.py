@@ -9,16 +9,29 @@ from app.analysis.trend import TrendAnalyzer
 class StatsService:
     @staticmethod
     def get_dashboard_data(student_id: int) -> dict:
+        # Check if student has any platform accounts
+        account_ids = [a.id for a in PlatformAccount.query.filter_by(student_id=student_id).all()]
+        if not account_ids:
+            return {
+                'stats': {'total_problems': 0, 'ac_count': 0, 'week_submissions': 0, 'streak_days': 0},
+                'tag_scores': {}, 'heatmap': [], 'difficulty_dist': {},
+                'recent_submissions': [], 'weaknesses': [],
+                'status_dist': {}, 'first_ac_rate': 0,
+                'basic': {}, 'weekly': {}, 'streak': 0,
+                'weekly_trend': [], 'platform_stats': [],
+            }
+
         engine = AnalysisEngine(student_id)
         basic = engine.get_basic_stats()
         weekly = engine.get_weekly_stats(1)
 
         recent_submissions = StatsService._get_recent_submissions(student_id, limit=15)
         weaknesses = StatsService.get_weakness_data(student_id)
+        trend_analyzer = TrendAnalyzer(student_id)
 
         return {
             'stats': {
-                'total_problems': basic.get('unique_solved', 0),
+                'total_problems': basic.get('unique_attempted', 0),
                 'ac_count': basic.get('ac_submissions', 0),
                 'week_submissions': weekly.get('submissions', 0) if isinstance(weekly, dict) else 0,
                 'streak_days': engine.get_streak_days(),
@@ -34,6 +47,8 @@ class StatsService:
             'streak': engine.get_streak_days(),
             'status_dist': engine.get_status_distribution(),
             'first_ac_rate': engine.get_first_ac_rate(),
+            'weekly_trend': trend_analyzer.get_weekly_trend(12),
+            'platform_stats': StatsService._get_platform_stats(account_ids),
         }
 
     @staticmethod
@@ -103,6 +118,8 @@ class StatsService:
                 'solved': score_info['solved'] if score_info else 0,
                 'attempted': score_info['attempted'] if score_info else 0,
                 'pass_rate': score_info['pass_rate'] if score_info else 0,
+                'first_ac_rate': score_info['first_ac_rate'] if score_info else 0,
+                'avg_attempts': score_info['avg_attempts'] if score_info else 0,
                 'recommended_problems': recommended,
             })
 
@@ -145,6 +162,35 @@ class StatsService:
             }
 
         return {'nodes': nodes, 'links': links, 'stages': stages}
+
+    @staticmethod
+    def _get_platform_stats(account_ids: list) -> list:
+        """Get per-platform submission and AC counts."""
+        from collections import defaultdict
+        accounts = PlatformAccount.query.filter(PlatformAccount.id.in_(account_ids)).all()
+        account_platform = {a.id: a.platform for a in accounts}
+
+        platform_data = defaultdict(lambda: {'submissions': 0, 'ac_count': 0})
+        submissions = Submission.query.filter(
+            Submission.platform_account_id.in_(account_ids)
+        ).all()
+        for s in submissions:
+            platform = account_platform.get(s.platform_account_id, 'unknown')
+            platform_data[platform]['submissions'] += 1
+            if s.status == 'AC':
+                platform_data[platform]['ac_count'] += 1
+
+        result = []
+        for platform, stats in sorted(platform_data.items()):
+            total = stats['submissions']
+            ac = stats['ac_count']
+            result.append({
+                'platform': platform,
+                'submissions': total,
+                'ac_count': ac,
+                'pass_rate': round(ac / total * 100, 1) if total > 0 else 0,
+            })
+        return result
 
     @staticmethod
     def get_weakness_data(student_id: int) -> list:
