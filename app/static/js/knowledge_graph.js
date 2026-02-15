@@ -6,6 +6,9 @@
 
 // Module-level state for dependency highlighting
 var _graphChart = null;
+var _lastAssessmentTime = null;  // cached latest report time for duplicate check
+var _aiAnalyzing = false;
+var _beforeUnloadHandler = function(e) { e.preventDefault(); e.returnValue = ''; };
 var _graphNodes = [];
 var _graphLinks = [];
 var _prerequisiteMap = {};  // nodeId -> [prerequisite nodeIds]
@@ -37,6 +40,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Load assessment history
     loadAssessmentHistory(studentId);
+
+    // Intercept in-app link clicks during analysis
+    document.addEventListener('click', function (e) {
+        if (!_aiAnalyzing) return;
+        var link = e.target.closest('a[href]');
+        if (!link) return;
+        var href = link.getAttribute('href');
+        if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+        if (!confirm('AI 正在生成分析报告，离开页面将中断分析。确定要离开吗？')) {
+            e.preventDefault();
+        }
+    });
 });
 
 /**
@@ -550,6 +565,69 @@ function escapeHtml(str) {
 // ============================================================
 
 /**
+ * Format a datetime string as WeChat-style smart relative time.
+ * Mirrors the server-side smarttime filter (app/__init__.py:68-89).
+ */
+function formatSmartTime(dateStr) {
+    if (!dateStr) return '-';
+    var dt = new Date(dateStr.replace(' ', 'T'));
+    if (isNaN(dt.getTime())) return dateStr;
+
+    var now = new Date();
+    var today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var dtDate = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+    var deltaDays = Math.round((today - dtDate) / 86400000);
+
+    if (deltaDays === 0) {
+        var hh = String(dt.getHours()).padStart(2, '0');
+        var mm = String(dt.getMinutes()).padStart(2, '0');
+        return hh + ':' + mm;
+    } else if (deltaDays === 1) {
+        return '昨天';
+    } else if (deltaDays === 2) {
+        return '前天';
+    } else if (deltaDays <= 7) {
+        return deltaDays + '天前';
+    } else if (dt.getFullYear() === now.getFullYear()) {
+        var mon = String(dt.getMonth() + 1).padStart(2, '0');
+        var day = String(dt.getDate()).padStart(2, '0');
+        return mon + '-' + day;
+    } else {
+        var y = dt.getFullYear();
+        var m = String(dt.getMonth() + 1).padStart(2, '0');
+        var d = String(dt.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + d;
+    }
+}
+
+/**
+ * Reload all page data (graph, stage progress, assessment history) after analysis completes
+ */
+function reloadPageData(studentId) {
+    // Dispose old chart instance and re-init
+    if (_graphChart) {
+        _graphChart.dispose();
+        _graphChart = null;
+    }
+    _highlightedNode = null;
+
+    fetch('/api/knowledge/' + studentId)
+        .then(function (response) {
+            if (!response.ok) throw new Error('API request failed: ' + response.status);
+            return response.json();
+        })
+        .then(function (data) {
+            initKnowledgeGraph(data);
+            updateStageProgress(data.stages || {});
+        })
+        .catch(function (err) {
+            console.error('Failed to reload knowledge data:', err);
+        });
+
+    loadAssessmentHistory(studentId);
+}
+
+/**
  * Load all AI assessment history on page load
  */
 function loadAssessmentHistory(studentId) {
@@ -559,6 +637,7 @@ function loadAssessmentHistory(studentId) {
             if (data.has_assessment && data.items && data.items.length > 0) {
                 renderAssessmentList(data.items, studentId);
             }
+            renderNudgeBanner(data, studentId);
         })
         .catch(function (err) {
             console.error('Failed to load assessment history:', err);
@@ -619,9 +698,31 @@ function triggerAIAnalysis(studentId) {
     var btn = document.getElementById('btn-ai-analyze');
     if (!btn) return;
 
+    // Check for recent analysis (within 24 hours)
+    if (_lastAssessmentTime) {
+        var lastTime = new Date(_lastAssessmentTime.replace(' ', 'T'));
+        if (!isNaN(lastTime.getTime())) {
+            var hoursAgo = (Date.now() - lastTime.getTime()) / 3600000;
+            if (hoursAgo < 24) {
+                var timeLabel = formatSmartTime(_lastAssessmentTime);
+                if (!confirm('上次分析在 ' + timeLabel + ' 完成，短时间内重复分析结果差异不大。确定要继续分析吗？')) {
+                    return;
+                }
+            }
+        }
+    }
+
     // Set loading state
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 分析中...';
+
+    // Register beforeunload warning and show banner
+    _aiAnalyzing = true;
+    window.addEventListener('beforeunload', _beforeUnloadHandler);
+    var banner = document.getElementById('ai-analyzing-banner');
+    if (banner) banner.style.cssText = '';  // remove display:none
+    var nudgeBanner = document.getElementById('ai-nudge-banner');
+    if (nudgeBanner) nudgeBanner.style.display = 'none';
 
     // Reset progress panel
     var progressPanel = document.getElementById('ai-progress-panel');
@@ -678,6 +779,10 @@ function triggerAIAnalysis(studentId) {
             appendProgressLog('error', 'AI 分析请求失败: ' + err.message);
         })
         .finally(function () {
+            _aiAnalyzing = false;
+            window.removeEventListener('beforeunload', _beforeUnloadHandler);
+            var banner = document.getElementById('ai-analyzing-banner');
+            if (banner) banner.style.cssText = 'display: none !important';
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-robot"></i> AI 智能分析';
         });
@@ -688,6 +793,13 @@ function triggerAIAnalysis(studentId) {
  */
 function handleProgressEvent(payload, studentId) {
     appendProgressLog(payload.step, payload.message, payload.detail || '');
+
+    if (payload.step === 'done' || payload.step === 'error') {
+        _aiAnalyzing = false;
+        window.removeEventListener('beforeunload', _beforeUnloadHandler);
+        var banner = document.getElementById('ai-analyzing-banner');
+        if (banner) banner.style.cssText = 'display: none !important';
+    }
 
     if (payload.step === 'done') {
         // Fade out progress panel after a short delay
@@ -704,8 +816,8 @@ function handleProgressEvent(payload, studentId) {
             }
         }, 1500);
 
-        // Reload the full history to get the new item with its DB id
-        loadAssessmentHistory(studentId);
+        // Reload graph, stage progress, and assessment history
+        reloadPageData(studentId);
     } else if (payload.step === 'error') {
         // Keep progress panel visible on error so user can see what happened
     }
@@ -721,8 +833,12 @@ function renderAssessmentList(items, studentId) {
 
     if (!items || items.length === 0) {
         card.style.display = 'none';
+        _lastAssessmentTime = null;
         return;
     }
+
+    // Cache the latest report time for duplicate analysis check
+    _lastAssessmentTime = items[0].analyzed_at || null;
 
     card.style.display = 'block';
     var html = '';
@@ -741,7 +857,7 @@ function renderAssessmentList(items, studentId) {
         html += '<button class="accordion-button flex-grow-1' + (isFirst ? '' : ' collapsed') + '" ';
         html += 'type="button" data-bs-toggle="collapse" data-bs-target="#' + collapseId + '">';
         html += '<i class="bi bi-file-earmark-text me-2"></i> ';
-        html += '<span>' + escapeHtml(item.analyzed_at) + '</span>';
+        html += '<span title="' + escapeHtml(item.analyzed_at) + '">' + escapeHtml(formatSmartTime(item.analyzed_at)) + '</span>';
         if (assessment.overall_level) {
             html += ' <span class="badge bg-primary ms-2">' + escapeHtml(assessment.overall_level) + '</span>';
         }
@@ -836,13 +952,90 @@ function renderSingleAssessment(assessment) {
 
     // Next milestone
     if (assessment.next_milestone) {
-        html += '<div class="alert alert-info mb-0 py-2">';
+        html += '<div class="alert alert-info mb-3 py-2">';
         html += '<i class="bi bi-flag"></i> <strong>下一目标:</strong> ';
         html += escapeHtml(assessment.next_milestone);
         html += '</div>';
     }
 
+    // Encouragement
+    if (assessment.encouragement) {
+        html += '<div class="alert alert-success mb-3 py-2">';
+        html += '<i class="bi bi-emoji-smile"></i> ';
+        html += escapeHtml(assessment.encouragement);
+        html += '</div>';
+    }
+
+    // Contest preparation
+    var contestPrep = assessment.contest_preparation || [];
+    if (contestPrep.length > 0) {
+        html += '<div class="mb-3">';
+        html += '<h6 class="fw-bold"><i class="bi bi-trophy"></i> 赛事备赛建议</h6>';
+        html += '<div class="row g-2">';
+        for (var ci = 0; ci < contestPrep.length; ci++) {
+            var cp = contestPrep[ci];
+            var daysUntil = cp.days_until || 0;
+            var badgeClass = 'bg-primary';
+            if (daysUntil <= 30) badgeClass = 'bg-danger';
+            else if (daysUntil <= 90) badgeClass = 'bg-warning text-dark';
+
+            html += '<div class="col-md-6">';
+            html += '<div class="card border-0 bg-light">';
+            html += '<div class="card-body py-2 px-3">';
+            html += '<div class="d-flex justify-content-between align-items-center mb-1">';
+            html += '<strong>' + escapeHtml(cp.contest || '') + '</strong>';
+            html += '<span class="badge ' + badgeClass + '">' + daysUntil + ' 天</span>';
+            html += '</div>';
+            html += '<small>' + escapeHtml(cp.advice || '') + '</small>';
+            html += '</div></div></div>';
+        }
+        html += '</div></div>';
+    }
+
     return html;
+}
+
+/**
+ * Render a nudge banner suggesting the user run AI analysis
+ */
+function renderNudgeBanner(data, studentId) {
+    var container = document.getElementById('ai-nudge-banner');
+    if (!container) return;
+
+    // Don't show during analysis
+    if (_aiAnalyzing) {
+        container.style.display = 'none';
+        return;
+    }
+
+    var latestReportTime = data.latest_report_time || null;
+    var newSubmissions = data.new_submissions_since_report || 0;
+    var message = '';
+    var alertClass = '';
+
+    if (!latestReportTime) {
+        // No report ever generated
+        alertClass = 'alert-info';
+        message = '<i class="bi bi-lightbulb me-2"></i>' +
+            '还没有生成过 AI 分析报告，试试 AI 智能分析了解学习情况吧';
+    } else if (newSubmissions > 0) {
+        // Has new submissions since last report
+        alertClass = 'alert-info';
+        message = '<i class="bi bi-info-circle me-2"></i>' +
+            '自上次分析以来有 <strong>' + newSubmissions + '</strong> 条新做题记录，建议生成新的分析报告';
+    } else {
+        // All up to date, hide banner
+        container.style.display = 'none';
+        return;
+    }
+
+    container.innerHTML = '<div class="alert ' + alertClass + ' alert-dismissible d-flex align-items-center" role="alert">' +
+        '<div class="flex-grow-1">' + message + '</div>' +
+        '<button type="button" class="btn btn-primary btn-sm ms-3" onclick="triggerAIAnalysis(' + studentId + ')">' +
+        '<i class="bi bi-robot me-1"></i>开始分析</button>' +
+        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+        '</div>';
+    container.style.display = '';
 }
 
 /**

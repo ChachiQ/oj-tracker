@@ -158,12 +158,48 @@ def knowledge_assessment(student_id):
     if not _verify_student(student_id):
         return jsonify({'error': 'Unauthorized'}), 403
 
+    from app.models import AnalysisLog
     from app.analysis.knowledge_analyzer import KnowledgeAnalyzer
     analyzer = KnowledgeAnalyzer(student_id)
     items = analyzer.get_all()
+
+    # Nudge metadata: latest report time + new submissions since then
+    latest_log = AnalysisLog.query.filter_by(
+        student_id=student_id, log_type='knowledge'
+    ).order_by(AnalysisLog.created_at.desc()).first()
+
+    latest_report_time = None
+    new_submissions_since_report = 0
+
+    account_ids = [
+        a.id
+        for a in PlatformAccount.query.filter_by(
+            student_id=student_id
+        ).all()
+    ]
+
+    if latest_log:
+        from datetime import timezone
+        latest_report_time = latest_log.created_at.replace(
+            tzinfo=timezone.utc
+        ).astimezone().strftime('%Y-%m-%d %H:%M')
+        if account_ids:
+            new_submissions_since_report = Submission.query.filter(
+                Submission.platform_account_id.in_(account_ids),
+                Submission.submitted_at > latest_log.created_at
+            ).count()
+    else:
+        # No report yet — count all submissions
+        if account_ids:
+            new_submissions_since_report = Submission.query.filter(
+                Submission.platform_account_id.in_(account_ids)
+            ).count()
+
     return jsonify({
         'has_assessment': len(items) > 0,
         'items': items,
+        'latest_report_time': latest_report_time,
+        'new_submissions_since_report': new_submissions_since_report,
     })
 
 

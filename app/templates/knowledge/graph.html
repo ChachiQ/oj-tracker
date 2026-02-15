@@ -58,7 +58,7 @@
 {% call page_header("知识图谱", "bi-diagram-3") %}
     {{ student_selector(students, current_student.id if current_student else none, url_for('knowledge.graph')) }}
     {% if current_student %}
-    <button id="btn-ai-analyze" class="btn btn-outline-primary btn-sm"
+    <button id="btn-ai-analyze" class="btn btn-primary btn-sm"
             onclick="triggerAIAnalysis({{ current_student.id }})">
         <i class="bi bi-robot"></i> AI 智能分析
     </button>
@@ -107,6 +107,15 @@
         <span><i class="bi bi-circle-fill" style="color: #e74a3b;"></i> 薄弱</span>
         <span><i class="bi bi-circle-fill" style="color: #d1d3e2;"></i> 未涉及</span>
     </div>
+</div>
+
+<!-- AI Nudge Banner (shown when no reports or new submissions) -->
+<div id="ai-nudge-banner" class="mb-4" style="display: none;"></div>
+
+<!-- AI Analysis Warning Banner (shown during analysis) -->
+<div id="ai-analyzing-banner" class="alert alert-warning d-flex align-items-center mb-4" style="display: none !important;">
+    <span class="spinner-border spinner-border-sm me-2"></span>
+    <span>AI 正在生成分析报告，请耐心等待，离开页面将中断分析。</span>
 </div>
 
 <!-- AI Analysis Progress Panel -->

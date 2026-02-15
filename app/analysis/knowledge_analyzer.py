@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import current_app
 
@@ -19,6 +19,7 @@ from .engine import AnalysisEngine
 from .weakness import WeaknessDetector
 from .analysis_log import AnalysisLogManager
 from .ai_analyzer import AIAnalyzer
+from .contest_calendar import get_upcoming_contests
 from .prompts.knowledge_assessment import build_knowledge_assessment_prompt
 
 logger = logging.getLogger(__name__)
@@ -84,11 +85,25 @@ class KnowledgeAnalyzer:
 
         prev_log = self.log_manager.get_latest_log("knowledge")
         previous_findings = None
-        if prev_log and prev_log.key_findings:
-            try:
-                previous_findings = json.loads(prev_log.key_findings)
-            except (json.JSONDecodeError, TypeError):
-                pass
+        previous_assessment = None
+        recent_stats = None
+        if prev_log:
+            if prev_log.key_findings:
+                try:
+                    previous_findings = json.loads(prev_log.key_findings)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if prev_log.content:
+                try:
+                    previous_assessment = json.loads(prev_log.content)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            # Only compute recent stats if last report was at least 1 day ago
+            hours_since = (datetime.utcnow() - prev_log.created_at).total_seconds() / 3600
+            if hours_since >= 24:
+                recent_stats = self._get_stats_since(prev_log.created_at)
+
+        upcoming_contests = get_upcoming_contests()
 
         messages = build_knowledge_assessment_prompt(
             student_name=self.student.name if self.student else "学生",
@@ -99,6 +114,9 @@ class KnowledgeAnalyzer:
             weak_tags=weaknesses,
             basic_stats=basic_stats,
             previous_findings=previous_findings,
+            previous_assessment=previous_assessment,
+            recent_stats=recent_stats,
+            upcoming_contests=upcoming_contests if upcoming_contests else None,
         )
 
         # Step 4: Call LLM
@@ -213,7 +231,7 @@ class KnowledgeAnalyzer:
 
         return {
             "assessment": assessment,
-            "analyzed_at": log.created_at.strftime("%Y-%m-%d %H:%M"),
+            "analyzed_at": log.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M"),
         }
 
     def get_all(self) -> list[dict]:
@@ -238,7 +256,7 @@ class KnowledgeAnalyzer:
             results.append({
                 "id": log.id,
                 "assessment": assessment,
-                "analyzed_at": log.created_at.strftime("%Y-%m-%d %H:%M"),
+                "analyzed_at": log.created_at.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M"),
             })
         return results
 
@@ -255,6 +273,61 @@ class KnowledgeAnalyzer:
         db.session.delete(log)
         db.session.commit()
         return True
+
+    def _get_stats_since(self, since_dt: datetime) -> dict:
+        """Compute submission stats since a given datetime.
+
+        Returns:
+            Dict with submissions, ac_count, unique_solved, active_days, pass_rate.
+        """
+        from sqlalchemy import func
+
+        account_ids = [
+            a.id
+            for a in PlatformAccount.query.filter_by(
+                student_id=self.student_id
+            ).all()
+        ]
+        if not account_ids:
+            return {
+                "submissions": 0,
+                "ac_count": 0,
+                "unique_solved": 0,
+                "active_days": 0,
+                "pass_rate": 0,
+            }
+
+        base_q = Submission.query.filter(
+            Submission.platform_account_id.in_(account_ids),
+            Submission.submitted_at > since_dt,
+        )
+
+        total = base_q.count()
+        ac_count = base_q.filter(Submission.status == "AC").count()
+
+        unique_solved = (
+            base_q.filter(Submission.status == "AC")
+            .with_entities(Submission.problem_id_ref)
+            .distinct()
+            .count()
+        )
+
+        active_days_result = (
+            base_q
+            .with_entities(func.date(Submission.submitted_at))
+            .distinct()
+            .count()
+        )
+
+        pass_rate = round(ac_count / total * 100, 1) if total > 0 else 0
+
+        return {
+            "submissions": total,
+            "ac_count": ac_count,
+            "unique_solved": unique_solved,
+            "active_days": active_days_result,
+            "pass_rate": pass_rate,
+        }
 
     def _get_earliest_submission_date(self) -> datetime | None:
         """Find the earliest submission date for this student."""
