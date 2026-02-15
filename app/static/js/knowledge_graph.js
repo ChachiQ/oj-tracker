@@ -34,6 +34,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     '<p class="mt-2">加载知识图谱失败，请稍后再试。</p></div>';
             }
         });
+
+    // Load assessment history
+    loadAssessmentHistory(studentId);
 });
 
 /**
@@ -540,4 +543,346 @@ function escapeHtml(str) {
     var div = document.createElement('div');
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
+}
+
+// ============================================================
+// AI Knowledge Assessment — SSE streaming + history management
+// ============================================================
+
+/**
+ * Load all AI assessment history on page load
+ */
+function loadAssessmentHistory(studentId) {
+    fetch('/api/knowledge/' + studentId + '/assessment')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.has_assessment && data.items && data.items.length > 0) {
+                renderAssessmentList(data.items, studentId);
+            }
+        })
+        .catch(function (err) {
+            console.error('Failed to load assessment history:', err);
+        });
+}
+
+/**
+ * Append a progress log line to the progress panel
+ */
+function appendProgressLog(step, message, detail) {
+    var panel = document.getElementById('ai-progress-panel');
+    var container = document.getElementById('ai-progress-steps');
+    if (!panel || !container) return;
+
+    panel.style.display = 'block';
+
+    // Mark previous active step as done
+    var activeSteps = container.querySelectorAll('.progress-step.active');
+    for (var i = 0; i < activeSteps.length; i++) {
+        activeSteps[i].classList.remove('active');
+        activeSteps[i].classList.add('done');
+        // Replace spinner with checkmark
+        var icon = activeSteps[i].querySelector('.step-icon');
+        if (icon) icon.innerHTML = '<i class="bi bi-check-circle-fill"></i>';
+    }
+
+    var div = document.createElement('div');
+    div.className = 'progress-step';
+
+    var iconHtml = '';
+    if (step === 'done') {
+        div.classList.add('done');
+        iconHtml = '<i class="bi bi-check-circle-fill"></i>';
+    } else if (step === 'error') {
+        div.classList.add('error');
+        iconHtml = '<i class="bi bi-x-circle-fill"></i>';
+    } else {
+        div.classList.add('active');
+        iconHtml = '<span class="spinner-border spinner-border-sm"></span>';
+    }
+
+    var text = escapeHtml(message);
+    if (detail) {
+        text += ' <span class="text-muted">(' + escapeHtml(detail) + ')</span>';
+    }
+
+    div.innerHTML = '<span class="step-icon me-2">' + iconHtml + '</span>' + text;
+    container.appendChild(div);
+
+    // Scroll to bottom of progress
+    container.scrollTop = container.scrollHeight;
+}
+
+/**
+ * Trigger a new AI analysis using SSE streaming
+ */
+function triggerAIAnalysis(studentId) {
+    var btn = document.getElementById('btn-ai-analyze');
+    if (!btn) return;
+
+    // Set loading state
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 分析中...';
+
+    // Reset progress panel
+    var progressPanel = document.getElementById('ai-progress-panel');
+    var progressSteps = document.getElementById('ai-progress-steps');
+    if (progressSteps) progressSteps.innerHTML = '';
+    if (progressPanel) progressPanel.style.display = 'block';
+
+    var csrfToken = document.querySelector('meta[name="csrf-token"]');
+
+    fetch('/api/knowledge/' + studentId + '/analyze', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken ? csrfToken.content : '',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+        .then(function (response) {
+            if (!response.ok) {
+                throw new Error('HTTP ' + response.status);
+            }
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+
+            function processChunk() {
+                return reader.read().then(function (result) {
+                    if (result.done) return;
+
+                    buffer += decoder.decode(result.value, { stream: true });
+                    var lines = buffer.split('\n');
+                    // Keep the last incomplete line in the buffer
+                    buffer = lines.pop();
+
+                    for (var i = 0; i < lines.length; i++) {
+                        var line = lines[i].trim();
+                        if (line.startsWith('data: ')) {
+                            try {
+                                var payload = JSON.parse(line.substring(6));
+                                handleProgressEvent(payload, studentId);
+                            } catch (e) {
+                                console.error('Failed to parse SSE data:', e);
+                            }
+                        }
+                    }
+
+                    return processChunk();
+                });
+            }
+
+            return processChunk();
+        })
+        .catch(function (err) {
+            console.error('AI analysis SSE failed:', err);
+            appendProgressLog('error', 'AI 分析请求失败: ' + err.message);
+        })
+        .finally(function () {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-robot"></i> AI 智能分析';
+        });
+}
+
+/**
+ * Handle a single SSE progress event
+ */
+function handleProgressEvent(payload, studentId) {
+    appendProgressLog(payload.step, payload.message, payload.detail || '');
+
+    if (payload.step === 'done') {
+        // Fade out progress panel after a short delay
+        setTimeout(function () {
+            var panel = document.getElementById('ai-progress-panel');
+            if (panel) {
+                panel.style.transition = 'opacity 0.5s';
+                panel.style.opacity = '0';
+                setTimeout(function () {
+                    panel.style.display = 'none';
+                    panel.style.opacity = '1';
+                    panel.style.transition = '';
+                }, 500);
+            }
+        }, 1500);
+
+        // Reload the full history to get the new item with its DB id
+        loadAssessmentHistory(studentId);
+    } else if (payload.step === 'error') {
+        // Keep progress panel visible on error so user can see what happened
+    }
+}
+
+/**
+ * Render the assessment history list as a Bootstrap accordion
+ */
+function renderAssessmentList(items, studentId) {
+    var card = document.getElementById('ai-assessment-card');
+    var container = document.getElementById('ai-assessment-history');
+    if (!card || !container) return;
+
+    if (!items || items.length === 0) {
+        card.style.display = 'none';
+        return;
+    }
+
+    card.style.display = 'block';
+    var html = '';
+
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var collapseId = 'assessment-collapse-' + item.id;
+        var isFirst = (i === 0);
+        var assessment = item.assessment;
+
+        html += '<div class="accordion-item assessment-item" id="assessment-item-' + item.id + '">';
+
+        // Header
+        html += '<h2 class="accordion-header">';
+        html += '<div class="d-flex align-items-center">';
+        html += '<button class="accordion-button flex-grow-1' + (isFirst ? '' : ' collapsed') + '" ';
+        html += 'type="button" data-bs-toggle="collapse" data-bs-target="#' + collapseId + '">';
+        html += '<i class="bi bi-file-earmark-text me-2"></i> ';
+        html += '<span>' + escapeHtml(item.analyzed_at) + '</span>';
+        if (assessment.overall_level) {
+            html += ' <span class="badge bg-primary ms-2">' + escapeHtml(assessment.overall_level) + '</span>';
+        }
+        html += '</button>';
+        html += '<button class="btn btn-sm btn-outline-danger me-2 btn-delete-assessment" ';
+        html += 'onclick="deleteAssessment(' + studentId + ', ' + item.id + ')" ';
+        html += 'title="删除此报告"><i class="bi bi-trash"></i></button>';
+        html += '</div>';
+        html += '</h2>';
+
+        // Body
+        html += '<div id="' + collapseId + '" class="accordion-collapse collapse' + (isFirst ? ' show' : '') + '">';
+        html += '<div class="accordion-body">';
+        html += renderSingleAssessment(assessment);
+        html += '</div></div>';
+
+        html += '</div>';
+    }
+
+    container.innerHTML = html;
+}
+
+/**
+ * Render a single assessment's content (reusable for both history and inline)
+ */
+function renderSingleAssessment(assessment) {
+    var html = '';
+
+    // Overall level + summary
+    html += '<div class="mb-3">';
+    if (assessment.overall_level) {
+        html += '<span class="badge bg-primary fs-6 mb-2">' + escapeHtml(assessment.overall_level) + '</span> ';
+    }
+    html += '<p class="mb-0">' + escapeHtml(assessment.summary || '') + '</p>';
+    html += '</div>';
+
+    // Strengths & Weaknesses in 2 columns
+    html += '<div class="row g-3 mb-3">';
+
+    // Strengths
+    html += '<div class="col-md-6">';
+    html += '<h6 class="fw-bold text-success"><i class="bi bi-check-circle"></i> 优势</h6>';
+    html += '<ul class="list-unstyled mb-0">';
+    var strengths = assessment.strengths || [];
+    for (var i = 0; i < strengths.length; i++) {
+        html += '<li class="mb-1"><small>' + escapeHtml(strengths[i]) + '</small></li>';
+    }
+    html += '</ul></div>';
+
+    // Weaknesses
+    html += '<div class="col-md-6">';
+    html += '<h6 class="fw-bold text-danger"><i class="bi bi-exclamation-circle"></i> 不足</h6>';
+    html += '<ul class="list-unstyled mb-0">';
+    var weaknesses = assessment.weaknesses || [];
+    for (var j = 0; j < weaknesses.length; j++) {
+        html += '<li class="mb-1"><small>' + escapeHtml(weaknesses[j]) + '</small></li>';
+    }
+    html += '</ul></div>';
+    html += '</div>';
+
+    // Stage assessments
+    var stageAssessments = assessment.stage_assessments || {};
+    var stageKeys = Object.keys(stageAssessments);
+    if (stageKeys.length > 0) {
+        html += '<div class="mb-3">';
+        html += '<h6 class="fw-bold"><i class="bi bi-bar-chart-steps"></i> 分阶段评估</h6>';
+        for (var k = 0; k < stageKeys.length; k++) {
+            var sid = stageKeys[k];
+            var stageName = STAGE_NAMES[parseInt(sid)] || ('阶段' + sid);
+            html += '<div class="mb-1"><strong>' + escapeHtml(stageName) + ':</strong> ';
+            html += '<small>' + escapeHtml(stageAssessments[sid]) + '</small></div>';
+        }
+        html += '</div>';
+    }
+
+    // Training plan
+    var plan = assessment.training_plan || [];
+    if (plan.length > 0) {
+        html += '<div class="mb-3">';
+        html += '<h6 class="fw-bold"><i class="bi bi-list-check"></i> 训练建议</h6>';
+        html += '<div class="list-group list-group-flush">';
+        for (var p = 0; p < plan.length; p++) {
+            var planItem = plan[p];
+            html += '<div class="list-group-item px-0 py-1 border-0">';
+            html += '<span class="badge bg-secondary me-1">' + (planItem.priority || (p + 1)) + '</span>';
+            html += '<strong>' + escapeHtml(planItem.tag_display || planItem.tag || '') + '</strong>: ';
+            html += '<small>' + escapeHtml(planItem.suggestion || '') + '</small>';
+            html += '</div>';
+        }
+        html += '</div></div>';
+    }
+
+    // Next milestone
+    if (assessment.next_milestone) {
+        html += '<div class="alert alert-info mb-0 py-2">';
+        html += '<i class="bi bi-flag"></i> <strong>下一目标:</strong> ';
+        html += escapeHtml(assessment.next_milestone);
+        html += '</div>';
+    }
+
+    return html;
+}
+
+/**
+ * Delete a specific assessment report
+ */
+function deleteAssessment(studentId, logId) {
+    if (!confirm('确定要删除这条分析报告吗？')) return;
+
+    var csrfToken = document.querySelector('meta[name="csrf-token"]');
+    fetch('/api/knowledge/' + studentId + '/assessment/' + logId, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': csrfToken ? csrfToken.content : '',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.success) {
+                // Remove the DOM element
+                var el = document.getElementById('assessment-item-' + logId);
+                if (el) {
+                    el.style.transition = 'opacity 0.3s';
+                    el.style.opacity = '0';
+                    setTimeout(function () {
+                        el.remove();
+                        // Hide container if no items left
+                        var container = document.getElementById('ai-assessment-history');
+                        if (container && container.children.length === 0) {
+                            var card = document.getElementById('ai-assessment-card');
+                            if (card) card.style.display = 'none';
+                        }
+                    }, 300);
+                }
+            } else {
+                alert(data.error || '删除失败');
+            }
+        })
+        .catch(function (err) {
+            console.error('Delete assessment failed:', err);
+            alert('删除请求失败');
+        });
 }

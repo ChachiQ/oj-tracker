@@ -1,4 +1,6 @@
-from flask import Blueprint, jsonify, request
+import json
+
+from flask import Blueprint, jsonify, request, Response, stream_with_context
 from flask_login import login_required, current_user
 from app.models import Student, Problem, Submission, PlatformAccount, Tag
 from app.services.stats_service import StatsService
@@ -112,6 +114,75 @@ def submissions(student_id):
         'page': page,
         'pages': pagination.pages,
     })
+
+
+@api_bp.route('/knowledge/<int:student_id>/analyze', methods=['POST'])
+@login_required
+def knowledge_analyze(student_id):
+    """Trigger AI knowledge assessment, streaming progress via SSE."""
+    if not _verify_student(student_id):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    from app.analysis.knowledge_analyzer import KnowledgeAnalyzer
+
+    def generate():
+        try:
+            analyzer = KnowledgeAnalyzer(student_id)
+            for progress in analyzer.analyze_with_progress():
+                payload = {
+                    "step": progress["step"],
+                    "message": progress["message"],
+                }
+                if "detail" in progress:
+                    payload["detail"] = progress["detail"]
+                if "assessment" in progress:
+                    payload["assessment"] = progress["assessment"]
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'step': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+        },
+    )
+
+
+@api_bp.route('/knowledge/<int:student_id>/assessment')
+@login_required
+def knowledge_assessment(student_id):
+    """Get all knowledge assessment history for a student."""
+    if not _verify_student(student_id):
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    from app.analysis.knowledge_analyzer import KnowledgeAnalyzer
+    analyzer = KnowledgeAnalyzer(student_id)
+    items = analyzer.get_all()
+    return jsonify({
+        'has_assessment': len(items) > 0,
+        'items': items,
+    })
+
+
+@api_bp.route('/knowledge/<int:student_id>/assessment/<int:log_id>', methods=['DELETE'])
+@login_required
+def knowledge_assessment_delete(student_id, log_id):
+    """Delete a specific knowledge assessment report."""
+    student = _verify_student(student_id)
+    if not student:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    from app.models import AnalysisLog
+    log = AnalysisLog.query.get(log_id)
+    if not log or log.student_id != student_id or log.log_type != 'knowledge':
+        return jsonify({'error': '报告不存在'}), 404
+
+    from app.analysis.knowledge_analyzer import KnowledgeAnalyzer
+    KnowledgeAnalyzer.delete(log_id)
+    return jsonify({'success': True})
 
 
 @api_bp.route('/problems')

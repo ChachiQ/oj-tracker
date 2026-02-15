@@ -17,12 +17,52 @@
     #node-detail-panel .card {
         box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
     }
+    /* Progress panel */
+    #ai-progress-panel {
+        display: none;
+    }
+    #ai-progress-panel .progress-step {
+        padding: 4px 0;
+        font-size: 0.9rem;
+        color: #6c757d;
+    }
+    #ai-progress-panel .progress-step.done {
+        color: #1cc88a;
+    }
+    #ai-progress-panel .progress-step.active {
+        color: #4e73df;
+        font-weight: 500;
+    }
+    #ai-progress-panel .progress-step.error {
+        color: #e74a3b;
+    }
+    /* Assessment history accordion */
+    .assessment-item .accordion-button {
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+    }
+    .assessment-item .accordion-button:not(.collapsed) {
+        background-color: #f0f4ff;
+    }
+    .assessment-item .btn-delete-assessment {
+        opacity: 0.5;
+        transition: opacity 0.2s;
+    }
+    .assessment-item:hover .btn-delete-assessment {
+        opacity: 1;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 {% call page_header("知识图谱", "bi-diagram-3") %}
     {{ student_selector(students, current_student.id if current_student else none, url_for('knowledge.graph')) }}
+    {% if current_student %}
+    <button id="btn-ai-analyze" class="btn btn-outline-primary btn-sm"
+            onclick="triggerAIAnalysis({{ current_student.id }})">
+        <i class="bi bi-robot"></i> AI 智能分析
+    </button>
+    {% endif %}
 {% endcall %}
 
 {% if current_student %}
@@ -61,12 +101,24 @@
 
 <!-- Legend -->
 <div class="chart-container mb-4">
-    <div class="d-flex justify-content-center gap-4 flex-wrap">
+    <div class="d-flex justify-content-center align-items-center gap-4 flex-wrap">
         <span><i class="bi bi-circle-fill" style="color: #1cc88a;"></i> 已掌握</span>
         <span><i class="bi bi-circle-fill" style="color: #f6c23e;"></i> 学习中</span>
         <span><i class="bi bi-circle-fill" style="color: #e74a3b;"></i> 薄弱</span>
         <span><i class="bi bi-circle-fill" style="color: #d1d3e2;"></i> 未涉及</span>
     </div>
+</div>
+
+<!-- AI Analysis Progress Panel -->
+<div id="ai-progress-panel" class="chart-container mb-4">
+    <div class="chart-title"><i class="bi bi-robot"></i> AI 分析进度</div>
+    <div id="ai-progress-steps"></div>
+</div>
+
+<!-- AI Assessment History (accordion) -->
+<div id="ai-assessment-card" class="chart-container mb-4" style="display: none;">
+    <div class="chart-title"><i class="bi bi-robot"></i> AI 知识评估报告</div>
+    <div id="ai-assessment-history" class="accordion accordion-flush"></div>
 </div>
 
 <!-- Knowledge Graph Container -->
