@@ -15,7 +15,7 @@ from flask import current_app
 from sqlalchemy import or_
 
 from app.extensions import db
-from app.models import Problem, Tag, UserSetting
+from app.models import Problem, Tag, UserSetting, AnalysisResult
 from .llm import get_provider
 from .llm.config import MODEL_CONFIG
 from .prompts.problem_classify import build_classify_prompt
@@ -99,6 +99,33 @@ class ProblemClassifier:
 
         return provider, model
 
+    def _check_budget(self, user_id: int = None) -> bool:
+        """Check if AI spending is within the monthly budget.
+
+        Args:
+            user_id: Optional user id to read per-user budget from UserSetting.
+
+        Returns:
+            True if budget has not been exceeded, False otherwise.
+        """
+        from sqlalchemy import func
+
+        month_start = datetime.utcnow().replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        total_cost = (
+            db.session.query(func.sum(AnalysisResult.cost_usd))
+            .filter(AnalysisResult.analyzed_at >= month_start)
+            .scalar()
+            or 0
+        )
+        budget = self.app.config.get("AI_MONTHLY_BUDGET", 5.0)
+        if user_id:
+            user_budget = UserSetting.get(user_id, 'ai_monthly_budget')
+            if user_budget:
+                budget = float(user_budget)
+        return total_cost < budget
+
     def classify_problem(self, problem_id: int, user_id: int = None) -> bool:
         """Classify a single problem using AI.
 
@@ -118,6 +145,10 @@ class ProblemClassifier:
             return False
         # Skip already-analyzed problems that have no error
         if problem.ai_analyzed and not problem.ai_analysis_error:
+            return False
+
+        if not self._check_budget(user_id):
+            logger.warning("AI monthly budget exceeded, skipping classification")
             return False
 
         provider, model = self._get_llm(user_id)
@@ -196,6 +227,20 @@ class ProblemClassifier:
 
             problem.ai_analyzed = True
             problem.ai_analysis_error = None  # Clear any previous error
+
+            # Record cost so budget tracking can see classification spending
+            cost_record = AnalysisResult(
+                problem_id_ref=problem.id,
+                analysis_type="problem_classify",
+                result_json=response.content,
+                summary=problem.ai_problem_type,
+                ai_model=model or "",
+                token_cost=(response.input_tokens + response.output_tokens),
+                cost_usd=response.cost,
+                analyzed_at=datetime.utcnow(),
+            )
+            db.session.add(cost_record)
+
             db.session.commit()
             logger.info(
                 f"Classified problem {problem.platform}:{problem.problem_id} "
