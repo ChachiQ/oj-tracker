@@ -125,8 +125,23 @@ def create_app(config_name=None):
     # Create database tables if they don't exist
     with app.app_context():
         db.create_all()
+        _fix_difficulty_data(app)
 
     return app
+
+
+def _fix_difficulty_data(app):
+    """One-time fix: clamp problem difficulty values >7 down to 7."""
+    from app.models import Problem
+    try:
+        count = Problem.query.filter(Problem.difficulty > 7).update(
+            {Problem.difficulty: 7}
+        )
+        if count:
+            db.session.commit()
+            app.logger.info(f'Fixed {count} problems with difficulty > 7')
+    except Exception:
+        db.session.rollback()
 
 
 def _register_blueprints(app):

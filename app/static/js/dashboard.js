@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', function () {
         })
         .then(function (data) {
             updateStatCards(data);
-            initRadarChart(data.tag_scores || {});
+            initRadarChart(data.tag_scores || {}, data.target_stage_name || '');
             initHeatmap(data.heatmap || []);
             initDifficultyChart(data.difficulty_dist || {});
             initStatusChart(data.status_dist || {});
@@ -68,10 +68,17 @@ function updateStatCards(data) {
 /**
  * Initialize radar chart for ability scores
  */
-function initRadarChart(tagScores) {
+function initRadarChart(tagScores, targetStageName) {
     var container = document.getElementById('radar-chart');
     if (!container) return;
     var chart = echarts.init(container);
+
+    // Show stage hint
+    var hint = document.getElementById('radar-stage-hint');
+    if (hint && targetStageName) {
+        hint.textContent = '当前目标阶段：' + targetStageName + '，仅展示该阶段及之前的知识点掌握情况';
+        hint.style.display = 'block';
+    }
 
     // Build radar dimensions from tag scores
     var categories = {};
@@ -104,9 +111,13 @@ function initRadarChart(tagScores) {
     }
 
     var mobile = isMobile();
+    var titleText = '能力雷达图';
+    if (targetStageName) {
+        titleText += '（目标：' + targetStageName + '）';
+    }
     var option = {
         title: {
-            text: '能力雷达图',
+            text: titleText,
             left: 'center',
             textStyle: { fontSize: mobile ? 12 : 14, color: '#5a5c69' }
         },
@@ -146,25 +157,60 @@ function initRadarChart(tagScores) {
 }
 
 /**
- * Initialize GitHub-style heatmap calendar
+ * Initialize GitHub-style heatmap calendar with range switching
  */
-function initHeatmap(heatmapData) {
-    var container = document.getElementById('heatmap-chart');
-    if (!container) return;
-    var chart = echarts.init(container);
+var fullHeatmapData = [];
+var heatmapChart = null;
 
-    // Process data
-    var data = [];
-    if (Array.isArray(heatmapData)) {
-        data = heatmapData.map(function (d) {
-            return [d.date, d.count];
+function initHeatmap(heatmapData) {
+    fullHeatmapData = heatmapData;
+    renderHeatmap(365);
+    bindHeatmapRangeButtons();
+}
+
+function bindHeatmapRangeButtons() {
+    var btns = document.querySelectorAll('#heatmap-range-btns button');
+    for (var i = 0; i < btns.length; i++) {
+        btns[i].addEventListener('click', function () {
+            var days = parseInt(this.getAttribute('data-range'));
+            // Update active state
+            var siblings = document.querySelectorAll('#heatmap-range-btns button');
+            for (var j = 0; j < siblings.length; j++) {
+                siblings[j].classList.remove('active');
+            }
+            this.classList.add('active');
+            renderHeatmap(days);
         });
     }
+}
 
-    var year = new Date().getFullYear();
+function renderHeatmap(days) {
+    var container = document.getElementById('heatmap-chart');
+    if (!container) return;
 
-    if (data.length === 0) {
+    if (!heatmapChart) {
+        heatmapChart = echarts.init(container);
+        window.addEventListener('resize', function () { heatmapChart.resize(); });
+    }
+
+    var today = new Date();
+    var endDate = today.toISOString().slice(0, 10);
+    var startDate = new Date(today.getTime() - days * 86400000).toISOString().slice(0, 10);
+
+    // Process and filter data
+    var data = [];
+    if (Array.isArray(fullHeatmapData)) {
+        for (var i = 0; i < fullHeatmapData.length; i++) {
+            var d = fullHeatmapData[i];
+            if (d.date >= startDate && d.date <= endDate) {
+                data.push([d.date, d.count]);
+            }
+        }
+    }
+
+    if (data.length === 0 && fullHeatmapData.length === 0) {
         container.innerHTML = '<div class="text-center text-muted py-5">暂无做题日历数据</div>';
+        heatmapChart = null;
         return;
     }
 
@@ -198,7 +244,7 @@ function initHeatmap(heatmapData) {
             textStyle: { fontSize: 11 }
         },
         calendar: {
-            range: year.toString(),
+            range: [startDate, endDate],
             cellSize: mobile ? ['auto', 10] : ['auto', 15],
             left: mobile ? 30 : 50,
             right: mobile ? 10 : 30,
@@ -223,8 +269,7 @@ function initHeatmap(heatmapData) {
             data: data
         }]
     };
-    chart.setOption(option);
-    window.addEventListener('resize', function () { chart.resize(); });
+    heatmapChart.setOption(option, true);
 }
 
 /**
@@ -252,7 +297,7 @@ function initDifficultyChart(diffDist) {
     var mobile = isMobile();
     var option = {
         title: {
-            text: '难度分布',
+            text: '做题难度分布',
             left: 'center',
             textStyle: { fontSize: mobile ? 12 : 14, color: '#5a5c69' }
         },

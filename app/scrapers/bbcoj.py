@@ -364,27 +364,32 @@ class BBCOJScraper(BaseScraper):
         return status.value if isinstance(status, SubmissionStatus) else str(status)
 
     def map_difficulty(self, raw_difficulty) -> int:
-        """Map BBC OJ difficulty to numeric level.
+        """Map BBC OJ difficulty to numeric level (0-7).
 
         HOJ typically uses string difficulty labels or numeric levels.
-        Maps: 简单=1, 中等=2, 困难=3. Numeric values pass through.
+        Maps: 简单=1, 中等=2, 困难=3. Numeric values are clamped to 0-7.
         """
+        difficulty_map = {
+            '简单': 1,
+            '中等': 2,
+            '困难': 3,
+            'Easy': 1,
+            'Medium': 2,
+            'Hard': 3,
+        }
+
         if isinstance(raw_difficulty, int):
-            return raw_difficulty
+            return min(max(raw_difficulty, 0), 7)
 
         if isinstance(raw_difficulty, str):
-            difficulty_map = {
-                '简单': 1,
-                '中等': 2,
-                '困难': 3,
-                'Easy': 1,
-                'Medium': 2,
-                'Hard': 3,
-            }
+            # Check label mapping first
+            if raw_difficulty in difficulty_map:
+                return difficulty_map[raw_difficulty]
+            # Numeric string — clamp to range
             try:
-                return int(raw_difficulty)
+                return min(max(int(raw_difficulty), 0), 7)
             except (ValueError, TypeError):
-                return difficulty_map.get(raw_difficulty, 0)
+                return 0
 
         return 0
 

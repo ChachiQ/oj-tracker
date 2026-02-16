@@ -30,17 +30,32 @@
     <!-- Row 1: Radar + Heatmap -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-lg-5">
-            {{ chart_box('radar-chart', '能力雷达图', 'bi-radar') }}
+            <div class="chart-container">
+                <div class="chart-title"><i class="bi bi-radar"></i> 能力雷达图</div>
+                <div id="radar-chart" class="chart-responsive"></div>
+                <div id="radar-stage-hint" class="text-muted small text-center mt-1" style="display:none;"></div>
+            </div>
         </div>
         <div class="col-12 col-lg-7">
-            {{ chart_box('heatmap-chart', '做题日历', 'bi-calendar3') }}
+            <div class="chart-container">
+                <div class="d-flex justify-content-between align-items-center flex-wrap">
+                    <div class="chart-title"><i class="bi bi-calendar3"></i> 做题日历</div>
+                    <div class="d-flex gap-1 flex-wrap" id="heatmap-range-btns">
+                        <button class="btn btn-sm btn-outline-secondary" data-range="30">近1月</button>
+                        <button class="btn btn-sm btn-outline-secondary" data-range="90">近3月</button>
+                        <button class="btn btn-sm btn-outline-secondary" data-range="180">近半年</button>
+                        <button class="btn btn-sm btn-outline-secondary active" data-range="365">今年</button>
+                    </div>
+                </div>
+                <div id="heatmap-chart" class="chart-responsive"></div>
+            </div>
         </div>
     </div>
 
     <!-- Row 2: Difficulty Distribution + Status Distribution -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-lg-5">
-            {{ chart_box('difficulty-chart', '难度分布', 'bi-bar-chart') }}
+            {{ chart_box('difficulty-chart', '做题难度分布', 'bi-bar-chart') }}
         </div>
         <div class="col-12 col-lg-7">
             {{ chart_box('status-chart', '提交状态分布', 'bi-pie-chart') }}

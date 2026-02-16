@@ -25,6 +25,11 @@ class StatsService:
         basic = engine.get_basic_stats()
         weekly = engine.get_weekly_stats(1)
 
+        student = Student.query.get(student_id)
+        target_stage = student.target_stage if student else None
+        stage_names = {1: '语法基础', 2: '基础算法', 3: 'CSP-J', 4: 'CSP-S', 5: '省选', 6: 'NOI'}
+        target_stage_name = stage_names.get(target_stage, '')
+
         recent_submissions = StatsService._get_recent_submissions(student_id, limit=15)
         weaknesses = StatsService.get_weakness_data(student_id)
         trend_analyzer = TrendAnalyzer(student_id)
@@ -36,7 +41,9 @@ class StatsService:
                 'week_submissions': weekly.get('submissions', 0) if isinstance(weekly, dict) else 0,
                 'streak_days': engine.get_streak_days(),
             },
-            'tag_scores': engine.get_tag_scores(),
+            'target_stage': target_stage,
+            'target_stage_name': target_stage_name,
+            'tag_scores': engine.get_tag_scores(max_stage=target_stage),
             'heatmap': engine.get_heatmap_data(),
             'difficulty_dist': engine.get_difficulty_distribution(),
             'recent_submissions': recent_submissions,

@@ -214,7 +214,7 @@ class AnalysisEngine:
         days_ago = (datetime.utcnow() - submitted_at).days
         return 0.5 + 0.5 * max(0, 1 - days_ago / 90)
 
-    def get_tag_scores(self) -> dict:
+    def get_tag_scores(self, max_stage: int = None) -> dict:
         """Calculate ability scores per tag/knowledge point for radar chart.
 
         Features time-decayed metrics and stage-adaptive weighting.
@@ -305,6 +305,8 @@ class AnalysisEngine:
         for tag_name, stats in tag_stats.items():
             tag = Tag.query.filter_by(name=tag_name).first()
             if not tag:
+                continue
+            if max_stage and tag.stage and tag.stage > max_stage:
                 continue
 
             attempted = stats["attempted"]

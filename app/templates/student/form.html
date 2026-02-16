@@ -60,6 +60,17 @@
                     </div>
 
                     <div class="mb-3">
+                        <label for="target_stage" class="form-label">目标阶段</label>
+                        <select class="form-select" id="target_stage" name="target_stage">
+                            {% set stage_options = [(1, '语法基础'), (2, '基础算法'), (3, 'CSP-J'), (4, 'CSP-S'), (5, '省选'), (6, 'NOI')] %}
+                            {% for val, label in stage_options %}
+                            <option value="{{ val }}" {% if student and student.target_stage == val %}selected{% elif not student and val == 3 %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">能力雷达图将只展示该阶段及之前的知识点</div>
+                    </div>
+
+                    <div class="mb-3">
                         <label for="school_math_level" class="form-label">校内数学水平</label>
                         <textarea class="form-control" id="school_math_level" name="school_math_level" rows="2"
                                   placeholder="简要描述校内数学水平，如：数学成绩优秀，经常满分">{{ student.school_math_level if student and student.school_math_level else '' }}</textarea>

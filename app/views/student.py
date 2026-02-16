@@ -38,12 +38,18 @@ def add_student():
                 except ValueError:
                     pass
 
+            try:
+                target_stage = int(request.form.get('target_stage', 3))
+            except (ValueError, TypeError):
+                target_stage = 3
+
             student = Student(
                 parent_id=current_user.id,
                 name=name,
                 birthday=birthday,
                 grade=grade,
                 level=level,
+                target_stage=target_stage,
                 school_math_level=(
                     school_math_level if school_math_level else None
                 ),
@@ -109,6 +115,10 @@ def edit_student(student_id):
                 pass
         student.grade = request.form.get('grade', student.grade)
         student.level = request.form.get('level', student.level)
+        try:
+            student.target_stage = int(request.form.get('target_stage', student.target_stage))
+        except (ValueError, TypeError):
+            pass
         student.school_math_level = (
             request.form.get('school_math_level', '').strip() or None
         )

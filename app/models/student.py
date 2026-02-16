@@ -35,6 +35,7 @@ class Student(db.Model):
     grade = db.Column(db.String(20), nullable=True)
     school_math_level = db.Column(db.String(200), nullable=True)
     level = db.Column(db.String(20), nullable=False, default='提高')
+    target_stage = db.Column(db.Integer, nullable=False, default=3)  # 1=语法基础..6=NOI
     notes = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
