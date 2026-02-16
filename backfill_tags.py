@@ -18,6 +18,9 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime
+from itertools import groupby
+from operator import attrgetter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -339,11 +342,26 @@ def backfill_reviews(platform=None, limit=0, user_id=None, dry_run=False):
         logger.info("")
         logger.info("=== 阶段 4/4：代码审查 ===")
 
+        from sqlalchemy import func as sa_func
+
+        # Count existing reviews per problem
+        reviewed_counts = dict(
+            db.session.query(
+                Submission.problem_id_ref,
+                sa_func.count(AnalysisResult.id),
+            )
+            .join(AnalysisResult, AnalysisResult.submission_id == Submission.id)
+            .filter(AnalysisResult.analysis_type == "submission_review")
+            .group_by(Submission.problem_id_ref)
+            .all()
+        )
+
         reviewed_ids = (
             db.session.query(AnalysisResult.submission_id)
             .filter_by(analysis_type="submission_review")
         )
         query = Submission.query.filter(
+            Submission.problem_id_ref.isnot(None),
             Submission.source_code.isnot(None),
             Submission.source_code != '',
             ~Submission.id.in_(reviewed_ids),
@@ -355,7 +373,18 @@ def backfill_reviews(platform=None, limit=0, user_id=None, dry_run=False):
         if limit:
             query = query.limit(limit)
 
-        submissions = query.all()
+        all_submissions = query.all()
+
+        # Per-problem cap: at most 3 reviews total (existing + new)
+        submissions = []
+        key_fn = attrgetter('problem_id_ref')
+        for pid, group in groupby(sorted(all_submissions, key=key_fn), key=key_fn):
+            existing = reviewed_counts.get(pid, 0)
+            if existing >= 3:
+                continue
+            remaining = 3 - existing
+            subs = sorted(group, key=lambda s: s.submitted_at or datetime.min, reverse=True)
+            submissions.extend(subs[:remaining])
         stats['review_total'] = len(submissions)
         logger.info("Found %d submissions without review%s",
                      len(submissions), limit_info)
