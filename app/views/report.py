@@ -1,4 +1,5 @@
-from datetime import datetime
+import calendar
+from datetime import datetime, timedelta
 
 from flask import (
     Blueprint,
@@ -9,6 +10,7 @@ from flask import (
     request,
     current_app,
 )
+from markupsafe import Markup
 from flask_login import login_required, current_user
 from app.extensions import db
 from app.models import Student, Report
@@ -73,21 +75,72 @@ def generate():
         flash('无权操作', 'danger')
         return redirect(url_for('report.list_reports'))
 
-    end_date_str = request.form.get('end_date', '')
-    end_date = (
-        datetime.strptime(end_date_str, '%Y-%m-%d') if end_date_str else None
-    )
+    period = request.form.get('period', '')
+    start_date = None
+    end_date = None
+
+    try:
+        if report_type == 'quarterly' and period:
+            year, q = period.split('-')
+            quarter_start_month = (int(q) - 1) * 3 + 1
+            start_date = datetime(int(year), quarter_start_month, 1)
+            end_month = int(q) * 3
+            last_day = calendar.monthrange(int(year), end_month)[1]
+            end_date = datetime(int(year), end_month, last_day, 23, 59, 59)
+        elif report_type == 'monthly' and period:
+            year, month = period.split('-')
+            start_date = datetime(int(year), int(month), 1)
+            last_day = calendar.monthrange(int(year), int(month))[1]
+            end_date = datetime(int(year), int(month), last_day, 23, 59, 59)
+        elif report_type == 'weekly' and period:
+            end_date = datetime.strptime(period, '%Y-%m-%d').replace(
+                hour=23, minute=59, second=59
+            )
+            start_date = end_date - timedelta(days=6)
+            start_date = start_date.replace(hour=0, minute=0, second=0)
+    except (ValueError, TypeError):
+        flash('周期参数无效', 'danger')
+        return redirect(
+            url_for('report.list_reports', student_id=student_id)
+        )
+
+    # Duplicate report detection
+    if start_date and end_date:
+        existing = Report.query.filter_by(
+            student_id=student_id,
+            report_type=report_type,
+            period_start=start_date,
+            period_end=end_date,
+        ).first()
+        if existing:
+            flash(
+                Markup(
+                    f'该时段的报告已于 {existing.created_at.strftime("%m/%d %H:%M")} 生成。'
+                    f'<a href="{url_for("report.detail", report_id=existing.id)}">查看报告</a>'
+                    f'，如需更新请在详情页点击"重新生成"。'
+                ),
+                'warning',
+            )
+            return redirect(
+                url_for('report.list_reports', student_id=student_id)
+            )
 
     generator = ReportGenerator(
         student_id, current_app._get_current_object()
     )
     try:
         if report_type == 'quarterly':
-            report = generator.generate_quarterly_report(end_date=end_date)
+            report = generator.generate_quarterly_report(
+                end_date=end_date, start_date=start_date
+            )
         elif report_type == 'monthly':
-            report = generator.generate_monthly_report(end_date=end_date)
+            report = generator.generate_monthly_report(
+                end_date=end_date, start_date=start_date
+            )
         else:
-            report = generator.generate_weekly_report(end_date=end_date)
+            report = generator.generate_weekly_report(
+                end_date=end_date, start_date=start_date
+            )
 
         if report:
             flash('报告生成成功', 'success')

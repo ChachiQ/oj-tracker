@@ -44,43 +44,49 @@ class ReportGenerator:
         self.student = Student.query.get(student_id)
         self.log_manager = AnalysisLogManager(student_id)
 
-    def generate_weekly_report(self, end_date: datetime = None) -> Report | None:
+    def generate_weekly_report(self, end_date: datetime = None, start_date: datetime = None) -> Report | None:
         """Generate a weekly report ending at the given date.
 
         Args:
             end_date: End date of the report period. Defaults to now.
+            start_date: Start date of the report period. If provided with
+                end_date, used directly instead of computing from end_date.
 
         Returns:
             Report model instance, or None if generation fails.
         """
         end_date = end_date or datetime.utcnow()
-        start_date = end_date - timedelta(weeks=1)
+        start_date = start_date or (end_date - timedelta(weeks=1))
         return self._generate_report("weekly", start_date, end_date)
 
-    def generate_monthly_report(self, end_date: datetime = None) -> Report | None:
+    def generate_monthly_report(self, end_date: datetime = None, start_date: datetime = None) -> Report | None:
         """Generate a monthly report ending at the given date.
 
         Args:
             end_date: End date of the report period. Defaults to now.
+            start_date: Start date of the report period. If provided with
+                end_date, used directly instead of computing from end_date.
 
         Returns:
             Report model instance, or None if generation fails.
         """
         end_date = end_date or datetime.utcnow()
-        start_date = end_date - timedelta(days=30)
+        start_date = start_date or (end_date - timedelta(days=30))
         return self._generate_report("monthly", start_date, end_date)
 
-    def generate_quarterly_report(self, end_date: datetime = None) -> Report | None:
+    def generate_quarterly_report(self, end_date: datetime = None, start_date: datetime = None) -> Report | None:
         """Generate a quarterly report ending at the given date.
 
         Args:
             end_date: End date of the report period. Defaults to now.
+            start_date: Start date of the report period. If provided with
+                end_date, used directly instead of computing from end_date.
 
         Returns:
             Report model instance, or None if generation fails.
         """
         end_date = end_date or datetime.utcnow()
-        start_date = end_date - timedelta(days=90)
+        start_date = start_date or (end_date - timedelta(days=90))
         return self._generate_report("quarterly", start_date, end_date)
 
     def _generate_report(

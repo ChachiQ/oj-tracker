@@ -130,9 +130,9 @@
                         </select>
                     </div>
                     <div class="mb-3">
-                        <label for="gen-date" class="form-label">截止日期</label>
-                        <input type="date" class="form-control" id="gen-date" name="end_date">
-                        <div class="form-text">留空则使用当前日期</div>
+                        <label for="gen-period" class="form-label">报告周期 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="gen-period" name="period" required>
+                        </select>
                     </div>
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle"></i>
@@ -150,4 +150,88 @@
     </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+    var typeSelect = document.getElementById('gen-type');
+    var periodSelect = document.getElementById('gen-period');
+    if (!typeSelect || !periodSelect) return;
+
+    function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+    function buildWeeklyOptions() {
+        var options = [];
+        var today = new Date();
+        // Find the coming Sunday (end of current week, Mon-Sun)
+        var dayOfWeek = today.getDay(); // 0=Sun
+        var endOfWeek = new Date(today);
+        endOfWeek.setDate(today.getDate() + (dayOfWeek === 0 ? 0 : 7 - dayOfWeek));
+        for (var i = 0; i < 8; i++) {
+            var sun = new Date(endOfWeek);
+            sun.setDate(endOfWeek.getDate() - i * 7);
+            var mon = new Date(sun);
+            mon.setDate(sun.getDate() - 6);
+            var label = (mon.getMonth()+1) + '/' + mon.getDate() + ' - ' + (sun.getMonth()+1) + '/' + sun.getDate();
+            if (i === 0) label += ' (本周)';
+            var value = sun.getFullYear() + '-' + pad(sun.getMonth()+1) + '-' + pad(sun.getDate());
+            options.push({label: label, value: value});
+        }
+        return options;
+    }
+
+    function buildMonthlyOptions() {
+        var options = [];
+        var today = new Date();
+        for (var i = 0; i < 6; i++) {
+            var d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+            var label = d.getFullYear() + '年' + (d.getMonth()+1) + '月';
+            if (i === 0) label += ' (本月)';
+            var value = d.getFullYear() + '-' + pad(d.getMonth()+1);
+            options.push({label: label, value: value});
+        }
+        return options;
+    }
+
+    function buildQuarterlyOptions() {
+        var options = [];
+        var today = new Date();
+        var curQ = Math.floor(today.getMonth() / 3) + 1;
+        var curY = today.getFullYear();
+        for (var i = 0; i < 4; i++) {
+            var q = curQ - i;
+            var y = curY;
+            while (q <= 0) { q += 4; y--; }
+            var startM = (q - 1) * 3 + 1;
+            var endM = q * 3;
+            var label = y + '年第' + q + '季度 (' + startM + '-' + endM + '月)';
+            if (i === 0) label += ' (本季度)';
+            var value = y + '-' + q;
+            options.push({label: label, value: value});
+        }
+        return options;
+    }
+
+    function updatePeriodOptions() {
+        var type = typeSelect.value;
+        var options;
+        if (type === 'weekly') options = buildWeeklyOptions();
+        else if (type === 'monthly') options = buildMonthlyOptions();
+        else options = buildQuarterlyOptions();
+
+        periodSelect.innerHTML = '';
+        for (var i = 0; i < options.length; i++) {
+            var opt = document.createElement('option');
+            opt.value = options[i].value;
+            opt.textContent = options[i].label;
+            if (i === 0) opt.selected = true;
+            periodSelect.appendChild(opt);
+        }
+    }
+
+    typeSelect.addEventListener('change', updatePeriodOptions);
+    updatePeriodOptions();
+})();
+</script>
 {% endblock %}
