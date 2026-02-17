@@ -143,8 +143,8 @@ class ProblemClassifier:
         problem = Problem.query.get(problem_id)
         if not problem:
             return False
-        # Skip already-analyzed problems that have no error
-        if problem.ai_analyzed and not problem.ai_analysis_error:
+        # Skip already-analyzed problems that have no error and a valid difficulty
+        if problem.ai_analyzed and not problem.ai_analysis_error and problem.difficulty:
             return False
 
         if not self._check_budget(user_id):
