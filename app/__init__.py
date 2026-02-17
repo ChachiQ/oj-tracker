@@ -11,6 +11,30 @@ from app.extensions import db, login_manager, migrate, csrf
 
 __version__ = '0.5.0'
 
+# Matches valid HTML tags (opening, closing, self-closing, comments).
+# Used to find and preserve real HTML while escaping stray < and > in text
+# (e.g. math expressions like 1<n<100000000 from OJ platforms).
+_VALID_HTML_TAG_RE = re.compile(
+    r'(</?(?:p|br|b|i|em|strong|code|pre|ul|ol|li|table|thead|tbody'
+    r'|tr|td|th|h[1-6]|a|img|div|span|sup|sub|blockquote|hr|center'
+    r'|font|u|s|del|ins|small|mark|nobr)\b[^>]*/?>|<!--[\s\S]*?-->)',
+    re.IGNORECASE,
+)
+
+
+def _escape_stray_angle_brackets(text):
+    """Escape < and > that aren't part of valid HTML tags.
+
+    Splits text by recognised HTML tags, then escapes bare < and > in the
+    text fragments between those tags.  This fixes OJ descriptions that
+    contain un-escaped math operators (e.g. ``1<n<100000000``) which
+    browsers would otherwise swallow as broken HTML tags.
+    """
+    parts = _VALID_HTML_TAG_RE.split(text)
+    for i in range(0, len(parts), 2):   # even indices = text between tags
+        parts[i] = parts[i].replace('<', '&lt;').replace('>', '&gt;')
+    return ''.join(parts)
+
 
 def create_app(config_name=None):
     """Application factory for creating the Flask app instance.
@@ -125,6 +149,8 @@ def create_app(config_name=None):
         text = str(text)
         if escape:
             text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        else:
+            text = _escape_stray_angle_brackets(text)
         # Headings: #### h6, ### h5, ## h4, # h3
         text = re.sub(r'^#### (.+)$', r'<h6>\1</h6>', text, flags=re.MULTILINE)
         text = re.sub(r'^### (.+)$', r'<h5>\1</h5>', text, flags=re.MULTILINE)

@@ -2,7 +2,7 @@ import json
 
 from flask import Blueprint, render_template, request
 from flask_login import login_required, current_user
-from sqlalchemy import func, case
+from sqlalchemy import func, case, or_
 from app.extensions import db
 from app.models import (
     Problem,
@@ -33,7 +33,7 @@ def list_problems():
     page = request.args.get('page', 1, type=int)
     platform = request.args.get('platform', '')
     tag_name = request.args.get('tag', '')
-    difficulty = request.args.get('difficulty', 0, type=int)
+    difficulties = request.args.getlist('difficulty', type=int)
     search = request.args.get('q', '')
 
     # Gather account IDs for current user's students
@@ -48,10 +48,15 @@ def list_problems():
         query = query.filter_by(platform=platform)
     if tag_name:
         query = query.filter(Problem.tags.any(Tag.name == tag_name))
-    if difficulty == -1:
-        query = query.filter((Problem.difficulty == 0) | (Problem.difficulty.is_(None)))
-    elif difficulty:
-        query = query.filter_by(difficulty=difficulty)
+    if difficulties:
+        conditions = []
+        normal_diffs = [d for d in difficulties if d > 0]
+        if -1 in difficulties:
+            conditions.append((Problem.difficulty == 0) | (Problem.difficulty.is_(None)))
+        if normal_diffs:
+            conditions.append(Problem.difficulty.in_(normal_diffs))
+        if conditions:
+            query = query.filter(or_(*conditions))
     if search:
         query = query.filter(Problem.title.contains(search))
 
@@ -126,7 +131,7 @@ def list_problems():
         platforms=[p[0] for p in platforms],
         current_platform=platform,
         current_tag=tag_name,
-        current_difficulty=difficulty,
+        current_difficulties=difficulties,
         search=search,
         latest_submissions=latest_submissions,
     )

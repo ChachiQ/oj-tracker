@@ -35,6 +35,11 @@
                     {{ difficulty_badge(problem.difficulty) }}
                 </div>
             </div>
+            <div class="col-12 col-md-4 text-md-end mt-2 mt-md-0">
+                <button class="btn btn-sm btn-outline-secondary" id="btn-resync" onclick="resyncProblem()">
+                    <i class="bi bi-arrow-repeat"></i> 同步题目内容
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -426,6 +431,29 @@ function apiPost(url) {
     }).then(function(r) {
         if (!r.ok) return r.text().then(function(t) { throw new Error('HTTP ' + r.status); });
         return r.json();
+    });
+}
+
+/* Resync problem content from OJ platform */
+function resyncProblem() {
+    var btn = document.getElementById('btn-resync');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> 同步中...';
+
+    apiPost('/api/problem/' + PROBLEM_ID + '/resync')
+    .then(function(data) {
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.error || '同步失败');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 同步题目内容';
+        }
+    })
+    .catch(function(err) {
+        alert('请求失败: ' + err.message);
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 同步题目内容';
     });
 }
 

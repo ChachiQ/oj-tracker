@@ -5,7 +5,7 @@
 
 {% block content %}
 {% call page_header("题库", "bi-journal-code") %}
-    <span class="text-muted">共 {{ total or 0 }} 题</span>
+    <span class="text-muted">共 {{ pagination.total or 0 }} 题</span>
 {% endcall %}
 
 <!-- Filters -->
@@ -16,8 +16,7 @@
                 <label for="filter-platform" class="form-label">平台</label>
                 <select class="form-select form-select-sm" id="filter-platform" name="platform">
                     <option value="">全部平台</option>
-                    {% set available_platforms = ['luogu', 'codeforces', 'atcoder', 'leetcode', 'nowcoder', 'hdu', 'poj'] %}
-                    {% for p in available_platforms %}
+                    {% for p in platforms %}
                     <option value="{{ p }}" {% if request.args.get('platform') == p %}selected{% endif %}>{{ p }}</option>
                     {% endfor %}
                 </select>
@@ -42,17 +41,51 @@
                 </select>
             </div>
             <div class="col-12 col-sm-6 col-md-2">
-                <label for="filter-difficulty" class="form-label">难度</label>
-                <select class="form-select form-select-sm" id="filter-difficulty" name="difficulty">
-                    <option value="">全部难度</option>
-                    {% set diff_labels = {1: '入门', 2: '入门+', 3: '普及-', 4: '普及', 5: '提高-', 6: '提高', 7: '省选-', 8: '省选', 9: 'NOI-', 10: 'NOI'} %}
-                    {% for d in range(1, 11) %}
-                    <option value="{{ d }}" {% if request.args.get('difficulty') == d|string %}selected{% endif %}>
-                        {{ d }} - {{ diff_labels[d] }}
-                    </option>
+                <label class="form-label">难度</label>
+                {% set diff_labels = {1: '入门', 2: '入门+', 3: '普及-', 4: '普及', 5: '提高-', 6: '提高', 7: '省选-', 8: '省选', 9: 'NOI-', 10: 'NOI'} %}
+                {% set selected_diffs = request.args.getlist('difficulty')|map('int')|list %}
+                <div class="dropdown" id="difficulty-dropdown">
+                    <button class="btn btn-sm btn-outline-secondary w-100 dropdown-toggle text-start" type="button"
+                            data-bs-toggle="dropdown" data-bs-auto-close="outside" id="diff-dropdown-btn">
+                        {% if selected_diffs %}
+                            难度: {% for d in selected_diffs %}{% if d == -1 %}未评级{% else %}{{ d }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+                        {% else %}
+                            全部难度
+                        {% endif %}
+                    </button>
+                    <ul class="dropdown-menu" style="min-width: 200px;">
+                        <li>
+                            <label class="dropdown-item d-flex align-items-center gap-2 py-1 mb-0">
+                                <input type="checkbox" class="form-check-input mt-0" id="diff-check-all"
+                                       {% if not selected_diffs %}checked{% endif %}>
+                                全部难度
+                            </label>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        {% for d in range(1, 11) %}
+                        <li>
+                            <label class="dropdown-item d-flex align-items-center gap-2 py-1 mb-0">
+                                <input type="checkbox" class="form-check-input mt-0 diff-check" value="{{ d }}"
+                                       {% if d in selected_diffs %}checked{% endif %}>
+                                {{ d }} - {{ diff_labels[d] }}
+                            </label>
+                        </li>
+                        {% endfor %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <label class="dropdown-item d-flex align-items-center gap-2 py-1 mb-0">
+                                <input type="checkbox" class="form-check-input mt-0 diff-check" value="-1"
+                                       {% if -1 in selected_diffs %}checked{% endif %}>
+                                未评级
+                            </label>
+                        </li>
+                    </ul>
+                </div>
+                <div id="difficulty-hidden-inputs">
+                    {% for d in selected_diffs %}
+                    <input type="hidden" name="difficulty" value="{{ d }}">
                     {% endfor %}
-                    <option value="-1" {% if request.args.get('difficulty') == '-1' %}selected{% endif %}>其他（未标记）</option>
-                </select>
+                </div>
             </div>
             <div class="col-12 col-sm-6 col-md-4">
                 <label for="filter-search" class="form-label">搜索</label>
@@ -178,7 +211,7 @@
 
 <!-- Pagination -->
 {% if pagination %}
-{% set paging_args = request.args.to_dict() %}
+{% set paging_args = request.args.to_dict(flat=False) %}
 {% set _ = paging_args.pop('page', None) %}
 <nav class="mt-4 d-flex justify-content-center align-items-center">
     <ul class="pagination pagination-sm mb-0">
@@ -253,4 +286,62 @@
     </p>
 {% endcall %}
 {% endif %}
+
+<script>
+(function() {
+    var form = document.querySelector('form[action]');
+    var checks = document.querySelectorAll('.diff-check');
+    if (!checks.length) return;
+    var container = document.getElementById('difficulty-hidden-inputs');
+    var btn = document.getElementById('diff-dropdown-btn');
+    var checkAll = document.getElementById('diff-check-all');
+    var diffNames = {'-1': '未评级'};
+    var diffChanged = false;
+
+    function syncUI() {
+        container.innerHTML = '';
+        var labels = [];
+        checks.forEach(function(c) {
+            if (c.checked) {
+                var inp = document.createElement('input');
+                inp.type = 'hidden';
+                inp.name = 'difficulty';
+                inp.value = c.value;
+                container.appendChild(inp);
+                labels.push(diffNames[c.value] || c.value);
+            }
+        });
+        btn.textContent = labels.length ? '难度: ' + labels.join(', ') : '全部难度';
+        checkAll.checked = labels.length === 0;
+    }
+
+    checkAll.addEventListener('change', function() {
+        if (this.checked) {
+            checks.forEach(function(c) { c.checked = false; });
+            syncUI();
+            diffChanged = true;
+        } else {
+            // Don't allow unchecking "全部难度" directly — it re-checks if nothing is selected
+            this.checked = true;
+        }
+    });
+
+    checks.forEach(function(cb) {
+        cb.addEventListener('change', function() {
+            syncUI();
+            diffChanged = true;
+        });
+    });
+
+    // Auto-submit on dropdown close if difficulty changed
+    var dropdownEl = document.getElementById('difficulty-dropdown');
+    dropdownEl.addEventListener('hidden.bs.dropdown', function() {
+        if (diffChanged) { form.submit(); }
+    });
+
+    // Auto-submit on platform / tag change
+    document.getElementById('filter-platform').addEventListener('change', function() { form.submit(); });
+    document.getElementById('filter-tag').addEventListener('change', function() { form.submit(); });
+})();
+</script>
 {% endblock %}

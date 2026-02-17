@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, Response, stream_with_context, current_app
@@ -6,6 +7,8 @@ from flask_login import login_required, current_user
 from app.models import Student, Problem, Submission, PlatformAccount, Tag, AnalysisResult
 from app.services.stats_service import StatsService
 from app.analysis.engine import AnalysisEngine
+
+logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -380,3 +383,69 @@ def submission_review(submission_id):
         return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
 
     return jsonify(_safe_parse_result(result))
+
+
+@api_bp.route('/problem/<int:problem_id>/resync', methods=['POST'])
+@login_required
+def problem_resync(problem_id):
+    """Re-fetch problem content from the OJ platform."""
+    problem = _user_owns_problem(problem_id)
+    if not problem:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    from app.scrapers import get_scraper_instance
+    from app.services.tag_mapper import TagMapper
+    from app.extensions import db
+
+    # Build scraper kwargs — find credentials from user's accounts on same platform
+    scraper_kwargs = {}
+    students = Student.query.filter_by(parent_id=current_user.id).all()
+    for s in students:
+        for acct in s.platform_accounts:
+            if acct.platform == problem.platform:
+                if acct.auth_cookie:
+                    scraper_kwargs['auth_cookie'] = acct.auth_cookie
+                if acct.auth_password:
+                    scraper_kwargs['auth_password'] = acct.auth_password
+                break
+        if scraper_kwargs:
+            break
+
+    try:
+        scraper = get_scraper_instance(problem.platform, **scraper_kwargs)
+    except ValueError:
+        return jsonify({'success': False, 'error': f'不支持的平台: {problem.platform}'}), 400
+
+    try:
+        scraped = scraper.fetch_problem(problem.problem_id)
+    except Exception as e:
+        logger.error(f"Resync fetch failed for {problem.platform}:{problem.problem_id}: {e}")
+        return jsonify({'success': False, 'error': f'抓取失败: {e}'}), 500
+
+    if not scraped:
+        return jsonify({'success': False, 'error': '平台未返回题目数据'}), 404
+
+    # Force-overwrite all content fields
+    problem.title = scraped.title or problem.title
+    problem.description = scraped.description
+    problem.input_desc = scraped.input_desc
+    problem.output_desc = scraped.output_desc
+    problem.examples = scraped.examples
+    problem.hint = scraped.hint
+    problem.url = scraped.url or scraper.get_problem_url(problem.problem_id)
+    problem.source = scraped.source
+    problem.difficulty_raw = scraped.difficulty_raw
+    if scraped.difficulty_raw:
+        problem.difficulty = scraper.map_difficulty(scraped.difficulty_raw)
+    if scraped.tags:
+        problem.platform_tags = json.dumps(scraped.tags, ensure_ascii=False)
+        mapper = TagMapper(problem.platform)
+        mapped = mapper.map_tags(scraped.tags)
+        for tag in mapped:
+            if tag not in problem.tags:
+                problem.tags.append(tag)
+    problem.last_scanned_at = datetime.utcnow()
+
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': '题目内容已更新'})
