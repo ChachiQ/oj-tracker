@@ -107,6 +107,8 @@ def index():
     user_monthly_budget = UserSetting.get(
         current_user.id, 'ai_monthly_budget'
     )
+    if user_monthly_budget:
+        monthly_budget = float(user_monthly_budget)
 
     return render_template(
         'settings/index.html',

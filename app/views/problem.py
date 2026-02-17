@@ -48,7 +48,9 @@ def list_problems():
         query = query.filter_by(platform=platform)
     if tag_name:
         query = query.filter(Problem.tags.any(Tag.name == tag_name))
-    if difficulty:
+    if difficulty == -1:
+        query = query.filter((Problem.difficulty == 0) | (Problem.difficulty.is_(None)))
+    elif difficulty:
         query = query.filter_by(difficulty=difficulty)
     if search:
         query = query.filter(Problem.title.contains(search))

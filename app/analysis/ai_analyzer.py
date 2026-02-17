@@ -130,13 +130,17 @@ class AIAnalyzer:
 
         return provider, model
 
-    def _check_budget(self) -> bool:
+    def _check_budget(self, user_id: int = None) -> bool:
         """Check if AI spending is within the monthly budget.
+
+        Args:
+            user_id: Optional user id to read per-user budget from UserSetting.
 
         Returns:
             True if budget has not been exceeded, False otherwise.
         """
         from sqlalchemy import func
+        from app.models import UserSetting
 
         month_start = datetime.utcnow().replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
@@ -148,6 +152,10 @@ class AIAnalyzer:
             or 0
         )
         budget = self.app.config.get("AI_MONTHLY_BUDGET", 5.0)
+        if user_id:
+            user_budget = UserSetting.get(user_id, 'ai_monthly_budget')
+            if user_budget:
+                budget = float(user_budget)
         return total_cost < budget
 
     def analyze_submission(self, submission_id: int) -> AnalysisResult | None:
@@ -169,11 +177,6 @@ class AIAnalyzer:
         if existing:
             return existing
 
-        # Check budget
-        if not self._check_budget():
-            logger.warning("AI monthly budget exceeded, skipping analysis")
-            return None
-
         # Load submission data
         submission = Submission.query.get(submission_id)
         if not submission or not submission.source_code:
@@ -185,6 +188,14 @@ class AIAnalyzer:
             if submission.platform_account
             else None
         )
+
+        # Resolve user for per-user budget
+        user_id = student.parent_id if student else None
+
+        # Check budget
+        if not self._check_budget(user_id=user_id):
+            logger.warning("AI monthly budget exceeded, skipping analysis")
+            return None
 
         # Build prompt
         messages = build_single_submission_prompt(
@@ -198,11 +209,6 @@ class AIAnalyzer:
         )
 
         try:
-            # Resolve the owning user for per-user AI config
-            user_id = None
-            if student and hasattr(student, 'parent_id'):
-                user_id = student.parent_id
-
             provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model)
 
@@ -278,12 +284,13 @@ class AIAnalyzer:
         if existing:
             return existing
 
-        if not self._check_budget():
-            logger.warning("AI monthly budget exceeded, skipping journey analysis")
-            return None
-
         problem = Problem.query.get(problem_db_id)
         student = Student.query.get(student_id)
+        user_id = student.parent_id if student else None
+
+        if not self._check_budget(user_id=user_id):
+            logger.warning("AI monthly budget exceeded, skipping journey analysis")
+            return None
 
         # Build submission timeline
         timeline = []
@@ -311,7 +318,6 @@ class AIAnalyzer:
         )
 
         try:
-            user_id = student.parent_id if student else None
             provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model, max_tokens=4096)
 
@@ -377,7 +383,7 @@ class AIAnalyzer:
             db.session.delete(existing)
             db.session.commit()
 
-        if not self._check_budget():
+        if not self._check_budget(user_id=user_id):
             logger.warning("AI monthly budget exceeded, skipping problem solution analysis")
             return None
 
@@ -457,7 +463,7 @@ class AIAnalyzer:
             db.session.delete(existing)
             db.session.commit()
 
-        if not self._check_budget():
+        if not self._check_budget(user_id=user_id):
             logger.warning("AI monthly budget exceeded, skipping full solution analysis")
             return None
 
@@ -537,7 +543,7 @@ class AIAnalyzer:
             db.session.delete(existing)
             db.session.commit()
 
-        if not self._check_budget():
+        if not self._check_budget(user_id=user_id):
             logger.warning("AI monthly budget exceeded, skipping submission review")
             return None
 

@@ -51,6 +51,7 @@
                         {{ d }} - {{ diff_labels[d] }}
                     </option>
                     {% endfor %}
+                    <option value="-1" {% if request.args.get('difficulty') == '-1' %}selected{% endif %}>其他（未标记）</option>
                 </select>
             </div>
             <div class="col-12 col-sm-6 col-md-4">

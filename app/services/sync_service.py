@@ -141,6 +141,19 @@ class SyncService:
             platform=platform, problem_id=problem_id
         ).first()
         if problem:
+            # Backfill missing content fields
+            fields = ['description', 'input_desc', 'output_desc', 'examples', 'hint']
+            missing = [f for f in fields if not getattr(problem, f)]
+            if missing:
+                try:
+                    scraped = scraper.fetch_problem(problem_id)
+                    if scraped:
+                        for f in missing:
+                            val = getattr(scraped, f, None)
+                            if val:
+                                setattr(problem, f, val)
+                except Exception as e:
+                    logger.debug(f"Backfill failed for {platform}:{problem_id}: {e}")
             return problem
 
         try:
