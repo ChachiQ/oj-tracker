@@ -13,6 +13,22 @@
     {% endif %}
 {% endcall %}
 
+<!-- Report Type Filter -->
+{% if students and students|length > 0 %}
+<div class="mb-3">
+    <div class="btn-group btn-group-sm" role="group">
+        <a href="{{ url_for('report.list_reports', student_id=selected_student_id) }}"
+           class="btn {{ 'btn-primary' if not current_report_type else 'btn-outline-primary' }}">全部</a>
+        <a href="{{ url_for('report.list_reports', student_id=selected_student_id, report_type='weekly') }}"
+           class="btn {{ 'btn-primary' if current_report_type == 'weekly' else 'btn-outline-primary' }}">周报</a>
+        <a href="{{ url_for('report.list_reports', student_id=selected_student_id, report_type='monthly') }}"
+           class="btn {{ 'btn-primary' if current_report_type == 'monthly' else 'btn-outline-primary' }}">月报</a>
+        <a href="{{ url_for('report.list_reports', student_id=selected_student_id, report_type='quarterly') }}"
+           class="btn {{ 'btn-primary' if current_report_type == 'quarterly' else 'btn-outline-primary' }}">季报</a>
+    </div>
+</div>
+{% endif %}
+
 {% if reports and reports|length > 0 %}
 <div class="card shadow-sm">
     <div class="table-responsive">
@@ -37,8 +53,8 @@
                         {% else %}-{% endif %}
                     </td>
                     <td>
-                        <span class="badge {{ 'bg-info' if report.report_type == 'weekly' else 'bg-primary' }}">
-                            {{ '周报' if report.report_type == 'weekly' else '月报' }}
+                        <span class="badge {% if report.report_type == 'weekly' %}bg-info{% elif report.report_type == 'monthly' %}bg-primary{% else %}bg-success{% endif %}">
+                            {% if report.report_type == 'weekly' %}周报{% elif report.report_type == 'monthly' %}月报{% else %}季报{% endif %}
                         </span>
                     </td>
                     <td>
@@ -50,9 +66,17 @@
                     </td>
                     <td class="{{ table_col_class('md') }}">{{ report.created_at.strftime('%Y-%m-%d %H:%M') if report.created_at else '-' }}</td>
                     <td class="text-center">
-                        <a href="{{ url_for('report.detail', report_id=report.id) }}" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-eye"></i> 查看
-                        </a>
+                        <div class="btn-group btn-group-sm">
+                            <a href="{{ url_for('report.detail', report_id=report.id) }}" class="btn btn-outline-primary">
+                                <i class="bi bi-eye"></i> 查看
+                            </a>
+                            <form method="POST" action="{{ url_for('report.delete', report_id=report.id) }}" class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('确定要删除此报告吗？')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -102,7 +126,13 @@
                         <select class="form-select" id="gen-type" name="report_type" required>
                             <option value="weekly">周报</option>
                             <option value="monthly">月报</option>
+                            <option value="quarterly">季报</option>
                         </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="gen-date" class="form-label">截止日期</label>
+                        <input type="date" class="form-control" id="gen-date" name="end_date">
+                        <div class="form-text">留空则使用当前日期</div>
                     </div>
                     <div class="alert alert-info">
                         <i class="bi bi-info-circle"></i>

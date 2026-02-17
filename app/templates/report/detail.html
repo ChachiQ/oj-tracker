@@ -19,8 +19,8 @@
                 <h5 class="fw-bold mb-2">
                     {{ report.student.name if report.student else '未知学生' }}
                     -
-                    <span class="badge {{ 'bg-info' if report.report_type == 'weekly' else 'bg-primary' }}">
-                        {{ '周报' if report.report_type == 'weekly' else '月报' }}
+                    <span class="badge {% if report.report_type == 'weekly' %}bg-info{% elif report.report_type == 'monthly' %}bg-primary{% else %}bg-success{% endif %}">
+                        {% if report.report_type == 'weekly' %}周报{% elif report.report_type == 'monthly' %}月报{% else %}季报{% endif %}
                     </span>
                 </h5>
                 <p class="text-muted mb-0">
@@ -40,6 +40,18 @@
                 <a href="{{ url_for('report.list_reports') }}" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-list"></i> 返回列表
                 </a>
+                <form method="POST" action="{{ url_for('report.regenerate', report_id=report.id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-warning btn-sm" onclick="return confirm('确定要重新生成此报告吗？旧报告将被替换。')">
+                        <i class="bi bi-arrow-clockwise"></i> 重新生成
+                    </button>
+                </form>
+                <form method="POST" action="{{ url_for('report.delete', report_id=report.id) }}" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('确定要删除此报告吗？此操作不可撤销。')">
+                        <i class="bi bi-trash"></i> 删除
+                    </button>
+                </form>
             </div>
         </div>
     </div>
@@ -50,10 +62,10 @@
     {% if report.stats %}
     <div class="col-12">
         <div class="row g-3">
-            {{ stat_card('总提交', report.stats.get('total_submissions', 0), 'primary') }}
+            {{ stat_card('总提交', report.stats.get('submissions', 0), 'primary') }}
             {{ stat_card('通过数', report.stats.get('ac_count', 0), 'success') }}
-            {{ stat_card('通过率', report.stats.get('ac_rate', '0') ~ '%', 'warning') }}
-            {{ stat_card('新知识点', report.stats.get('new_tags', 0), 'info') }}
+            {{ stat_card('通过率', report.stats.get('pass_rate', '0') ~ '%', 'warning') }}
+            {{ stat_card('活跃天数', report.stats.get('active_days', 0), 'info') }}
         </div>
     </div>
     {% endif %}
@@ -76,7 +88,7 @@
             <div class="chart-title"><i class="bi bi-robot"></i> AI 分析报告</div>
             <div class="report-content">
                 {% if report.content %}
-                    {{ report.content|safe }}
+                    {{ report.content|md2html|safe }}
                 {% else %}
                     <p class="text-muted text-center py-3">暂无报告内容</p>
                 {% endif %}

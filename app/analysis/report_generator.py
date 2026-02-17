@@ -70,6 +70,19 @@ class ReportGenerator:
         start_date = end_date - timedelta(days=30)
         return self._generate_report("monthly", start_date, end_date)
 
+    def generate_quarterly_report(self, end_date: datetime = None) -> Report | None:
+        """Generate a quarterly report ending at the given date.
+
+        Args:
+            end_date: End date of the report period. Defaults to now.
+
+        Returns:
+            Report model instance, or None if generation fails.
+        """
+        end_date = end_date or datetime.utcnow()
+        start_date = end_date - timedelta(days=90)
+        return self._generate_report("quarterly", start_date, end_date)
+
     def _generate_report(
         self, report_type: str, start_date: datetime, end_date: datetime
     ) -> Report | None:
@@ -87,9 +100,10 @@ class ReportGenerator:
             Report model instance, or None if generation fails critically.
         """
         # Gather current statistics
+        weeks_map = {"weekly": 1, "monthly": 4, "quarterly": 13}
         current_stats = self.engine.get_basic_stats()
         weekly_stats = self.engine.get_weekly_stats(
-            1 if report_type == "weekly" else 4
+            weeks_map.get(report_type, 1)
         )
         tag_scores = self.engine.get_tag_scores()
         weaknesses = WeaknessDetector(self.student_id).detect()
@@ -159,8 +173,13 @@ class ReportGenerator:
             model = self.app.config.get("AI_MODEL_ADVANCED")
             provider = get_provider(provider_name, api_key=api_key)
 
+            period_type_map = {
+                "weekly": "周报",
+                "monthly": "月报",
+                "quarterly": "季报",
+            }
             messages = build_periodic_report_prompt(
-                period_type="周报" if report_type == "weekly" else "月报",
+                period_type=period_type_map.get(report_type, "周报"),
                 period_start=start_date.strftime("%Y.%m.%d"),
                 period_end=end_date.strftime("%Y.%m.%d"),
                 stats=stats_text,

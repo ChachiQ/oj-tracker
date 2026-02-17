@@ -1,4 +1,5 @@
 import os
+import re
 
 from datetime import datetime, timezone, timedelta
 
@@ -107,6 +108,46 @@ def create_app(config_name=None):
         if not dt:
             return '-'
         return to_display_tz(dt).strftime(fmt)
+
+    @app.template_filter('md2html')
+    def md2html_filter(text):
+        """Convert basic Markdown to HTML without external dependencies."""
+        if not text:
+            return ''
+        from markupsafe import Markup
+        text = str(text)
+        # Escape HTML entities first
+        text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        # Headings: ### h3, ## h2, # h1
+        text = re.sub(r'^### (.+)$', r'<h5>\1</h5>', text, flags=re.MULTILINE)
+        text = re.sub(r'^## (.+)$', r'<h4>\1</h4>', text, flags=re.MULTILINE)
+        text = re.sub(r'^# (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
+        # Bold **text**
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+        # Italic *text* (but not inside strong tags)
+        text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
+        # Unordered list items: - item
+        text = re.sub(r'^- (.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
+        # Wrap consecutive <li> in <ul>
+        text = re.sub(
+            r'((?:<li>.*?</li>\n?)+)',
+            r'<ul>\1</ul>',
+            text,
+        )
+        # Paragraphs: split on double newlines
+        parts = re.split(r'\n{2,}', text)
+        result = []
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            if part.startswith(('<h', '<ul', '<ol')):
+                result.append(part)
+            else:
+                # Convert single newlines to <br> within paragraphs
+                part = part.replace('\n', '<br>\n')
+                result.append(f'<p>{part}</p>')
+        return Markup('\n'.join(result))
 
     # Inject version into all templates
     @app.context_processor

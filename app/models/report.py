@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from app.extensions import db
@@ -33,3 +34,38 @@ class Report(db.Model):
             f'student_id={self.student_id} '
             f'period={self.period_start}..{self.period_end}>'
         )
+
+    @property
+    def content(self):
+        return self.ai_content
+
+    @property
+    def stats(self):
+        if not self.stats_json:
+            return {}
+        try:
+            return json.loads(self.stats_json)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    @property
+    def prev_scores(self):
+        if not self.radar_data_prev:
+            return {}
+        try:
+            return json.loads(self.radar_data_prev)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    @property
+    def curr_scores(self):
+        if not self.radar_data_curr:
+            return {}
+        try:
+            return json.loads(self.radar_data_curr)
+        except (json.JSONDecodeError, TypeError):
+            return {}
+
+    @property
+    def sections(self):
+        return []
