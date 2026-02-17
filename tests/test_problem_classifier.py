@@ -41,6 +41,15 @@ class TestProblemClassifier:
         db.session.commit()
         return p
 
+    def _mock_response(self, content):
+        """Build a mock LLM response with token cost attributes."""
+        resp = MagicMock()
+        resp.content = content
+        resp.input_tokens = 100
+        resp.output_tokens = 50
+        resp.cost = 0.001
+        return resp
+
     @patch('app.analysis.problem_classifier.get_provider')
     def test_classify_writes_m2m_tags(self, mock_get_provider, app, db):
         """AI classification should write M2M tags to problem.tags."""
@@ -49,8 +58,7 @@ class TestProblemClassifier:
             description='给定一个序列，求最长递增子序列的长度',
         )
 
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
+        mock_response = self._mock_response(json.dumps({
             "problem_type": "线性DP",
             "knowledge_points": [
                 {"tag_name": "dp_linear", "importance": "核心"},
@@ -63,7 +71,7 @@ class TestProblemClassifier:
                 "overall": 4,
             },
             "brief_solution_idea": "使用动态规划求LIS",
-        })
+        }))
         mock_provider = MagicMock()
         mock_provider.chat.return_value = mock_response
         mock_get_provider.return_value = mock_provider
@@ -87,8 +95,7 @@ class TestProblemClassifier:
         self._seed_tags()
         problem = self._create_problem()
 
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
+        mock_response = self._mock_response(json.dumps({
             "problem_type": "模拟",
             "knowledge_points": [
                 {"tag_name": "simulation", "importance": "核心"},
@@ -100,7 +107,7 @@ class TestProblemClassifier:
                 "overall": 2,
             },
             "brief_solution_idea": "按题意模拟",
-        })
+        }))
         mock_provider = MagicMock()
         mock_provider.chat.return_value = mock_response
         mock_get_provider.return_value = mock_provider
@@ -115,7 +122,7 @@ class TestProblemClassifier:
     @patch('app.analysis.problem_classifier.get_provider')
     def test_classify_skips_already_analyzed(self, mock_get_provider, app, db):
         """Should skip problems already analyzed."""
-        problem = self._create_problem(ai_analyzed=True)
+        problem = self._create_problem(ai_analyzed=True, difficulty=5)
 
         classifier = ProblemClassifier(app=app)
         result = classifier.classify_problem(problem.id)
@@ -129,8 +136,7 @@ class TestProblemClassifier:
         self._seed_tags()
         problem = self._create_problem()
 
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
+        mock_response = self._mock_response(json.dumps({
             "problem_type": "未知",
             "knowledge_points": [
                 {"tag_name": "nonexistent_tag", "importance": "核心"},
@@ -138,7 +144,7 @@ class TestProblemClassifier:
             ],
             "difficulty_assessment": {"overall": 3},
             "brief_solution_idea": "test",
-        })
+        }))
         mock_provider = MagicMock()
         mock_provider.chat.return_value = mock_response
         mock_get_provider.return_value = mock_provider
@@ -157,8 +163,7 @@ class TestProblemClassifier:
         """Should handle non-JSON response gracefully."""
         problem = self._create_problem()
 
-        mock_response = MagicMock()
-        mock_response.content = "This is not valid JSON at all"
+        mock_response = self._mock_response("This is not valid JSON at all")
         mock_provider = MagicMock()
         mock_provider.chat.return_value = mock_response
         mock_get_provider.return_value = mock_provider
@@ -178,8 +183,7 @@ class TestProblemClassifier:
         self._seed_tags()
         problem = self._create_problem()
 
-        mock_response = MagicMock()
-        mock_response.content = (
+        mock_response = self._mock_response(
             'Here is my analysis:\n'
             '```json\n'
             '{"problem_type": "贪心", "knowledge_points": '
@@ -206,13 +210,12 @@ class TestProblemClassifier:
         p1 = self._create_problem(problem_id='P1001', title='Problem 1')
         p2 = self._create_problem(problem_id='P1002', title='Problem 2')
 
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
+        mock_response = self._mock_response(json.dumps({
             "problem_type": "模拟",
             "knowledge_points": [{"tag_name": "simulation", "importance": "核心"}],
             "difficulty_assessment": {"overall": 1},
             "brief_solution_idea": "模拟",
-        })
+        }))
         mock_provider = MagicMock()
         mock_provider.chat.return_value = mock_response
         mock_get_provider.return_value = mock_provider
@@ -231,15 +234,14 @@ class TestProblemClassifier:
         problem.tags.append(tags['greedy_basic'])
         db.session.commit()
 
-        mock_response = MagicMock()
-        mock_response.content = json.dumps({
+        mock_response = self._mock_response(json.dumps({
             "problem_type": "贪心",
             "knowledge_points": [
                 {"tag_name": "greedy_basic", "importance": "核心"},
             ],
             "difficulty_assessment": {"overall": 3},
             "brief_solution_idea": "贪心",
-        })
+        }))
         mock_provider = MagicMock()
         mock_provider.chat.return_value = mock_response
         mock_get_provider.return_value = mock_provider
