@@ -6,6 +6,7 @@ from datetime import datetime
 from app.extensions import db
 from app.models import PlatformAccount, Submission, Problem, Tag
 from app.scrapers import get_scraper_instance
+from app.scrapers.common import SubmissionStatus
 from app.services.tag_mapper import TagMapper
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,10 @@ class SyncService:
             ):
                 if first_record_id is None:
                     first_record_id = scraped_sub.platform_record_id
+                # Skip compile error submissions – no analytical value
+                if scraped_sub.status == SubmissionStatus.CE.value:
+                    continue
+
                 try:
                     # Check if submission already exists
                     existing = Submission.query.filter_by(
