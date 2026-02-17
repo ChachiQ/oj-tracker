@@ -95,7 +95,7 @@ class TestSyncCursorFix:
             mock_scraper = MagicMock()
             mock_scraper.fetch_submissions.return_value = iter([mock_sub])
             mock_scraper.SUPPORT_CODE_FETCH = False
-            # _ensure_problem will find existing P1001, so no problem creation needed
+            mock_scraper.fetch_problem.return_value = None
 
             with patch('app.services.sync_service.get_scraper_instance', return_value=mock_scraper):
                 service = SyncService()
