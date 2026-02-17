@@ -101,7 +101,7 @@
 <div class="modal fade" id="generateModal" tabindex="-1" aria-labelledby="generateModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="{{ url_for('report.generate') }}">
+            <form id="generateForm" method="POST" action="{{ url_for('report.generate') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-header">
                     <h5 class="modal-title" id="generateModalLabel">
@@ -110,38 +110,51 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="gen-student" class="form-label">选择学生 <span class="text-danger">*</span></label>
-                        <select class="form-select" id="gen-student" name="student_id" required>
-                            <option value="">-- 请选择 --</option>
-                            {% for s in students %}
-                            <option value="{{ s.id }}" {% if selected_student_id and s.id == selected_student_id %}selected{% endif %}>
-                                {{ s.name }}
-                            </option>
-                            {% endfor %}
-                        </select>
+                    <!-- Form fields -->
+                    <div id="generateFormFields">
+                        <div class="mb-3">
+                            <label for="gen-student" class="form-label">选择学生 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="gen-student" name="student_id" required>
+                                <option value="">-- 请选择 --</option>
+                                {% for s in students %}
+                                <option value="{{ s.id }}" {% if selected_student_id and s.id == selected_student_id %}selected{% endif %}>
+                                    {{ s.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="gen-type" class="form-label">报告类型 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="gen-type" name="report_type" required>
+                                <option value="weekly" {{ 'selected' if current_report_type == 'weekly' or not current_report_type }}>周报</option>
+                                <option value="monthly" {{ 'selected' if current_report_type == 'monthly' }}>月报</option>
+                                <option value="quarterly" {{ 'selected' if current_report_type == 'quarterly' }}>季报</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="gen-period" class="form-label">报告周期 <span class="text-danger">*</span></label>
+                            <select class="form-select" id="gen-period" name="period" required>
+                            </select>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            报告将由 AI 自动分析学生最近的做题数据并生成，生成过程可能需要几分钟时间。
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <label for="gen-type" class="form-label">报告类型 <span class="text-danger">*</span></label>
-                        <select class="form-select" id="gen-type" name="report_type" required>
-                            <option value="weekly">周报</option>
-                            <option value="monthly">月报</option>
-                            <option value="quarterly">季报</option>
-                        </select>
+                    <!-- Loading area (hidden by default) -->
+                    <div id="generateLoading" class="text-center py-4 d-none">
+                        <div class="spinner-border text-primary mb-3" role="status"></div>
+                        <p class="text-muted mb-1">AI 正在生成报告...</p>
+                        <p class="text-muted timer-text mb-0"></p>
                     </div>
-                    <div class="mb-3">
-                        <label for="gen-period" class="form-label">报告周期 <span class="text-danger">*</span></label>
-                        <select class="form-select" id="gen-period" name="period" required>
-                        </select>
-                    </div>
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle"></i>
-                        报告将由 AI 自动分析学生最近的做题数据并生成，生成过程可能需要几分钟时间。
+                    <!-- Error area (hidden by default) -->
+                    <div id="generateError" class="d-none">
+                        <div class="alert alert-danger mb-0"></div>
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                    <button type="submit" class="btn btn-primary">
+                    <button type="button" class="btn btn-secondary" id="generateCancelBtn" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary" id="generateSubmitBtn">
                         <i class="bi bi-lightning"></i> 开始生成
                     </button>
                 </div>
@@ -157,9 +170,18 @@
 (function() {
     var typeSelect = document.getElementById('gen-type');
     var periodSelect = document.getElementById('gen-period');
+    var studentSelect = document.getElementById('gen-student');
     if (!typeSelect || !periodSelect) return;
 
+    var existingReports = {{ existing_reports_map|tojson }};
+
     function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+    function getExistingPeriods(type) {
+        var sid = studentSelect ? studentSelect.value : '';
+        if (!sid || !existingReports[sid] || !existingReports[sid][type]) return [];
+        return existingReports[sid][type];
+    }
 
     function buildWeeklyOptions() {
         var options = [];
@@ -168,13 +190,13 @@
         var dayOfWeek = today.getDay(); // 0=Sun
         var endOfWeek = new Date(today);
         endOfWeek.setDate(today.getDate() + (dayOfWeek === 0 ? 0 : 7 - dayOfWeek));
-        for (var i = 0; i < 8; i++) {
+        // Start from i=1 to skip current (incomplete) week
+        for (var i = 1; i <= 8; i++) {
             var sun = new Date(endOfWeek);
             sun.setDate(endOfWeek.getDate() - i * 7);
             var mon = new Date(sun);
             mon.setDate(sun.getDate() - 6);
             var label = (mon.getMonth()+1) + '/' + mon.getDate() + ' - ' + (sun.getMonth()+1) + '/' + sun.getDate();
-            if (i === 0) label += ' (本周)';
             var value = sun.getFullYear() + '-' + pad(sun.getMonth()+1) + '-' + pad(sun.getDate());
             options.push({label: label, value: value});
         }
@@ -184,10 +206,10 @@
     function buildMonthlyOptions() {
         var options = [];
         var today = new Date();
-        for (var i = 0; i < 6; i++) {
+        // Start from i=1 to skip current (incomplete) month
+        for (var i = 1; i <= 6; i++) {
             var d = new Date(today.getFullYear(), today.getMonth() - i, 1);
             var label = d.getFullYear() + '年' + (d.getMonth()+1) + '月';
-            if (i === 0) label += ' (本月)';
             var value = d.getFullYear() + '-' + pad(d.getMonth()+1);
             options.push({label: label, value: value});
         }
@@ -199,14 +221,14 @@
         var today = new Date();
         var curQ = Math.floor(today.getMonth() / 3) + 1;
         var curY = today.getFullYear();
-        for (var i = 0; i < 4; i++) {
+        // Start from i=1 to skip current (incomplete) quarter
+        for (var i = 1; i <= 4; i++) {
             var q = curQ - i;
             var y = curY;
             while (q <= 0) { q += 4; y--; }
             var startM = (q - 1) * 3 + 1;
             var endM = q * 3;
             var label = y + '年第' + q + '季度 (' + startM + '-' + endM + '月)';
-            if (i === 0) label += ' (本季度)';
             var value = y + '-' + q;
             options.push({label: label, value: value});
         }
@@ -220,18 +242,102 @@
         else if (type === 'monthly') options = buildMonthlyOptions();
         else options = buildQuarterlyOptions();
 
+        var existing = getExistingPeriods(type);
+
         periodSelect.innerHTML = '';
         for (var i = 0; i < options.length; i++) {
             var opt = document.createElement('option');
             opt.value = options[i].value;
-            opt.textContent = options[i].label;
+            var label = options[i].label;
+            if (existing.indexOf(options[i].value) !== -1) {
+                label += ' (已生成)';
+            }
+            opt.textContent = label;
             if (i === 0) opt.selected = true;
             periodSelect.appendChild(opt);
         }
     }
 
     typeSelect.addEventListener('change', updatePeriodOptions);
+    if (studentSelect) studentSelect.addEventListener('change', updatePeriodOptions);
     updatePeriodOptions();
+
+    /* --- AJAX generate with loading --- */
+    var form = document.getElementById('generateForm');
+    var formFields = document.getElementById('generateFormFields');
+    var loadingEl = document.getElementById('generateLoading');
+    var errorEl = document.getElementById('generateError');
+    var cancelBtn = document.getElementById('generateCancelBtn');
+    var submitBtn = document.getElementById('generateSubmitBtn');
+    var modal = document.getElementById('generateModal');
+    var bsModal = null;
+
+    if (!form) return;
+
+    var timerId = null;
+    function startTimer() {
+        var seconds = 0;
+        var timerSpan = loadingEl.querySelector('.timer-text');
+        timerSpan.textContent = '';
+        timerId = setInterval(function() {
+            seconds++;
+            var text = '(' + seconds + 's)';
+            if (seconds >= 60) text = '(' + seconds + 's · 超时风险，请耐心等待)';
+            else if (seconds >= 30) text = '(' + seconds + 's · 通常 10~30s 完成)';
+            timerSpan.textContent = text;
+        }, 1000);
+    }
+    function stopTimer() {
+        if (timerId) { clearInterval(timerId); timerId = null; }
+    }
+
+    function showLoading() {
+        formFields.classList.add('d-none');
+        errorEl.classList.add('d-none');
+        loadingEl.classList.remove('d-none');
+        submitBtn.disabled = true;
+        cancelBtn.disabled = true;
+        // Prevent closing the modal
+        if (!bsModal) bsModal = bootstrap.Modal.getInstance(modal);
+        if (bsModal) bsModal._config.backdrop = 'static';
+        modal.querySelector('.btn-close').classList.add('d-none');
+        startTimer();
+    }
+
+    function showError(msg) {
+        stopTimer();
+        loadingEl.classList.add('d-none');
+        formFields.classList.remove('d-none');
+        errorEl.classList.remove('d-none');
+        errorEl.querySelector('.alert').textContent = msg;
+        submitBtn.disabled = false;
+        cancelBtn.disabled = false;
+        modal.querySelector('.btn-close').classList.remove('d-none');
+    }
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        showLoading();
+
+        var formData = new FormData(form);
+        fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            stopTimer();
+            if (data.success) {
+                window.location.href = '{{ url_for("report.detail", report_id=0) }}'.replace('/0', '/' + data.report_id);
+            } else {
+                showError(data.error || '生成失败');
+            }
+        })
+        .catch(function(err) {
+            showError('请求失败: ' + err.message);
+        });
+    });
 })();
 </script>
 {% endblock %}

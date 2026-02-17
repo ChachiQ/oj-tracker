@@ -40,15 +40,15 @@
                 <a href="{{ url_for('report.list_reports') }}" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-list"></i> 返回列表
                 </a>
-                <form method="POST" action="{{ url_for('report.regenerate', report_id=report.id) }}" class="d-inline">
+                <form id="regenerateForm" method="POST" action="{{ url_for('report.regenerate', report_id=report.id) }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-outline-warning btn-sm" onclick="return confirm('确定要重新生成此报告吗？旧报告将被替换。')">
+                    <button type="submit" id="regenerateBtn" class="btn btn-outline-warning btn-sm">
                         <i class="bi bi-arrow-clockwise"></i> 重新生成
                     </button>
                 </form>
                 <form method="POST" action="{{ url_for('report.delete', report_id=report.id) }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('确定要删除此报告吗？此操作不可撤销。')">
+                    <button type="submit" id="deleteBtn" class="btn btn-outline-danger btn-sm" onclick="return confirm('确定要删除此报告吗？此操作不可撤销。')">
                         <i class="bi bi-trash"></i> 删除
                     </button>
                 </form>
@@ -84,7 +84,7 @@
 
     <!-- AI Report Content -->
     <div class="col-12 col-lg-7">
-        <div class="chart-container">
+        <div class="chart-container position-relative" id="reportContentCard">
             <div class="chart-title"><i class="bi bi-robot"></i> AI 分析报告</div>
             <div class="report-content">
                 {% if report.content %}
@@ -92,6 +92,12 @@
                 {% else %}
                     <p class="text-muted text-center py-3">暂无报告内容</p>
                 {% endif %}
+            </div>
+            <!-- Regenerate loading overlay -->
+            <div id="regenerateOverlay" class="d-none" style="position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:0.35rem;z-index:10;">
+                <div class="spinner-border text-primary mb-3" role="status"></div>
+                <p class="text-muted mb-1">AI 正在重新生成报告...</p>
+                <p class="text-muted timer-text mb-0"></p>
             </div>
         </div>
     </div>
@@ -121,4 +127,69 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='js/report.js') }}"></script>
+<script>
+(function() {
+    var form = document.getElementById('regenerateForm');
+    var overlay = document.getElementById('regenerateOverlay');
+    var regenBtn = document.getElementById('regenerateBtn');
+    var deleteBtn = document.getElementById('deleteBtn');
+    if (!form || !overlay) return;
+
+    var timerId = null;
+    function startTimer() {
+        var seconds = 0;
+        var timerSpan = overlay.querySelector('.timer-text');
+        timerSpan.textContent = '';
+        timerId = setInterval(function() {
+            seconds++;
+            var text = '(' + seconds + 's)';
+            if (seconds >= 60) text = '(' + seconds + 's · 超时风险，请耐心等待)';
+            else if (seconds >= 30) text = '(' + seconds + 's · 通常 10~30s 完成)';
+            timerSpan.textContent = text;
+        }, 1000);
+    }
+    function stopTimer() {
+        if (timerId) { clearInterval(timerId); timerId = null; }
+    }
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        if (!confirm('确定要重新生成此报告吗？旧报告将被替换。')) return;
+
+        regenBtn.disabled = true;
+        deleteBtn.disabled = true;
+        overlay.classList.remove('d-none');
+        overlay.style.display = 'flex';
+        startTimer();
+
+        var formData = new FormData(form);
+        fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            stopTimer();
+            if (data.success) {
+                window.location.href = '{{ url_for("report.detail", report_id=0) }}'.replace('/0', '/' + data.report_id);
+            } else {
+                overlay.classList.add('d-none');
+                overlay.style.display = '';
+                regenBtn.disabled = false;
+                deleteBtn.disabled = false;
+                alert(data.error || '重新生成失败');
+            }
+        })
+        .catch(function(err) {
+            stopTimer();
+            overlay.classList.add('d-none');
+            overlay.style.display = '';
+            regenBtn.disabled = false;
+            deleteBtn.disabled = false;
+            alert('请求失败: ' + err.message);
+        });
+    });
+})();
+</script>
 {% endblock %}

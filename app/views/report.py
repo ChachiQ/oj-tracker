@@ -8,6 +8,7 @@ from flask import (
     url_for,
     flash,
     request,
+    jsonify,
     current_app,
 )
 from markupsafe import Markup
@@ -41,6 +42,31 @@ def list_reports():
     else:
         reports = []
 
+    # Build existing reports map for dropdown markers: {student_id: {type: [period_value, ...]}}
+    existing_reports_map = {}
+    all_student_ids = [s.id for s in students]
+    if all_student_ids:
+        all_reports = Report.query.filter(
+            Report.student_id.in_(all_student_ids)
+        ).all()
+        for r in all_reports:
+            sid = str(r.student_id)
+            rt = r.report_type
+            if sid not in existing_reports_map:
+                existing_reports_map[sid] = {}
+            if rt not in existing_reports_map[sid]:
+                existing_reports_map[sid][rt] = []
+            if rt == 'weekly' and r.period_end:
+                val = r.period_end.strftime('%Y-%m-%d')
+            elif rt == 'monthly' and r.period_start:
+                val = r.period_start.strftime('%Y-%m')
+            elif rt == 'quarterly' and r.period_start:
+                q = (r.period_start.month - 1) // 3 + 1
+                val = f'{r.period_start.year}-{q}'
+            else:
+                continue
+            existing_reports_map[sid][rt].append(val)
+
     return render_template(
         'report/list.html',
         reports=reports,
@@ -48,6 +74,7 @@ def list_reports():
         current_student=current_student,
         selected_student_id=current_student.id if current_student else None,
         current_report_type=report_type,
+        existing_reports_map=existing_reports_map,
     )
 
 
@@ -67,11 +94,14 @@ def detail(report_id):
 @report_bp.route('/generate', methods=['POST'])
 @login_required
 def generate():
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     student_id = request.form.get('student_id', type=int)
     report_type = request.form.get('report_type', 'weekly')
 
     student = Student.query.get_or_404(student_id)
     if student.parent_id != current_user.id:
+        if is_ajax:
+            return jsonify(success=False, error='无权操作')
         flash('无权操作', 'danger')
         return redirect(url_for('report.list_reports'))
 
@@ -99,6 +129,8 @@ def generate():
             start_date = end_date - timedelta(days=6)
             start_date = start_date.replace(hour=0, minute=0, second=0)
     except (ValueError, TypeError):
+        if is_ajax:
+            return jsonify(success=False, error='周期参数无效')
         flash('周期参数无效', 'danger')
         return redirect(
             url_for('report.list_reports', student_id=student_id)
@@ -113,6 +145,12 @@ def generate():
             period_end=end_date,
         ).first()
         if existing:
+            if is_ajax:
+                return jsonify(
+                    success=False,
+                    error=f'该时段的报告已于 {existing.created_at.strftime("%m/%d %H:%M")} 生成，如需更新请在详情页点击"重新生成"。',
+                    report_id=existing.id,
+                )
             flash(
                 Markup(
                     f'该时段的报告已于 {existing.created_at.strftime("%m/%d %H:%M")} 生成。'
@@ -143,11 +181,20 @@ def generate():
             )
 
         if report:
+            if is_ajax:
+                return jsonify(
+                    success=True,
+                    report_id=report.id,
+                )
             flash('报告生成成功', 'success')
             return redirect(url_for('report.detail', report_id=report.id))
         else:
+            if is_ajax:
+                return jsonify(success=False, error='报告生成失败')
             flash('报告生成失败', 'danger')
     except Exception as e:
+        if is_ajax:
+            return jsonify(success=False, error=f'报告生成出错: {str(e)}')
         flash(f'报告生成出错: {str(e)}', 'danger')
 
     return redirect(
@@ -174,9 +221,12 @@ def delete(report_id):
 @report_bp.route('/<int:report_id>/regenerate', methods=['POST'])
 @login_required
 def regenerate(report_id):
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     report = Report.query.get_or_404(report_id)
     student = Student.query.get(report.student_id)
     if student.parent_id != current_user.id:
+        if is_ajax:
+            return jsonify(success=False, error='无权操作')
         flash('无权操作', 'danger')
         return redirect(url_for('report.list_reports'))
 
@@ -205,13 +255,19 @@ def regenerate(report_id):
             )
 
         if new_report:
+            if is_ajax:
+                return jsonify(success=True, report_id=new_report.id)
             flash('报告已重新生成', 'success')
             return redirect(
                 url_for('report.detail', report_id=new_report.id)
             )
         else:
+            if is_ajax:
+                return jsonify(success=False, error='报告重新生成失败')
             flash('报告重新生成失败', 'danger')
     except Exception as e:
+        if is_ajax:
+            return jsonify(success=False, error=f'报告重新生成出错: {str(e)}')
         flash(f'报告重新生成出错: {str(e)}', 'danger')
 
     return redirect(url_for('report.list_reports', student_id=student_id))

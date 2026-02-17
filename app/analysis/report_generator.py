@@ -167,17 +167,49 @@ class ReportGenerator:
 
         # Call AI to generate report narrative
         try:
-            provider_name = self.app.config.get("AI_PROVIDER", "claude")
-            api_key_map = {
+            from app.models import UserSetting
+            from .llm.config import MODEL_CONFIG
+
+            user_id = self.student.parent_id if self.student else None
+            user_key_map = {
+                "claude": "api_key_claude",
+                "openai": "api_key_openai",
+                "zhipu": "api_key_zhipu",
+            }
+            env_key_map = {
                 "claude": "ANTHROPIC_API_KEY",
                 "openai": "OPENAI_API_KEY",
                 "zhipu": "ZHIPU_API_KEY",
             }
-            api_key = self.app.config.get(
-                api_key_map.get(provider_name, ""), ""
-            )
-            model = self.app.config.get("AI_MODEL_ADVANCED")
+
+            if user_id:
+                provider_name = (
+                    UserSetting.get(user_id, 'ai_provider')
+                    or self.app.config.get("AI_PROVIDER", "zhipu")
+                )
+                api_key = UserSetting.get(
+                    user_id, user_key_map.get(provider_name, ''),
+                ) or ''
+            else:
+                provider_name = self.app.config.get("AI_PROVIDER", "claude")
+                api_key = ''
+
+            if not api_key:
+                api_key = self.app.config.get(
+                    env_key_map.get(provider_name, ""), "",
+                )
+
             provider = get_provider(provider_name, api_key=api_key)
+
+            # Pick advanced-tier model from MODEL_CONFIG
+            models = MODEL_CONFIG.get(provider_name, {}).get("models", {})
+            model = None
+            for m_name, m_info in models.items():
+                if m_info.get("tier") == "advanced":
+                    model = m_name
+                    break
+            if not model:
+                model = self.app.config.get("AI_MODEL_ADVANCED")
 
             period_type_map = {
                 "weekly": "周报",
