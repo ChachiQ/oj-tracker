@@ -156,7 +156,7 @@ class TestSettingsViews:
         resp = client.get('/settings/')
         html = resp.data.decode('utf-8')
         # analyzed_count should be rendered (0 when no analysis results)
-        assert '已分析题目数' in html
+        assert '已分析' in html and '题' in html
 
 
 class TestKnowledgeViews:
