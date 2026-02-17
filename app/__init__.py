@@ -110,15 +110,23 @@ def create_app(config_name=None):
         return to_display_tz(dt).strftime(fmt)
 
     @app.template_filter('md2html')
-    def md2html_filter(text):
-        """Convert basic Markdown to HTML without external dependencies."""
+    def md2html_filter(text, escape=True):
+        """Convert basic Markdown to HTML without external dependencies.
+
+        Args:
+            escape: If True (default), escape HTML entities first — safe for
+                    AI-generated pure-Markdown content. If False, preserve
+                    existing HTML tags — suitable for OJ problem content that
+                    mixes Markdown and HTML.
+        """
         if not text:
             return ''
         from markupsafe import Markup
         text = str(text)
-        # Escape HTML entities first
-        text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-        # Headings: ### h3, ## h2, # h1
+        if escape:
+            text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        # Headings: #### h6, ### h5, ## h4, # h3
+        text = re.sub(r'^#### (.+)$', r'<h6>\1</h6>', text, flags=re.MULTILINE)
         text = re.sub(r'^### (.+)$', r'<h5>\1</h5>', text, flags=re.MULTILINE)
         text = re.sub(r'^## (.+)$', r'<h4>\1</h4>', text, flags=re.MULTILINE)
         text = re.sub(r'^# (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
@@ -126,12 +134,20 @@ def create_app(config_name=None):
         text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
         # Italic *text* (but not inside strong tags)
         text = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', text)
-        # Unordered list items: - item
-        text = re.sub(r'^- (.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
-        # Wrap consecutive <li> in <ul>
+        # Unordered list items: - item or * item → use <uli> placeholder
+        text = re.sub(r'^[-*] (.+)$', r'<uli>\1</uli>', text, flags=re.MULTILINE)
+        # Ordered list items: 1. item → use <oli> placeholder
+        text = re.sub(r'^\d+\. (.+)$', r'<oli>\1</oli>', text, flags=re.MULTILINE)
+        # Wrap consecutive <uli> in <ul>
         text = re.sub(
-            r'((?:<li>.*?</li>\n?)+)',
-            r'<ul>\1</ul>',
+            r'((?:<uli>.*?</uli>\n?)+)',
+            lambda m: '<ul>' + m.group(1).replace('<uli>', '<li>').replace('</uli>', '</li>') + '</ul>',
+            text,
+        )
+        # Wrap consecutive <oli> in <ol>
+        text = re.sub(
+            r'((?:<oli>.*?</oli>\n?)+)',
+            lambda m: '<ol>' + m.group(1).replace('<oli>', '<li>').replace('</oli>', '</li>') + '</ol>',
             text,
         )
         # Paragraphs: split on double newlines
@@ -144,8 +160,8 @@ def create_app(config_name=None):
             if part.startswith(('<h', '<ul', '<ol')):
                 result.append(part)
             else:
-                # Convert single newlines to <br> within paragraphs
-                part = part.replace('\n', '<br>\n')
+                # Convert single newlines to <br> (without keeping \n)
+                part = part.replace('\n', '<br>')
                 result.append(f'<p>{part}</p>')
         return Markup('\n'.join(result))
 

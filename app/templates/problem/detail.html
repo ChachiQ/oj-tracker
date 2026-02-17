@@ -123,7 +123,7 @@
         {% if problem.description %}
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-file-text"></i> 题目描述</div>
-            <div class="report-content">{{ problem.description|safe }}</div>
+            <div class="report-content">{{ problem.description|md2html(escape=False) }}</div>
         </div>
         {% endif %}
 
@@ -132,11 +132,11 @@
         <div class="chart-container">
             {% if problem.input_desc %}
             <div class="chart-title"><i class="bi bi-arrow-right-square"></i> 输入</div>
-            <div class="report-content mb-3">{{ problem.input_desc|safe }}</div>
+            <div class="report-content mb-3">{{ problem.input_desc|md2html(escape=False) }}</div>
             {% endif %}
             {% if problem.output_desc %}
             <div class="chart-title"><i class="bi bi-arrow-left-square"></i> 输出</div>
-            <div class="report-content">{{ problem.output_desc|safe }}</div>
+            <div class="report-content">{{ problem.output_desc|md2html(escape=False) }}</div>
             {% endif %}
         </div>
         {% endif %}
@@ -153,7 +153,7 @@
         {% if problem.hint %}
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-lightbulb"></i> 提示</div>
-            <div class="report-content">{{ problem.hint|safe }}</div>
+            <div class="report-content">{{ problem.hint|md2html(escape=False) }}</div>
         </div>
         {% endif %}
     </div>
