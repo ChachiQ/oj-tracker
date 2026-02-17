@@ -60,8 +60,10 @@
                         </td>
                         <td class="{{ table_col_class('md') }}"><code>{{ account.platform_uid }}</code></td>
                         <td>
-                            {% if account.consecutive_sync_failures and account.consecutive_sync_failures >= 10 %}
+                            {% if not account.is_active and account.consecutive_sync_failures and account.consecutive_sync_failures >= 10 %}
                                 <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 已停用 (失败{{ account.consecutive_sync_failures }}次)</span>
+                            {% elif not account.is_active %}
+                                <span class="badge bg-secondary"><i class="bi bi-pause-circle"></i> 已暂停</span>
                             {% elif account.consecutive_sync_failures and account.consecutive_sync_failures >= 3 %}
                                 <span class="badge bg-warning text-dark" title="{{ account.last_sync_error or '' }}" data-bs-toggle="tooltip">
                                     <i class="bi bi-exclamation-triangle"></i> 连续失败{{ account.consecutive_sync_failures }}次
@@ -70,10 +72,8 @@
                                 <span class="badge bg-warning text-dark" title="{{ account.last_sync_error }}" data-bs-toggle="tooltip">
                                     <i class="bi bi-exclamation-triangle"></i> 同步异常
                                 </span>
-                            {% elif account.is_active %}
-                                <span class="badge bg-success"><i class="bi bi-check-circle"></i> 正常</span>
                             {% else %}
-                                <span class="badge bg-danger"><i class="bi bi-x-circle"></i> 已停用</span>
+                                <span class="badge bg-success"><i class="bi bi-check-circle"></i> 正常</span>
                             {% endif %}
                         </td>
                         <td class="{{ table_col_class('md') }}">
@@ -93,9 +93,26 @@
                                       data-requires-login="true"
                                       {% endif %}>
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-outline-success" title="同步数据">
+                                    <button type="submit" class="btn btn-outline-success" title="同步数据"
+                                            {{ 'disabled' if not account.is_active else '' }}>
                                         <i class="bi bi-arrow-repeat"></i>
                                     </button>
+                                </form>
+                                <form method="POST" action="{{ url_for('settings.toggle_account', account_id=account.id) }}"
+                                      class="d-inline"
+                                      {% if not account.is_active and account.consecutive_sync_failures and account.consecutive_sync_failures >= 10 %}
+                                      onsubmit="return confirm('该账号因连续失败{{ account.consecutive_sync_failures }}次被自动停用，确定要重新启用吗？')"
+                                      {% endif %}>
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    {% if account.is_active %}
+                                    <button type="submit" class="btn btn-outline-warning" title="暂停同步">
+                                        <i class="bi bi-pause-circle"></i>
+                                    </button>
+                                    {% else %}
+                                    <button type="submit" class="btn btn-outline-success" title="启用同步">
+                                        <i class="bi bi-play-circle"></i>
+                                    </button>
+                                    {% endif %}
                                 </form>
                                 <form method="POST" action="{{ url_for('settings.delete_account', account_id=account.id) }}"
                                       class="d-inline" onsubmit="return confirm('确定要删除该账号吗？关联的提交记录不会被删除。')">

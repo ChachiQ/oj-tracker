@@ -233,6 +233,34 @@ def sync_all():
     return redirect(url_for('settings.index'))
 
 
+@settings_bp.route('/account/<int:account_id>/toggle', methods=['POST'])
+@login_required
+def toggle_account(account_id):
+    account = PlatformAccount.query.get_or_404(account_id)
+    if account.student.parent_id != current_user.id:
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'success': False, 'message': '无权操作'}), 403
+        flash('无权操作', 'danger')
+        return redirect(url_for('settings.index'))
+
+    account.is_active = not account.is_active
+    if account.is_active:
+        account.consecutive_sync_failures = 0
+        account.last_sync_error = None
+
+    db.session.commit()
+
+    status_label = '已启用' if account.is_active else '已暂停'
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return jsonify({
+            'success': True,
+            'message': f'账号已{status_label}',
+            'is_active': account.is_active,
+        })
+    flash(f'账号已{status_label}', 'success')
+    return redirect(url_for('settings.index'))
+
+
 @settings_bp.route('/ai', methods=['POST'])
 @login_required
 def save_ai_config():

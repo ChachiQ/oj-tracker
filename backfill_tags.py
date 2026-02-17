@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app import create_app
 from app.extensions import db
-from app.models import Problem, Submission, AnalysisResult
+from app.models import PlatformAccount, Problem, Submission, AnalysisResult
 from app.services.tag_mapper import TagMapper
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
@@ -360,7 +360,10 @@ def backfill_reviews(platform=None, limit=0, user_id=None, dry_run=False):
             db.session.query(AnalysisResult.submission_id)
             .filter_by(analysis_type="submission_review")
         )
-        query = Submission.query.filter(
+        query = Submission.query.join(
+            PlatformAccount, Submission.platform_account_id == PlatformAccount.id
+        ).filter(
+            PlatformAccount.is_active == True,  # noqa: E712
             Submission.problem_id_ref.isnot(None),
             Submission.source_code.isnot(None),
             Submission.source_code != '',
