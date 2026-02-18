@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from itertools import groupby
-from operator import attrgetter
 
 from sqlalchemy import func as sa_func
 
@@ -183,17 +182,19 @@ class AIBackfillService:
         """Phase 4: Code review of submissions."""
         job.current_phase = 'review'
 
-        # Count existing reviews per problem
-        reviewed_counts = dict(
-            db.session.query(
+        # Count existing reviews per (problem, account)
+        reviewed_counts = {
+            (pid, aid): cnt
+            for pid, aid, cnt in db.session.query(
                 Submission.problem_id_ref,
+                Submission.platform_account_id,
                 sa_func.count(AnalysisResult.id),
             )
             .join(AnalysisResult, AnalysisResult.submission_id == Submission.id)
             .filter(AnalysisResult.analysis_type == "submission_review")
-            .group_by(Submission.problem_id_ref)
+            .group_by(Submission.problem_id_ref, Submission.platform_account_id)
             .all()
-        )
+        }
 
         reviewed_ids = (
             db.session.query(AnalysisResult.submission_id)
@@ -224,13 +225,14 @@ class AIBackfillService:
 
         all_submissions = query.all()
 
-        # Per-problem cap: at most 3 reviews total
+        # Per-(problem, account) cap: at most 3 reviews total
         submissions = []
-        key_fn = attrgetter('problem_id_ref')
-        for pid, group in groupby(
+        def key_fn(s):
+            return (s.problem_id_ref, s.platform_account_id)
+        for (pid, aid), group in groupby(
             sorted(all_submissions, key=key_fn), key=key_fn
         ):
-            existing = reviewed_counts.get(pid, 0)
+            existing = reviewed_counts.get((pid, aid), 0)
             if existing >= 3:
                 continue
             remaining = 3 - existing

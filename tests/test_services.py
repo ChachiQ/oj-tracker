@@ -349,3 +349,144 @@ class TestSyncService:
         # Verify last_submission_at was set
         acct = db.session.get(PlatformAccount, acct_id)
         assert acct.last_submission_at is not None
+
+    @patch('app.services.sync_service.get_scraper_instance')
+    def test_sync_limits_submissions_for_new_problems(self, mock_get_scraper, app, db):
+        """Limit triggers per-student: even if Problem exists (another student did it),
+        the current student's first encounter should still be capped at 3."""
+        user = User(username='sync_limit', email='synclimit@test.com')
+        user.set_password('pw')
+        db.session.add(user)
+        db.session.flush()
+        student = Student(parent_id=user.id, name='limit_kid')
+        db.session.add(student)
+        db.session.flush()
+        acct = PlatformAccount(
+            student_id=student.id,
+            platform='luogu',
+            platform_uid='limit_user',
+            is_active=True,
+        )
+        db.session.add(acct)
+        db.session.flush()
+
+        # Pre-create the Problem (simulates another student having done it)
+        existing_problem = Problem(
+            platform='luogu',
+            problem_id='P7000',
+            title='Limit Problem',
+            difficulty=3,
+        )
+        db.session.add(existing_problem)
+        db.session.commit()
+        acct_id = acct.id
+
+        # 5 submissions for the same problem (newest first)
+        scraped_subs = [
+            ScrapedSubmission(
+                platform_record_id=f'limit_{i:03d}',
+                problem_id='P7000',
+                status='AC' if i == 0 else 'WA',
+                score=100 if i == 0 else 0,
+                language='C++',
+                submitted_at=datetime(2025, 1, 1, 12, 0, 0),
+            )
+            for i in range(5)
+        ]
+
+        mock_scraper = MagicMock()
+        mock_scraper.SUPPORT_CODE_FETCH = False
+        mock_scraper.fetch_submissions.return_value = iter(scraped_subs)
+        mock_scraper.fetch_problem.return_value = ScrapedProblem(
+            problem_id='P7000',
+            title='Limit Problem',
+            difficulty_raw='3',
+        )
+        mock_scraper.map_difficulty.return_value = 3
+        mock_scraper.get_problem_url.return_value = 'https://example.com/P7000'
+        mock_get_scraper.return_value = mock_scraper
+
+        service = SyncService()
+        result = service.sync_account(acct_id)
+
+        assert result['new_submissions'] == 3
+        assert result['skipped_old_submissions'] == 2
+        # new_problems should be 0 since Problem already existed
+        assert result['new_problems'] == 0
+        # Verify only 3 rows in DB
+        count = Submission.query.filter_by(platform_account_id=acct_id).count()
+        assert count == 3
+
+    @patch('app.services.sync_service.get_scraper_instance')
+    def test_sync_no_limit_for_existing_student_problem(self, mock_get_scraper, app, db):
+        """When a student already has submissions for a problem, no limit applies."""
+        user = User(username='sync_nolim', email='syncnolim@test.com')
+        user.set_password('pw')
+        db.session.add(user)
+        db.session.flush()
+        student = Student(parent_id=user.id, name='nolim_kid')
+        db.session.add(student)
+        db.session.flush()
+        acct = PlatformAccount(
+            student_id=student.id,
+            platform='luogu',
+            platform_uid='nolim_user',
+            is_active=True,
+        )
+        db.session.add(acct)
+        db.session.flush()
+
+        # Problem already exists and account has a prior submission
+        problem = Problem(
+            platform='luogu',
+            problem_id='P8000',
+            title='Old Problem',
+            difficulty=2,
+        )
+        db.session.add(problem)
+        db.session.flush()
+        old_sub = Submission(
+            platform_account_id=acct.id,
+            problem_id_ref=problem.id,
+            platform_record_id='old_001',
+            status='WA',
+            submitted_at=datetime(2024, 12, 1),
+        )
+        db.session.add(old_sub)
+        db.session.commit()
+        acct_id = acct.id
+
+        # 5 new submissions for the same problem
+        scraped_subs = [
+            ScrapedSubmission(
+                platform_record_id=f'nolim_{i:03d}',
+                problem_id='P8000',
+                status='AC' if i == 0 else 'WA',
+                score=100 if i == 0 else 0,
+                language='C++',
+                submitted_at=datetime(2025, 2, 1, 12, 0, 0),
+            )
+            for i in range(5)
+        ]
+
+        mock_scraper = MagicMock()
+        mock_scraper.SUPPORT_CODE_FETCH = False
+        mock_scraper.fetch_submissions.return_value = iter(scraped_subs)
+        mock_scraper.fetch_problem.return_value = ScrapedProblem(
+            problem_id='P8000',
+            title='Old Problem',
+            difficulty_raw='2',
+        )
+        mock_scraper.map_difficulty.return_value = 2
+        mock_scraper.get_problem_url.return_value = 'https://example.com/P8000'
+        mock_get_scraper.return_value = mock_scraper
+
+        service = SyncService()
+        result = service.sync_account(acct_id)
+
+        # All 5 should be synced — no cap for known problems
+        assert result['new_submissions'] == 5
+        assert result['skipped_old_submissions'] == 0
+        # 5 new + 1 old = 6 total
+        count = Submission.query.filter_by(platform_account_id=acct_id).count()
+        assert count == 6

@@ -30,8 +30,12 @@ class SyncService:
         except ValueError as e:
             return {'error': str(e)}
 
-        stats = {'new_submissions': 0, 'new_problems': 0, 'errors': 0}
+        stats = {'new_submissions': 0, 'new_problems': 0, 'errors': 0,
+                 'skipped_old_submissions': 0}
         first_record_id = None
+        new_problem_sub_counts = {}  # track submission count per newly-discovered problem
+        seen_problem_keys = set()  # avoid repeated DB lookups for same problem
+        MAX_SUBS_NEW_PROBLEM = 3
 
         try:
             for scraped_sub in scraper.fetch_submissions(
@@ -54,13 +58,36 @@ class SyncService:
                     if existing:
                         continue
 
+                    # Detect problems new to this student (account)
+                    problem_key = f"{account.platform}:{scraped_sub.problem_id}"
+                    if problem_key not in seen_problem_keys:
+                        seen_problem_keys.add(problem_key)
+                        problem_obj = Problem.query.filter_by(
+                            platform=account.platform,
+                            problem_id=scraped_sub.problem_id,
+                        ).first()
+                        is_new_for_student = True
+                        if problem_obj:
+                            is_new_for_student = not Submission.query.filter_by(
+                                platform_account_id=account.id,
+                                problem_id_ref=problem_obj.id,
+                            ).first()
+                        else:
+                            stats['new_problems'] += 1
+                        if is_new_for_student:
+                            new_problem_sub_counts[problem_key] = 0
+
+                    # Limit submissions for newly-discovered problems
+                    if problem_key in new_problem_sub_counts:
+                        if new_problem_sub_counts[problem_key] >= MAX_SUBS_NEW_PROBLEM:
+                            stats['skipped_old_submissions'] += 1
+                            continue
+                        new_problem_sub_counts[problem_key] += 1
+
                     # Ensure problem exists in DB
                     problem = self._ensure_problem(
                         account.platform, scraped_sub.problem_id, scraper
                     )
-                    if problem and problem.id is None:
-                        # Newly created problem, count it
-                        stats['new_problems'] += 1
 
                     # Create submission
                     submission = Submission(
