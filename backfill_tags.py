@@ -191,9 +191,6 @@ def backfill_reviews(platform=None, limit=0, user_id=None, dry_run=False):
     """Comprehensive AI backfill: classify, solution, full solution, code review."""
     app = create_app()
     with app.app_context():
-        from app.analysis.problem_classifier import ProblemClassifier
-        from app.analysis.ai_analyzer import AIAnalyzer
-
         # Auto-discover a user with AI config if not specified
         if user_id is None:
             user_id = _find_ai_user()
@@ -205,241 +202,162 @@ def backfill_reviews(platform=None, limit=0, user_id=None, dry_run=False):
                     "Falling back to environment variables."
                 )
 
-        classifier = ProblemClassifier(app=app)
-        analyzer = AIAnalyzer(app=app)
-
-        stats = {
-            'classify_ok': 0, 'classify_total': 0,
-            'solution_ok': 0, 'solution_total': 0,
-            'full_solution_ok': 0, 'full_solution_total': 0,
-            'review_ok': 0, 'review_total': 0,
-        }
-
-        # ── Phase 1: AI Classification ──────────────────────────────
-        logger.info("")
-        logger.info("=== 阶段 1/4：AI 分类 ===")
-
-        query = Problem.query.filter(
-            db.or_(Problem.ai_analyzed == False, Problem.difficulty == 0)  # noqa: E712
-        ).order_by(Problem.created_at.desc())
-        if platform:
-            query = query.filter_by(platform=platform)
-        if limit:
-            query = query.limit(limit)
-
-        problems_1 = query.all()
-        stats['classify_total'] = len(problems_1)
-        limit_info = f" (limit={limit})" if limit else ""
-        logger.info("Found %d problems to classify%s", len(problems_1), limit_info)
-
         if dry_run:
-            for i, p in enumerate(problems_1, 1):
-                logger.info("  [%d/%d] %s:%s — %s", i, len(problems_1),
-                            p.platform, p.problem_id, p.title)
+            _backfill_reviews_dry_run(platform, limit)
         else:
-            for i, p in enumerate(problems_1, 1):
-                if classifier.classify_problem(p.id, user_id=user_id):
-                    stats['classify_ok'] += 1
-                    logger.info(
-                        "  [%d/%d] %s:%s — %s → tags=%s, difficulty=%s, type=%s",
-                        i, len(problems_1), p.platform, p.problem_id, p.title,
-                        [t.name for t in p.tags], p.difficulty, p.ai_problem_type,
-                    )
-                else:
-                    logger.warning(
-                        "  [%d/%d] %s:%s — %s → classification failed",
-                        i, len(problems_1), p.platform, p.problem_id, p.title,
-                    )
+            from app.models import SyncJob
+            from app.services.ai_backfill_service import AIBackfillService
 
-        logger.info("Done! %d/%d classified.", stats['classify_ok'], stats['classify_total'])
-
-        # ── Phase 2: Solution Analysis ──────────────────────────────
-        logger.info("")
-        logger.info("=== 阶段 2/4：思路分析 ===")
-
-        query = Problem.query.filter(
-            Problem.description.isnot(None),
-            ~Problem.id.in_(
-                db.session.query(AnalysisResult.problem_id_ref)
-                .filter_by(analysis_type="problem_solution")
-            ),
-        )
-        if platform:
-            query = query.filter_by(platform=platform)
-        if limit:
-            query = query.limit(limit)
-
-        problems_2 = query.all()
-        stats['solution_total'] = len(problems_2)
-        logger.info("Found %d problems without solution analysis%s",
-                     len(problems_2), limit_info)
-
-        if dry_run:
-            for i, p in enumerate(problems_2, 1):
-                logger.info("  [%d/%d] %s:%s — %s", i, len(problems_2),
-                            p.platform, p.problem_id, p.title)
-        else:
-            for i, p in enumerate(problems_2, 1):
-                result = analyzer.analyze_problem_solution(p.id, user_id=user_id)
-                if result:
-                    stats['solution_ok'] += 1
-                    logger.info(
-                        "  [%d/%d] %s:%s — %s → OK",
-                        i, len(problems_2), p.platform, p.problem_id, p.title,
-                    )
-                else:
-                    logger.warning(
-                        "  [%d/%d] %s:%s — %s → failed",
-                        i, len(problems_2), p.platform, p.problem_id, p.title,
-                    )
-
-        logger.info("Done! %d/%d analyzed.", stats['solution_ok'], stats['solution_total'])
-
-        # ── Phase 3: Full Solution ──────────────────────────────────
-        logger.info("")
-        logger.info("=== 阶段 3/4：AI 解题 ===")
-
-        query = Problem.query.filter(
-            Problem.description.isnot(None),
-            ~Problem.id.in_(
-                db.session.query(AnalysisResult.problem_id_ref)
-                .filter_by(analysis_type="problem_full_solution")
-            ),
-        )
-        if platform:
-            query = query.filter_by(platform=platform)
-        if limit:
-            query = query.limit(limit)
-
-        problems_3 = query.all()
-        stats['full_solution_total'] = len(problems_3)
-        logger.info("Found %d problems without full solution%s",
-                     len(problems_3), limit_info)
-
-        if dry_run:
-            for i, p in enumerate(problems_3, 1):
-                logger.info("  [%d/%d] %s:%s — %s", i, len(problems_3),
-                            p.platform, p.problem_id, p.title)
-        else:
-            for i, p in enumerate(problems_3, 1):
-                result = analyzer.analyze_problem_full_solution(p.id, user_id=user_id)
-                if result:
-                    stats['full_solution_ok'] += 1
-                    logger.info(
-                        "  [%d/%d] %s:%s — %s → OK",
-                        i, len(problems_3), p.platform, p.problem_id, p.title,
-                    )
-                else:
-                    logger.warning(
-                        "  [%d/%d] %s:%s — %s → failed",
-                        i, len(problems_3), p.platform, p.problem_id, p.title,
-                    )
-
-        logger.info("Done! %d/%d analyzed.", stats['full_solution_ok'],
-                     stats['full_solution_total'])
-
-        # ── Phase 4: Code Review ────────────────────────────────────
-        logger.info("")
-        logger.info("=== 阶段 4/4：代码审查 ===")
-
-        from sqlalchemy import func as sa_func
-
-        # Count existing reviews per problem
-        reviewed_counts = dict(
-            db.session.query(
-                Submission.problem_id_ref,
-                sa_func.count(AnalysisResult.id),
+            # Create a SyncJob record (user_id 0 if not found)
+            job = SyncJob(
+                user_id=user_id or 0,
+                job_type='ai_backfill',
+                status='pending',
             )
-            .join(AnalysisResult, AnalysisResult.submission_id == Submission.id)
-            .filter(AnalysisResult.analysis_type == "submission_review")
-            .group_by(Submission.problem_id_ref)
-            .all()
-        )
+            db.session.add(job)
+            db.session.commit()
 
-        reviewed_ids = (
-            db.session.query(AnalysisResult.submission_id)
-            .filter_by(analysis_type="submission_review")
-        )
-        query = Submission.query.join(
-            PlatformAccount, Submission.platform_account_id == PlatformAccount.id
-        ).filter(
-            PlatformAccount.is_active == True,  # noqa: E712
-            Submission.problem_id_ref.isnot(None),
-            Submission.source_code.isnot(None),
-            Submission.source_code != '',
-            ~Submission.id.in_(reviewed_ids),
-        ).order_by(Submission.submitted_at.desc())
-        if platform:
-            query = query.join(Problem, Submission.problem_id_ref == Problem.id).filter(
-                Problem.platform == platform
-            )
-        if limit:
-            query = query.limit(limit)
+            service = AIBackfillService(app)
+            service.run(job.id, user_id or 0, platform=platform, limit=limit)
 
-        all_submissions = query.all()
-
-        # Per-problem cap: at most 3 reviews total (existing + new)
-        submissions = []
-        key_fn = attrgetter('problem_id_ref')
-        for pid, group in groupby(sorted(all_submissions, key=key_fn), key=key_fn):
-            existing = reviewed_counts.get(pid, 0)
-            if existing >= 3:
-                continue
-            remaining = 3 - existing
-            subs = sorted(group, key=lambda s: s.submitted_at or datetime.min, reverse=True)
-            submissions.extend(subs[:remaining])
-        stats['review_total'] = len(submissions)
-        logger.info("Found %d submissions without review%s",
-                     len(submissions), limit_info)
-
-        if dry_run:
-            for i, sub in enumerate(submissions, 1):
-                prob = sub.problem
-                prob_label = f"{prob.platform}:{prob.problem_id}" if prob else "unknown"
-                logger.info(
-                    "  [%d/%d] %s — submission #%s (%s, %s)",
-                    i, len(submissions), prob_label,
-                    sub.platform_record_id, sub.status, sub.language or "?",
-                )
-        else:
-            for i, sub in enumerate(submissions, 1):
-                prob = sub.problem
-                prob_label = f"{prob.platform}:{prob.problem_id}" if prob else "unknown"
-                result = analyzer.review_submission(sub.id, user_id=user_id)
-                if result:
-                    stats['review_ok'] += 1
-                    logger.info(
-                        "  [%d/%d] %s — submission #%s (%s, %s) → OK",
-                        i, len(submissions), prob_label,
-                        sub.platform_record_id, sub.status, sub.language or "?",
-                    )
-                else:
-                    logger.warning(
-                        "  [%d/%d] %s — submission #%s (%s, %s) → failed",
-                        i, len(submissions), prob_label,
-                        sub.platform_record_id, sub.status, sub.language or "?",
-                    )
-
-        logger.info("Done! %d/%d reviewed.", stats['review_ok'], stats['review_total'])
-
-        # ── Summary ─────────────────────────────────────────────────
-        logger.info("")
-        if dry_run:
-            logger.info("=== 预览完成 (dry-run) ===")
-            logger.info(
-                "分类: %d | 思路: %d | 解题: %d | 审查: %d",
-                stats['classify_total'], stats['solution_total'],
-                stats['full_solution_total'], stats['review_total'],
-            )
-        else:
+            # Print summary from job stats
+            stats = job.stats
+            logger.info("")
             logger.info("=== 回填完成 ===")
             logger.info(
                 "分类: %d/%d | 思路: %d/%d | 解题: %d/%d | 审查: %d/%d",
-                stats['classify_ok'], stats['classify_total'],
-                stats['solution_ok'], stats['solution_total'],
-                stats['full_solution_ok'], stats['full_solution_total'],
-                stats['review_ok'], stats['review_total'],
+                stats.get('classify_ok', 0), stats.get('classify_total', 0),
+                stats.get('solution_ok', 0), stats.get('solution_total', 0),
+                stats.get('full_solution_ok', 0), stats.get('full_solution_total', 0),
+                stats.get('review_ok', 0), stats.get('review_total', 0),
             )
+
+
+def _backfill_reviews_dry_run(platform=None, limit=0):
+    """Preview-only mode for backfill_reviews."""
+    from app.analysis.problem_classifier import ProblemClassifier
+    from app.analysis.ai_analyzer import AIAnalyzer
+
+    limit_info = f" (limit={limit})" if limit else ""
+
+    # Phase 1
+    logger.info("")
+    logger.info("=== 阶段 1/4：AI 分类 ===")
+    query = Problem.query.filter(
+        db.or_(Problem.ai_analyzed == False, Problem.difficulty == 0)  # noqa: E712
+    ).order_by(Problem.created_at.desc())
+    if platform:
+        query = query.filter_by(platform=platform)
+    if limit:
+        query = query.limit(limit)
+    problems_1 = query.all()
+    logger.info("Found %d problems to classify%s", len(problems_1), limit_info)
+    for i, p in enumerate(problems_1, 1):
+        logger.info("  [%d/%d] %s:%s — %s", i, len(problems_1),
+                     p.platform, p.problem_id, p.title)
+
+    # Phase 2
+    logger.info("")
+    logger.info("=== 阶段 2/4：思路分析 ===")
+    query = Problem.query.filter(
+        Problem.description.isnot(None),
+        ~Problem.id.in_(
+            db.session.query(AnalysisResult.problem_id_ref)
+            .filter_by(analysis_type="problem_solution")
+        ),
+    )
+    if platform:
+        query = query.filter_by(platform=platform)
+    if limit:
+        query = query.limit(limit)
+    problems_2 = query.all()
+    logger.info("Found %d problems without solution analysis%s", len(problems_2), limit_info)
+    for i, p in enumerate(problems_2, 1):
+        logger.info("  [%d/%d] %s:%s — %s", i, len(problems_2),
+                     p.platform, p.problem_id, p.title)
+
+    # Phase 3
+    logger.info("")
+    logger.info("=== 阶段 3/4：AI 解题 ===")
+    query = Problem.query.filter(
+        Problem.description.isnot(None),
+        ~Problem.id.in_(
+            db.session.query(AnalysisResult.problem_id_ref)
+            .filter_by(analysis_type="problem_full_solution")
+        ),
+    )
+    if platform:
+        query = query.filter_by(platform=platform)
+    if limit:
+        query = query.limit(limit)
+    problems_3 = query.all()
+    logger.info("Found %d problems without full solution%s", len(problems_3), limit_info)
+    for i, p in enumerate(problems_3, 1):
+        logger.info("  [%d/%d] %s:%s — %s", i, len(problems_3),
+                     p.platform, p.problem_id, p.title)
+
+    # Phase 4
+    logger.info("")
+    logger.info("=== 阶段 4/4：代码审查 ===")
+    from sqlalchemy import func as sa_func
+
+    reviewed_counts = dict(
+        db.session.query(
+            Submission.problem_id_ref,
+            sa_func.count(AnalysisResult.id),
+        )
+        .join(AnalysisResult, AnalysisResult.submission_id == Submission.id)
+        .filter(AnalysisResult.analysis_type == "submission_review")
+        .group_by(Submission.problem_id_ref)
+        .all()
+    )
+    reviewed_ids = (
+        db.session.query(AnalysisResult.submission_id)
+        .filter_by(analysis_type="submission_review")
+    )
+    query = Submission.query.join(
+        PlatformAccount, Submission.platform_account_id == PlatformAccount.id
+    ).filter(
+        PlatformAccount.is_active == True,  # noqa: E712
+        Submission.problem_id_ref.isnot(None),
+        Submission.source_code.isnot(None),
+        Submission.source_code != '',
+        ~Submission.id.in_(reviewed_ids),
+    ).order_by(Submission.submitted_at.desc())
+    if platform:
+        query = query.join(Problem, Submission.problem_id_ref == Problem.id).filter(
+            Problem.platform == platform
+        )
+    if limit:
+        query = query.limit(limit)
+    all_submissions = query.all()
+
+    submissions = []
+    key_fn = attrgetter('problem_id_ref')
+    for pid, group in groupby(sorted(all_submissions, key=key_fn), key=key_fn):
+        existing = reviewed_counts.get(pid, 0)
+        if existing >= 3:
+            continue
+        remaining = 3 - existing
+        subs = sorted(group, key=lambda s: s.submitted_at or datetime.min, reverse=True)
+        submissions.extend(subs[:remaining])
+
+    logger.info("Found %d submissions without review%s", len(submissions), limit_info)
+    for i, sub in enumerate(submissions, 1):
+        prob = sub.problem
+        prob_label = f"{prob.platform}:{prob.problem_id}" if prob else "unknown"
+        logger.info(
+            "  [%d/%d] %s — submission #%s (%s, %s)",
+            i, len(submissions), prob_label,
+            sub.platform_record_id, sub.status, sub.language or "?",
+        )
+
+    logger.info("")
+    logger.info("=== 预览完成 (dry-run) ===")
+    logger.info(
+        "分类: %d | 思路: %d | 解题: %d | 审查: %d",
+        len(problems_1), len(problems_2), len(problems_3), len(submissions),
+    )
 
 
 def _refetch_tags(problem):

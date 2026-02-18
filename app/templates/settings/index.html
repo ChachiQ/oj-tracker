@@ -6,6 +6,15 @@
 {% block content %}
 <h4 class="fw-bold mb-4"><i class="bi bi-gear"></i> 系统设置</h4>
 
+{# ── Running job banner (hidden by default, shown by JS) ── #}
+<div id="running-job-banner" class="alert alert-info d-none" role="alert">
+    <div class="d-flex align-items-center">
+        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+        <span id="running-job-text">任务运行中...</span>
+        <a href="{{ url_for('sync.log_page') }}" class="ms-2 alert-link">查看日志</a>
+    </div>
+</div>
+
 {# ── Section 1: Platform Accounts (full width) ── #}
 <div class="card shadow-sm mb-4">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -14,12 +23,22 @@
             <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
                 <i class="bi bi-plus-circle"></i> 添加账号
             </button>
-            <form method="POST" action="{{ url_for('settings.sync_all') }}" class="d-inline" id="sync-all-form">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button type="submit" class="btn btn-sm btn-outline-success">
+            <div class="dropdown" id="sync-all-dropdown">
+                <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="bi bi-arrow-repeat"></i> 全部同步
                 </button>
-            </form>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#" onclick="syncContentAll(); return false;">
+                        <i class="bi bi-cloud-download"></i> 全部同步内容
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" onclick="syncContentAllAndAI(); return false;">
+                        <i class="bi bi-arrow-repeat"></i> 全部同步 + AI
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" onclick="startAIBackfill(); return false;">
+                        <i class="bi bi-robot"></i> 全部 AI 回填
+                    </a></li>
+                </ul>
+            </div>
         </div>
     </div>
     <div class="card-body">
@@ -32,7 +51,7 @@
                         <th>平台</th>
                         <th class="{{ table_col_class('md') }}">账号 ID</th>
                         <th>状态</th>
-                        <th class="{{ table_col_class('md') }}">最后同步</th>
+                        <th class="{{ table_col_class('md') }}">最后提交</th>
                         <th class="text-center">操作</th>
                     </tr>
                 </thead>
@@ -77,27 +96,45 @@
                             {% endif %}
                         </td>
                         <td class="{{ table_col_class('md') }}">
-                            {% if account.last_sync_at %}
-                                <small>{{ account.last_sync_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                            {% if account.last_submission_at %}
+                                <small title="{{ account.last_submission_at|datefmt }}" data-bs-toggle="tooltip">
+                                    {{ account.last_submission_at|smarttime }}
+                                </small>
+                            {% elif account.last_sync_at %}
+                                <small class="text-muted">已同步 (无提交)</small>
                             {% else %}
                                 <span class="text-muted">未同步</span>
                             {% endif %}
                         </td>
                         <td class="text-center">
                             <div class="btn-group btn-group-sm">
-                                <form method="POST" action="{{ url_for('settings.sync_account', account_id=account.id) }}"
-                                      class="d-inline sync-form"
-                                      data-platform="{{ account.platform }}"
-                                      data-account-id="{{ account.id }}"
-                                      {% if account.platform in requires_login_platforms %}
-                                      data-requires-login="true"
-                                      {% endif %}>
-                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                    <button type="submit" class="btn btn-outline-success" title="同步数据"
+                                {# Sync dropdown #}
+                                <div class="dropdown sync-dropdown"
+                                     data-account-id="{{ account.id }}"
+                                     data-platform="{{ account.platform }}"
+                                     {% if account.platform in requires_login_platforms %}data-requires-login="true"{% endif %}>
+                                    <button class="btn btn-outline-success dropdown-toggle" type="button"
+                                            data-bs-toggle="dropdown" aria-expanded="false"
+                                            title="同步选项"
                                             {{ 'disabled' if not account.is_active else '' }}>
                                         <i class="bi bi-arrow-repeat"></i>
                                     </button>
-                                </form>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li><a class="dropdown-item" href="#"
+                                               onclick="syncContent({{ account.id }}, this); return false;">
+                                            <i class="bi bi-cloud-download"></i> 同步内容
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="#"
+                                               onclick="syncContentAndAI({{ account.id }}, this); return false;">
+                                            <i class="bi bi-arrow-repeat"></i> 同步 + AI 分析
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="#"
+                                               onclick="startAIBackfill({{ account.id }}); return false;">
+                                            <i class="bi bi-robot"></i> AI 回填
+                                        </a></li>
+                                    </ul>
+                                </div>
+                                {# Toggle active/pause #}
                                 <form method="POST" action="{{ url_for('settings.toggle_account', account_id=account.id) }}"
                                       class="d-inline"
                                       {% if not account.is_active and account.consecutive_sync_failures and account.consecutive_sync_failures >= 10 %}
@@ -114,6 +151,7 @@
                                     </button>
                                     {% endif %}
                                 </form>
+                                {# Delete #}
                                 <form method="POST" action="{{ url_for('settings.delete_account', account_id=account.id) }}"
                                       class="d-inline" onsubmit="return confirm('确定要删除该账号吗？关联的提交记录不会被删除。')">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -369,7 +407,7 @@
 </div>
 
 {# ── Sync Overlay ── #}
-<div id="sync-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:9999; display:none; align-items:center; justify-content:center;">
+<div id="sync-overlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:9999; align-items:center; justify-content:center;">
     <div class="bg-white rounded-3 shadow-lg p-4 text-center" style="min-width:280px;">
         <div class="spinner-border text-primary mb-3" role="status">
             <span class="visually-hidden">同步中...</span>
@@ -447,7 +485,18 @@
 {% block extra_scripts %}
 <script>
 (function() {
-    // Toggle password / cookie fields based on platform selection
+    var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    var overlay = document.getElementById('sync-overlay');
+    var overlayText = document.getElementById('sync-overlay-text');
+    var banner = document.getElementById('running-job-banner');
+    var bannerText = document.getElementById('running-job-text');
+    var pollTimer = null;
+    var beforeUnloadHandler = function(e) { e.preventDefault(); e.returnValue = ''; };
+
+    // ── Requires-login platforms (from template) ──
+    var requiresLoginPlatforms = {{ requires_login_platforms|tojson }};
+
+    // ── Toggle password / cookie fields ──
     var platformSelect = document.getElementById('add-platform');
     var passwordField = document.getElementById('password-field');
     var cookieField = document.getElementById('cookie-field');
@@ -469,9 +518,8 @@
         });
     }
 
-    // Toggle model info display when provider radio changes
-    var providerRadios = document.querySelectorAll('input[name="ai_provider"]');
-    providerRadios.forEach(function(radio) {
+    // ── Toggle model info display ──
+    document.querySelectorAll('input[name="ai_provider"]').forEach(function(radio) {
         radio.addEventListener('change', function() {
             document.querySelectorAll('[id^="model-info-"]').forEach(function(el) {
                 el.style.display = 'none';
@@ -481,32 +529,20 @@
         });
     });
 
-    // Enable Bootstrap tooltips
-    var tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-    tooltips.forEach(function(el) {
+    // ── Bootstrap tooltips ──
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
         new bootstrap.Tooltip(el);
     });
 
-    // ── AJAX Sync Logic ──
-    var overlay = document.getElementById('sync-overlay');
-    var overlayText = document.getElementById('sync-overlay-text');
-    var beforeUnloadHandler = function(e) { e.preventDefault(); e.returnValue = ''; };
-
+    // ── Overlay helpers ──
     function showOverlay(text) {
         overlayText.textContent = text || '正在同步数据，请稍候...';
         overlay.style.display = 'flex';
-        // Disable all sync and delete buttons
-        document.querySelectorAll('.sync-form button, #sync-all-form button, form[action*="delete"] button').forEach(function(btn) {
-            btn.disabled = true;
-        });
         window.addEventListener('beforeunload', beforeUnloadHandler);
     }
 
     function hideOverlay() {
         overlay.style.display = 'none';
-        document.querySelectorAll('.sync-form button, #sync-all-form button, form[action*="delete"] button').forEach(function(btn) {
-            btn.disabled = false;
-        });
         window.removeEventListener('beforeunload', beforeUnloadHandler);
     }
 
@@ -516,77 +552,186 @@
         alertDiv.setAttribute('role', 'alert');
         alertDiv.innerHTML = message +
             '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>';
-        var container = document.querySelector('#sync-overlay').parentElement;
+        var container = document.querySelector('.card.shadow-sm').parentElement;
         container.insertBefore(alertDiv, container.querySelector('.card'));
-        setTimeout(function() { alertDiv.remove(); }, 8000);
+        setTimeout(function() { if (alertDiv.parentElement) alertDiv.remove(); }, 8000);
     }
 
-    // Intercept individual sync forms
-    document.querySelectorAll('.sync-form').forEach(function(form) {
-        form.addEventListener('submit', function(e) {
-            // Check if platform requires login confirmation
-            if (form.dataset.requiresLogin === 'true') {
-                if (!confirm('该平台需要登录同步，会踢掉你在' + form.dataset.platform + '网站上的活跃会话，确定继续？')) {
-                    e.preventDefault();
-                    return;
-                }
-            }
-            e.preventDefault();
-            var accountId = form.dataset.accountId;
-            showOverlay('正在同步 ' + (form.dataset.platform || '') + ' 数据...');
+    // ── Disable/enable all sync buttons ──
+    function disableSyncButtons() {
+        document.querySelectorAll('.sync-dropdown .dropdown-toggle, #sync-all-dropdown .dropdown-toggle').forEach(function(btn) {
+            btn.disabled = true;
+        });
+    }
 
-            var formData = new FormData(form);
-            fetch(form.action, {
-                method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                body: formData,
+    function enableSyncButtons() {
+        document.querySelectorAll('.sync-dropdown .dropdown-toggle').forEach(function(btn) {
+            // Only re-enable if account is active (not paused)
+            var dd = btn.closest('.sync-dropdown');
+            if (dd && !dd.querySelector('[data-paused]')) {
+                btn.disabled = false;
+            }
+        });
+        document.querySelectorAll('#sync-all-dropdown .dropdown-toggle').forEach(function(btn) {
+            btn.disabled = false;
+        });
+    }
+
+    // ── Login confirmation ──
+    function confirmLoginIfNeeded(accountId) {
+        var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
+        if (dd && dd.dataset.requiresLogin === 'true') {
+            var platform = dd.dataset.platform || '';
+            return confirm('该平台需要登录同步，会踢掉你在 ' + platform + ' 网站上的活跃会话，确定继续？');
+        }
+        return true;
+    }
+
+    // ── AI cost confirmation ──
+    function confirmAICost() {
+        return fetch('/sync/ai-cost-info', {
+            headers: { 'X-CSRFToken': csrfToken }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var pending = data.pending;
+            var total = pending.classify + pending.solution + pending.full_solution + pending.review;
+            var msg = 'AI 分析确认：\n\n' +
+                '本月已花费: $' + data.monthly_cost + ' / $' + data.monthly_budget + '\n' +
+                '待处理: 分类 ' + pending.classify + ' | 思路 ' + pending.solution +
+                ' | 解题 ' + pending.full_solution + ' | 审查 ' + pending.review +
+                ' (共 ' + total + ' 项)\n\n确定启动 AI 分析？';
+            return confirm(msg);
+        });
+    }
+
+    // ── Poll job status ──
+    function pollJobStatus(jobId) {
+        if (pollTimer) clearInterval(pollTimer);
+
+        banner.classList.remove('d-none');
+        disableSyncButtons();
+
+        pollTimer = setInterval(function() {
+            fetch('/sync/job/' + jobId + '/status', {
+                headers: { 'X-CSRFToken': csrfToken }
             })
-            .then(function(resp) { return resp.json(); })
+            .then(function(r) { return r.json(); })
             .then(function(data) {
-                hideOverlay();
-                showAlert(data.message, data.success ? 'success' : 'danger');
-                // Update last sync time for this row
-                if (data.success) {
-                    var row = form.closest('tr');
-                    if (row) {
-                        var timeCells = row.querySelectorAll('td');
-                        // The "最后同步" column is the 5th (index 4)
-                        var timeCell = timeCells[4];
-                        if (timeCell) {
-                            var now = new Date();
-                            var pad = function(n) { return n < 10 ? '0' + n : n; };
-                            timeCell.innerHTML = '<small>' + now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + '</small>';
-                        }
+                if (data.status === 'running') {
+                    var text = (data.phase_label || 'AI 分析') + ' 运行中';
+                    if (data.progress_total > 0) {
+                        text += '  (' + data.progress_current + '/' + data.progress_total + ')';
+                    }
+                    bannerText.textContent = text;
+                } else {
+                    clearInterval(pollTimer);
+                    pollTimer = null;
+                    banner.classList.add('d-none');
+                    enableSyncButtons();
+                    if (data.status === 'completed') {
+                        showAlert('AI 分析已完成', 'success');
+                    } else if (data.status === 'failed') {
+                        showAlert('AI 分析失败: ' + (data.error_message || '未知错误'), 'danger');
                     }
                 }
             })
-            .catch(function(err) {
-                hideOverlay();
-                showAlert('同步请求失败: ' + err.message, 'danger');
+            .catch(function() {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                banner.classList.add('d-none');
+                enableSyncButtons();
             });
+        }, 3000);
+    }
+
+    // ── Check for running job on page load ──
+    function checkRunningJob() {
+        fetch('/sync/running-job', {
+            headers: { 'X-CSRFToken': csrfToken }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.running) {
+                pollJobStatus(data.job_id);
+            }
+        })
+        .catch(function() {});
+    }
+
+    // ── Sync Content (single account) ──
+    window.syncContent = function(accountId, el) {
+        if (!confirmLoginIfNeeded(accountId)) return;
+
+        var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
+        var platform = dd ? dd.dataset.platform : '';
+        showOverlay('正在同步 ' + platform + ' 数据...');
+
+        fetch('/sync/content/' + accountId, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            hideOverlay();
+            showAlert(data.message, data.success ? 'success' : 'danger');
+            if (data.success) {
+                setTimeout(function() { location.reload(); }, 1500);
+            }
+        })
+        .catch(function(err) {
+            hideOverlay();
+            showAlert('同步请求失败: ' + err.message, 'danger');
         });
-    });
+    };
 
-    // Intercept sync-all form
-    var syncAllForm = document.getElementById('sync-all-form');
-    if (syncAllForm) {
-        syncAllForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            showOverlay('正在同步所有平台数据...');
+    // ── Sync Content All ──
+    window.syncContentAll = function() {
+        showOverlay('正在同步所有平台数据...');
 
-            var formData = new FormData(syncAllForm);
-            fetch(syncAllForm.action, {
+        fetch('/sync/content-all', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken },
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            hideOverlay();
+            showAlert(data.message, data.success ? 'success' : 'danger');
+            if (data.success) {
+                setTimeout(function() { location.reload(); }, 1500);
+            }
+        })
+        .catch(function(err) {
+            hideOverlay();
+            showAlert('同步请求失败: ' + err.message, 'danger');
+        });
+    };
+
+    // ── Sync Content + AI (single account) ──
+    window.syncContentAndAI = function(accountId, el) {
+        if (!confirmLoginIfNeeded(accountId)) return;
+
+        confirmAICost().then(function(ok) {
+            if (!ok) return;
+
+            var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
+            var platform = dd ? dd.dataset.platform : '';
+            showOverlay('正在同步 ' + platform + ' 数据...');
+
+            fetch('/sync/content-and-ai/' + accountId, {
                 method: 'POST',
-                headers: { 'X-Requested-With': 'XMLHttpRequest' },
-                body: formData,
+                headers: { 'X-CSRFToken': csrfToken },
             })
-            .then(function(resp) { return resp.json(); })
+            .then(function(r) { return r.json(); })
             .then(function(data) {
                 hideOverlay();
-                showAlert(data.message, data.success ? 'success' : 'danger');
                 if (data.success) {
-                    // Reload to update all rows
-                    setTimeout(function() { location.reload(); }, 1500);
+                    showAlert(data.message + ' <a href="/sync/log" class="alert-link">查看日志</a>', 'success');
+                    if (data.ai_job_id) {
+                        pollJobStatus(data.ai_job_id);
+                    }
+                } else {
+                    showAlert(data.message, 'danger');
                 }
             })
             .catch(function(err) {
@@ -594,7 +739,88 @@
                 showAlert('同步请求失败: ' + err.message, 'danger');
             });
         });
-    }
+    };
+
+    // ── Sync Content All + AI ──
+    window.syncContentAllAndAI = function() {
+        confirmAICost().then(function(ok) {
+            if (!ok) return;
+
+            showOverlay('正在同步所有平台数据...');
+
+            // First sync all content
+            fetch('/sync/content-all', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                hideOverlay();
+                if (!data.success) {
+                    showAlert(data.message, 'danger');
+                    return;
+                }
+                // Then start AI backfill
+                return fetch('/sync/ai-backfill', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({}),
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(aiData) {
+                    showAlert(
+                        data.message + ' AI 分析已在后台启动。<a href="/sync/log" class="alert-link">查看日志</a>',
+                        'success'
+                    );
+                    if (aiData.job_id) {
+                        pollJobStatus(aiData.job_id);
+                    }
+                });
+            })
+            .catch(function(err) {
+                hideOverlay();
+                showAlert('同步请求失败: ' + err.message, 'danger');
+            });
+        });
+    };
+
+    // ── AI Backfill (optional account_id) ──
+    window.startAIBackfill = function(accountId) {
+        confirmAICost().then(function(ok) {
+            if (!ok) return;
+
+            var body = accountId ? { account_id: accountId } : {};
+
+            fetch('/sync/ai-backfill', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    showAlert(data.message + ' <a href="/sync/log" class="alert-link">查看日志</a>', 'success');
+                    if (data.job_id) {
+                        pollJobStatus(data.job_id);
+                    }
+                } else {
+                    showAlert(data.message, 'danger');
+                }
+            })
+            .catch(function(err) {
+                showAlert('请求失败: ' + err.message, 'danger');
+            });
+        });
+    };
+
+    // ── Init: check for running job ──
+    checkRunningJob();
 })();
 </script>
 {% endblock %}

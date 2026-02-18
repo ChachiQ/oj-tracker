@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, empty_state %}
+
+{% block title %}同步日志 - OJ Tracker{% endblock %}
+
+{% block content %}
+{% call page_header('同步日志', 'bi-clock-history') %}
+    <a href="{{ url_for('settings.index') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-gear"></i> 返回设置
+    </a>
+{% endcall %}
+
+{% if jobs and jobs|length > 0 %}
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>时间</th>
+                        <th>类型</th>
+                        <th>平台/账号</th>
+                        <th>状态</th>
+                        <th>进度</th>
+                        <th>统计</th>
+                        <th class="text-end">耗时</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in jobs %}
+                    <tr data-job-id="{{ job.id }}" data-status="{{ job.status }}">
+                        <td>
+                            <small title="{{ job.created_at|datefmt }}" data-bs-toggle="tooltip">
+                                {{ job.created_at|smarttime }}
+                            </small>
+                        </td>
+                        <td>
+                            {% if job.job_type == 'content_sync' %}
+                                <span class="badge bg-primary">内容同步</span>
+                            {% elif job.job_type == 'ai_backfill' %}
+                                <span class="badge bg-info text-dark">AI 回填</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ job.job_type }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if job.platform_account %}
+                                <small>{{ job.platform_account.platform }}:{{ job.platform_account.platform_uid }}</small>
+                            {% else %}
+                                <small class="text-muted">全部</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if job.status == 'completed' %}
+                                <span class="badge bg-success"><i class="bi bi-check-circle"></i> 完成</span>
+                            {% elif job.status == 'running' %}
+                                <span class="badge bg-warning text-dark">
+                                    <span class="spinner-border spinner-border-sm" style="width:.7rem;height:.7rem"></span>
+                                    运行中
+                                </span>
+                            {% elif job.status == 'failed' %}
+                                <span class="badge bg-danger" title="{{ job.error_message or '' }}" data-bs-toggle="tooltip">
+                                    <i class="bi bi-x-circle"></i> 失败
+                                </span>
+                            {% elif job.status == 'pending' %}
+                                <span class="badge bg-secondary">等待中</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if job.job_type == 'ai_backfill' and job.current_phase %}
+                                {% set phase_labels = {'classify': '分类', 'solution': '思路', 'full_solution': '解题', 'review': '审查'} %}
+                                <small>{{ phase_labels.get(job.current_phase, job.current_phase) }}
+                                {% if job.progress_total > 0 %}
+                                    {{ job.progress_current }}/{{ job.progress_total }}
+                                {% endif %}
+                                </small>
+                            {% elif job.status == 'running' %}
+                                <small class="text-muted">...</small>
+                            {% else %}
+                                <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% set stats = job.stats %}
+                            {% if job.job_type == 'content_sync' and stats %}
+                                <small>
+                                    {% if stats.get('accounts_synced') is not none %}
+                                        {{ stats.accounts_synced }} 账号,
+                                        提交+{{ stats.get('total_new_submissions', 0) }}
+                                        题目+{{ stats.get('total_new_problems', 0) }}
+                                    {% else %}
+                                        提交+{{ stats.get('new_submissions', 0) }}
+                                        题目+{{ stats.get('new_problems', 0) }}
+                                    {% endif %}
+                                </small>
+                            {% elif job.job_type == 'ai_backfill' and stats %}
+                                <small>
+                                    分类 {{ stats.get('classify_ok', 0) }}/{{ stats.get('classify_total', 0) }}
+                                    | 思路 {{ stats.get('solution_ok', 0) }}/{{ stats.get('solution_total', 0) }}
+                                    | 解题 {{ stats.get('full_solution_ok', 0) }}/{{ stats.get('full_solution_total', 0) }}
+                                    | 审查 {{ stats.get('review_ok', 0) }}/{{ stats.get('review_total', 0) }}
+                                </small>
+                            {% else %}
+                                <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if job.duration_seconds is not none %}
+                                {% if job.duration_seconds >= 60 %}
+                                    <small>{{ (job.duration_seconds // 60) }}m {{ (job.duration_seconds % 60) }}s</small>
+                                {% else %}
+                                    <small>{{ job.duration_seconds }}s</small>
+                                {% endif %}
+                            {% else %}
+                                <small class="text-muted">-</small>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+{{ empty_state('bi-clock-history', '暂无同步记录', '同步数据后会在这里显示历史记录。',
+               action_url=url_for('settings.index'), action_text='前往设置', action_icon='bi-gear') }}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+    // Auto-refresh if there's a running job
+    var hasRunning = document.querySelector('tr[data-status="running"]');
+    if (hasRunning) {
+        setTimeout(function() { location.reload(); }, 5000);
+    }
+
+    // Tooltips
+    document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
+        new bootstrap.Tooltip(el);
+    });
+})();
+</script>
+{% endblock %}

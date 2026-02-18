@@ -298,8 +298,8 @@ class TestSyncService:
         assert 'error' in result
 
     @patch('app.services.sync_service.get_scraper_instance')
-    def test_sync_triggers_auto_analysis(self, mock_get_scraper, app, db):
-        """Sync should call _analyze_new_content when new items are found."""
+    def test_sync_updates_last_submission_at(self, mock_get_scraper, app, db):
+        """Sync should update account.last_submission_at after syncing."""
         user = User(username='sync_auto', email='syncauto@test.com')
         user.set_password('pw')
         db.session.add(user)
@@ -317,6 +317,7 @@ class TestSyncService:
         db.session.commit()
         acct_id = acct.id
 
+        sub_time = datetime.utcnow()
         mock_scraper = MagicMock()
         mock_scraper.SUPPORT_CODE_FETCH = False
         scraped_subs = [
@@ -327,7 +328,7 @@ class TestSyncService:
                 score=100,
                 language='C++',
                 source_code='#include <iostream>\nint main(){}',
-                submitted_at=datetime.utcnow(),
+                submitted_at=sub_time,
             ),
         ]
         mock_scraper.fetch_submissions.return_value = iter(scraped_subs)
@@ -342,33 +343,9 @@ class TestSyncService:
         mock_get_scraper.return_value = mock_scraper
 
         service = SyncService()
-        with patch.object(service, '_analyze_new_content') as mock_analyze:
-            result = service.sync_account(acct_id)
-            assert result['new_submissions'] == 1
-            mock_analyze.assert_called_once()
+        result = service.sync_account(acct_id)
+        assert result['new_submissions'] == 1
 
-    def test_analyze_new_content_skips_existing(self, app, db, sample_data):
-        """_analyze_new_content should skip problems already analyzed."""
-        pid = sample_data['problem_ids'][0]
-        # Pre-create an existing analysis
-        existing = AnalysisResult(
-            problem_id_ref=pid,
-            analysis_type="problem_solution",
-            result_json='{"approach":"test"}',
-            analyzed_at=datetime.utcnow(),
-        )
-        db.session.add(existing)
-        db.session.commit()
-
-        service = SyncService()
-        with patch('app.analysis.ai_analyzer.AIAnalyzer') as MockAnalyzer:
-            mock_instance = MockAnalyzer.return_value
-            mock_instance.analyze_problem_solution.return_value = None
-            mock_instance.review_submission.return_value = None
-            service._analyze_new_content(
-                sample_data['account_id'],
-                user_id=sample_data['user_id'],
-            )
-            # Should not call analyze_problem_solution for already-analyzed problem
-            for call_args in mock_instance.analyze_problem_solution.call_args_list:
-                assert call_args[0][0] != pid
+        # Verify last_submission_at was set
+        acct = db.session.get(PlatformAccount, acct_id)
+        assert acct.last_submission_at is not None

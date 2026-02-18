@@ -22,7 +22,6 @@ from app.models import (
     UserSetting,
 )
 from app.scrapers import get_all_scrapers
-from app.services.sync_service import SyncService
 from app.analysis.llm.config import MODEL_CONFIG
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
@@ -179,57 +178,6 @@ def delete_account(account_id):
     db.session.delete(account)
     db.session.commit()
     flash('平台账号已删除', 'success')
-    return redirect(url_for('settings.index'))
-
-
-@settings_bp.route('/sync/<int:account_id>', methods=['POST'])
-@login_required
-def sync_account(account_id):
-    account = PlatformAccount.query.get_or_404(account_id)
-    if account.student.parent_id != current_user.id:
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return jsonify({'success': False, 'message': '无权操作'}), 403
-        flash('无权操作', 'danger')
-        return redirect(url_for('settings.index'))
-
-    service = SyncService()
-    stats = service.sync_account(account_id)
-
-    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
-
-    if 'error' in stats:
-        if is_ajax:
-            return jsonify({'success': False, 'message': f'同步失败: {stats["error"]}', 'stats': stats})
-        flash(f'同步失败: {stats["error"]}', 'danger')
-    else:
-        if is_ajax:
-            return jsonify({'success': True, 'message': f'同步完成: 新增 {stats["new_submissions"]} 条提交记录', 'stats': stats})
-        flash(
-            f'同步完成: 新增 {stats["new_submissions"]} 条提交记录',
-            'success',
-        )
-
-    return redirect(url_for('settings.index'))
-
-
-@settings_bp.route('/sync-all', methods=['POST'])
-@login_required
-def sync_all():
-    service = SyncService()
-    stats = service.sync_all_accounts()
-
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        return jsonify({
-            'success': True,
-            'message': f'同步完成: {stats["accounts_synced"]} 个账号, 新增 {stats["total_new_submissions"]} 条提交',
-            'stats': stats,
-        })
-
-    flash(
-        f'同步完成: {stats["accounts_synced"]} 个账号, '
-        f'新增 {stats["total_new_submissions"]} 条提交',
-        'success',
-    )
     return redirect(url_for('settings.index'))
 
 

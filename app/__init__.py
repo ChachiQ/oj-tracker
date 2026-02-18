@@ -237,6 +237,7 @@ def _register_blueprints(app):
     from app.views.settings import settings_bp
     from app.views.api import api_bp
     from app.views.problem import problem_bp
+    from app.views.sync import sync_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp, url_prefix='/dashboard')
@@ -246,6 +247,7 @@ def _register_blueprints(app):
     app.register_blueprint(settings_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(problem_bp)
+    app.register_blueprint(sync_bp)
 
 
 def _init_scheduler(app):

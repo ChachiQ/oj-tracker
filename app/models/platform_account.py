@@ -24,6 +24,7 @@ class PlatformAccount(db.Model):
     auth_password = db.Column(db.Text, nullable=True)
     last_sync_at = db.Column(db.DateTime, nullable=True)
     sync_cursor = db.Column(db.String(200), nullable=True)
+    last_submission_at = db.Column(db.DateTime, nullable=True)
     last_analysis_at = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     last_sync_error = db.Column(db.Text, nullable=True)

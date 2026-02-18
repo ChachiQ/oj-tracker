@@ -40,12 +40,10 @@ def init_scheduler(app):
     def ai_analysis_job():
         with app.app_context():
             from app.extensions import db
-            from app.analysis.ai_analyzer import AIAnalyzer
-            from app.analysis.problem_classifier import ProblemClassifier
-            from app.models import Submission, AnalysisResult
+            from app.models import UserSetting, SyncJob
+            from app.services.ai_backfill_service import AIBackfillService
 
             # Auto-discover a user with AI API key configured
-            from app.models import UserSetting
             ai_user_id = None
             for key in ('api_key_zhipu', 'api_key_claude', 'api_key_openai'):
                 setting = UserSetting.query.filter_by(key=key).filter(
@@ -56,36 +54,30 @@ def init_scheduler(app):
                     ai_user_id = setting.user_id
                     break
 
-            # Classify unanalyzed problems
-            classifier = ProblemClassifier(app)
-            classified = classifier.classify_unanalyzed(
-                limit=20, user_id=ai_user_id,
-            )
-            logger.info(f"Classified {classified} problems")
+            if not ai_user_id:
+                logger.info("No user with AI API key found, skipping AI batch")
+                return
 
-            # Analyze recent non-AC submissions without analysis
-            analyzer = AIAnalyzer(app)
-            analyzed = 0
-            subs = (
-                Submission.query.filter(
-                    Submission.status != 'AC',
-                    Submission.source_code.isnot(None),
-                    ~Submission.id.in_(
-                        db.session.query(
-                            AnalysisResult.submission_id
-                        ).filter_by(analysis_type='single_submission')
-                    ),
-                )
-                .order_by(Submission.submitted_at.desc())
-                .limit(20)
-                .all()
-            )
+            # Check no running job for this user
+            running = SyncJob.query.filter_by(
+                user_id=ai_user_id, status='running'
+            ).first()
+            if running:
+                logger.info(f"User {ai_user_id} already has running job {running.id}, skipping")
+                return
 
-            for sub in subs:
-                result = analyzer.analyze_submission(sub.id)
-                if result:
-                    analyzed += 1
-            logger.info(f"Analyzed {analyzed} submissions")
+            # Create a SyncJob and run backfill
+            job = SyncJob(
+                user_id=ai_user_id,
+                job_type='ai_backfill',
+                status='pending',
+            )
+            db.session.add(job)
+            db.session.commit()
+
+            service = AIBackfillService(app)
+            service.run(job.id, ai_user_id)
+            logger.info(f"Scheduled AI backfill completed: job_id={job.id}")
 
     # Weekly report - Sunday at 8am
     @scheduler.scheduled_job('cron', day_of_week='sun', hour=8, id='weekly_report')

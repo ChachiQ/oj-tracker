@@ -159,33 +159,23 @@ class TestConsecutiveFailureTracking:
             assert account.is_active is False
 
 
-class TestSettingsAJAXSync:
-    """Step 1: POST with X-Requested-With returns JSON."""
+class TestSyncBlueprintJSON:
+    """Sync blueprint routes return JSON."""
 
-    def test_sync_ajax_returns_json(self, app, db, logged_in_client):
+    def test_sync_content_returns_json(self, app, db, logged_in_client):
         client, data = logged_in_client
         resp = client.post(
-            f'/settings/sync/{data["account_id"]}',
-            headers={'X-Requested-With': 'XMLHttpRequest'},
+            f'/sync/content/{data["account_id"]}',
         )
         assert resp.content_type.startswith('application/json')
         body = resp.get_json()
         assert 'success' in body
         assert 'message' in body
 
-    def test_sync_no_ajax_returns_redirect(self, app, db, logged_in_client):
+    def test_sync_content_all_returns_json(self, app, db, logged_in_client):
         client, data = logged_in_client
         resp = client.post(
-            f'/settings/sync/{data["account_id"]}',
-            follow_redirects=False,
-        )
-        assert resp.status_code in (302, 303)
-
-    def test_sync_all_ajax_returns_json(self, app, db, logged_in_client):
-        client, data = logged_in_client
-        resp = client.post(
-            '/settings/sync-all',
-            headers={'X-Requested-With': 'XMLHttpRequest'},
+            '/sync/content-all',
         )
         assert resp.content_type.startswith('application/json')
         body = resp.get_json()
