@@ -23,6 +23,10 @@
             <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
                 <i class="bi bi-plus-circle"></i> 添加账号
             </button>
+            <a href="{{ url_for('sync.log_page') }}" target="_blank"
+               class="btn btn-sm btn-outline-secondary" title="查看同步日志">
+                <i class="bi bi-clock-history"></i> 同步日志
+            </a>
             <div class="dropdown" id="sync-all-dropdown">
                 <button class="btn btn-sm btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="bi bi-arrow-repeat"></i> 全部同步

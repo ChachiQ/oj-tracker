@@ -426,26 +426,30 @@ def problem_resync(problem_id):
         return jsonify({'success': False, 'error': '平台未返回题目数据'}), 404
 
     # Force-overwrite all content fields
-    problem.title = scraped.title or problem.title
-    problem.description = scraped.description
-    problem.input_desc = scraped.input_desc
-    problem.output_desc = scraped.output_desc
-    problem.examples = scraped.examples
-    problem.hint = scraped.hint
-    problem.url = scraped.url or scraper.get_problem_url(problem.problem_id)
-    problem.source = scraped.source
-    problem.difficulty_raw = scraped.difficulty_raw
-    if scraped.difficulty_raw:
-        problem.difficulty = scraper.map_difficulty(scraped.difficulty_raw)
-    if scraped.tags:
-        problem.platform_tags = json.dumps(scraped.tags, ensure_ascii=False)
-        mapper = TagMapper(problem.platform)
-        mapped = mapper.map_tags(scraped.tags)
-        for tag in mapped:
-            if tag not in problem.tags:
-                problem.tags.append(tag)
-    problem.last_scanned_at = datetime.utcnow()
-
-    db.session.commit()
+    try:
+        problem.title = scraped.title or problem.title
+        problem.description = scraped.description
+        problem.input_desc = scraped.input_desc
+        problem.output_desc = scraped.output_desc
+        problem.examples = scraped.examples
+        problem.hint = scraped.hint
+        problem.url = scraped.url or scraper.get_problem_url(problem.problem_id)
+        problem.source = scraped.source
+        problem.difficulty_raw = scraped.difficulty_raw
+        if scraped.difficulty_raw:
+            problem.difficulty = scraper.map_difficulty(scraped.difficulty_raw)
+        if scraped.tags:
+            problem.platform_tags = json.dumps(scraped.tags, ensure_ascii=False)
+            mapper = TagMapper(problem.platform)
+            mapped = mapper.map_tags(scraped.tags)
+            for tag in mapped:
+                if tag not in problem.tags:
+                    problem.tags.append(tag)
+        problem.last_scanned_at = datetime.utcnow()
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Resync update failed for {problem.platform}:{problem.problem_id}: {e}")
+        return jsonify({'success': False, 'error': f'更新题目数据失败: {e}'}), 500
 
     return jsonify({'success': True, 'message': '题目内容已更新'})
