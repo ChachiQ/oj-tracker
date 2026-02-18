@@ -7,12 +7,15 @@ A web application that helps parents track their children's competitive programm
 ## Features
 
 - **Multi-Platform Sync** - Supports Luogu, BBC OJ (HOJ system), and Ybt OJ, with a plugin-based scraper architecture for easy extension
-- **Dashboard** - Stats cards, radar chart, heatmap, difficulty distribution, and submission calendar
+- **Sync/AI Decoupling** - Content sync and AI analysis run independently, SyncJob task tracking, pause/resume support
+- **Dashboard** - Stats cards, radar chart, heatmap (selectable time range), difficulty distribution, and submission calendar
 - **Knowledge Graph** - ECharts force-directed graph with 6-stage layered display (Syntax Basics to NOI), tri-color node status
 - **Weakness Detection** - Age/grade-aware comparison against stage expectations, automatic identification of weak topics
-- **AI Analysis** - Multi-model support (Claude/OpenAI/Zhipu), 4-level analysis chain: problem classification -> single submission -> solution process -> comprehensive report
-- **Weekly/Monthly Reports** - Auto-generated learning reports with chained AI analysis logs to reduce redundant token usage
+- **AI Analysis** - Multi-model support (Claude/OpenAI/Zhipu), 4-stage pipeline: problem classification -> submission review -> knowledge assessment -> comprehensive report
+- **Weekly/Monthly/Quarterly Reports** - Auto-generated learning reports with chained AI analysis logs to reduce redundant token usage
+- **KaTeX Math Rendering** - Automatic rendering of math formulas in problem descriptions and AI analysis results
 - **Practice Recommendations** - Intelligent problem suggestions based on detected weaknesses
+- **Configurable Timezone** - DISPLAY_TIMEZONE_OFFSET for global timezone offset setting
 
 ## Tech Stack
 
@@ -24,7 +27,7 @@ A web application that helps parents track their children's competitive programm
 | Scheduler | APScheduler |
 | AI Analysis | Claude / OpenAI / Zhipu (configurable multi-model) |
 | Data Analysis | pandas + numpy |
-| Testing | pytest (120 test cases) |
+| Testing | pytest (285 test cases) |
 
 ## Project Structure
 
@@ -34,22 +37,27 @@ oj-tracker/
 │   ├── __init__.py          # Flask app factory
 │   ├── config.py            # Config classes (Dev/Prod/Testing)
 │   ├── extensions.py        # db, login_manager, migrate, csrf
-│   ├── models/              # 9 database tables
+│   ├── models/              # 11 database tables + 1 association table
 │   ├── scrapers/            # OJ scraper plugins (auto-discovery + registration)
 │   ├── analysis/            # Analysis engine + AI analysis + LLM abstraction
 │   │   ├── engine.py        # AnalysisEngine - statistics
 │   │   ├── weakness.py      # WeaknessDetector - weakness identification
 │   │   ├── trend.py         # TrendAnalyzer - trend analysis
 │   │   ├── recommender.py   # ProblemRecommender - recommendations
+│   │   ├── ai_analyzer.py   # AIAnalyzer - submission review
+│   │   ├── problem_classifier.py  # ProblemClassifier - problem classification
+│   │   ├── knowledge_analyzer.py  # KnowledgeAnalyzer - knowledge assessment
+│   │   ├── report_generator.py    # ReportGenerator - report generation
 │   │   ├── llm/             # Multi-model LLM abstraction layer
 │   │   └── prompts/         # AI prompt templates
-│   ├── services/            # SyncService, StatsService
-│   ├── views/               # Flask blueprint routes
+│   ├── services/            # SyncService, StatsService, AIBackfillService, TagMapper
+│   ├── views/               # Flask blueprint routes (9 blueprints)
 │   ├── templates/           # Jinja2 templates
 │   ├── static/              # CSS/JS
 │   └── tasks/               # APScheduler scheduled tasks
 ├── migrations/              # Alembic database migrations
-├── tests/                   # pytest test suite
+├── tests/                   # pytest test suite (285 cases)
+├── backfill_tags.py         # Tag backfill script
 ├── seed_data.py             # Knowledge point seed data (80+ tags)
 ├── run.py                   # Entry point
 └── requirements.txt
@@ -95,6 +103,9 @@ SCRAPER_RATE_LIMIT=0.5
 
 # Scheduled tasks
 SCHEDULER_ENABLED=false
+
+# Display timezone offset (default UTC+8)
+DISPLAY_TIMEZONE_OFFSET=8
 ```
 
 Environment-specific config files `.env.development` and `.env.production` are also supported.
@@ -134,21 +145,26 @@ pytest tests/ -v
 User 1──N Student 1──N PlatformAccount 1──N Submission N──1 Problem N──M Tag
                                                 │
                                            N AnalysisResult
+          Problem 1──N AnalysisResult
           Student 1──N AnalysisLog
           Student 1──N Report
+          User 1──N UserSetting
+          User 1──N SyncJob
 ```
 
 | Model | Description |
 |-------|-------------|
 | User | Parent user account with hashed passwords |
-| Student | Child profile with grade/birthday for age-aware analysis |
+| Student | Child profile with grade/birthday/target stage for age-aware analysis |
 | PlatformAccount | OJ platform credentials and sync state |
 | Problem | Problem metadata with many-to-many Tag association |
 | Submission | Submission records linked to Problem and PlatformAccount |
 | Tag | Knowledge point tags with stage level and prerequisites |
-| AnalysisResult | AI analysis results per submission |
+| AnalysisResult | AI analysis results, linkable to Submission or Problem |
 | AnalysisLog | Chained AI analysis logs to reduce redundant analysis |
-| Report | Weekly/monthly generated reports |
+| Report | Weekly/monthly/quarterly generated reports |
+| UserSetting | Per-user configuration key-value store |
+| SyncJob | Sync/AI backfill job execution history and progress |
 
 ## Supported OJ Platforms
 
@@ -212,7 +228,14 @@ Switch via `FLASK_ENV` environment variable or `create_app(config_name)`.
 | `/api/weakness/<student_id>` | GET | Weakness analysis data |
 | `/api/trend/<student_id>` | GET | Trend analysis data |
 | `/api/submissions/<student_id>` | GET | Submissions (paginated, filterable) |
+| `/api/knowledge/<student_id>/analyze` | POST | Knowledge AI assessment (SSE streaming) |
+| `/api/knowledge/<student_id>/assessment` | GET | Get knowledge assessment results |
+| `/api/knowledge/<student_id>/assessment/<log_id>` | DELETE | Delete knowledge assessment |
 | `/api/problems` | GET | Problem list (paginated, filterable) |
+| `/api/problem/<problem_id>/solution` | POST | AI-generated problem analysis |
+| `/api/problem/<problem_id>/full-solution` | POST | AI-generated full solution |
+| `/api/problem/<problem_id>/resync` | POST | Re-sync problem information |
+| `/api/submission/<submission_id>/review` | POST | AI review of submission code |
 
 All API endpoints require authentication and only allow access to the current user's children's data.
 
@@ -230,6 +253,10 @@ All API endpoints require authentication and only allow access to the current us
 | `/knowledge/` | Knowledge graph |
 | `/report/` | Report list |
 | `/report/<id>` | Report detail |
+| `/report/generate` | Generate report |
+| `/report/<id>/delete` | Delete report |
+| `/report/<id>/regenerate` | Regenerate report |
+| `/sync/log` | Sync log |
 | `/problem/` | Problem library |
 | `/problem/<id>` | Problem detail |
 | `/settings/` | Settings (platform account management) |
@@ -247,8 +274,20 @@ All API endpoints require authentication and only allow access to the current us
 - `BaseLLMProvider` abstract base class
 - Supports Claude/OpenAI/Zhipu, switchable via configuration
 - Prompt templates decoupled from model providers
-- 4-level analysis chain: problem classification -> single submission -> solution process -> comprehensive report
-- `AI_MONTHLY_BUDGET` for cost control
+- 4-stage pipeline: problem classification (ProblemClassifier) -> submission review (AIAnalyzer) -> knowledge assessment (KnowledgeAnalyzer) -> comprehensive report (ReportGenerator)
+- `AI_MONTHLY_BUDGET` for cost control, per-user AI configuration
+
+### Sync/AI Decoupling
+- Content sync (SyncService) and AI analysis (AIBackfillService) fully decoupled
+- SyncJob model tracks job execution history with progress polling
+- AI backfill runs as independent background task, non-blocking to sync flow
+- TagMapper service: OJ native tags -> knowledge point system mapping
+
+### Report System
+- Supports weekly, monthly, and quarterly report periods
+- ReportGenerator builds reports from AnalysisLog chain
+- Reports support generate, delete, and regenerate operations
+- KaTeX rendering for math formulas
 
 ### Analysis Log Chain
 - `AnalysisLog` table serves as AI memory
@@ -291,20 +330,29 @@ All foundational features complete:
 - Problem list UX: smart time display, fast tooltip, page jump
 - 8 new knowledge point tags + Chinese descriptions + upsert seed
 
-### v0.4.0 -- Analysis & Visualization Enhancement
+### v0.4.0 / v0.4.1 (2026-02-15) -- Analysis & Visualization Enhancement ✅
 
-Planned:
-- Enhanced dashboard with richer statistical dimensions
-- Knowledge graph interaction: click nodes to view related problems
-- Weakness detection algorithm upgrade: add first-AC rate and average attempts
-- Skill scoring formula optimization
+- Dashboard enhancements: first-AC rate card, submission status distribution, weekly trend chart, platform distribution stats
+- Knowledge graph interaction: prerequisite chain highlighting, efficiency metrics, problem library jump, fullscreen mode, rotation, overlap optimization
+- Skill scoring optimization: time decay, stage-adaptive weighting
+- AI assessment report pagination, stage progress details
 
-### v0.5.0 -- AI Analysis Deep Integration & Recommendations
+### v0.5.0 (2026-02-15) -- AI Problem Analysis + Code Analysis + Knowledge Assessment Enhancement ✅
 
-Planned:
-- Deep AI code analysis integration
-- Analysis log chain optimization
-- Intelligent recommendation algorithm upgrade (ProblemRecommender)
+- AI problem solution analysis and full solution generation
+- Submission code AI review (quality assessment, strengths/weaknesses, improvement suggestions)
+- Auto-trigger AI analysis after sync
+- Knowledge assessment injected with code review insights
+- `AnalysisResult` supports linking to Problem (`problem_id_ref`)
+
+### v0.5.1 (2026-02-18) -- Report System Refactor + Sync Decoupling + Comprehensive UX Optimization ✅
+
+- Sync/AI decoupling: SyncJob model, AIBackfillService as independent background task
+- Quarterly reports, report delete/regenerate, smart period selector, duplicate detection
+- KaTeX math formula rendering
+- Heatmap time range switching, configurable display timezone
+- Platform account pause/resume, problem list filter improvements
+- 285 automated test cases
 
 ### v0.6.0 -- Deployment & Extensions
 
@@ -320,7 +368,7 @@ Planned:
 | Phase 1 - Core Skeleton | Flask app factory, database models, auth, base layout | ✅ |
 | Phase 2 - Scraper System | BaseScraper, 3 scrapers, SyncService, account management, seed data | ✅ |
 | Phase 3 - Analysis & Visualization | AnalysisEngine, Dashboard, WeaknessDetector, TrendAnalyzer, knowledge graph | ✅ |
-| Phase 4 - AI Analysis & Recommendations | AI code analysis, analysis log chain, ProblemRecommender, scheduled tasks | ✅ |
+| Phase 4 - AI Analysis & Recommendations | AI 4-stage pipeline, sync/AI decoupling, AIBackfillService, SyncJob, 285 tests | ✅ |
 | Phase 5 - Deployment & Extensions | Cloud deployment, school OJ adapters, PDF export | Planned |
 
 ## Development Guide
@@ -340,14 +388,15 @@ source venv/bin/activate
 pytest tests/ -v --tb=short
 ```
 
-The test suite includes 120 test cases covering:
-- Models: CRUD, relationships, and constraints for all 9 models
+The test suite includes 285 test cases covering:
+- Models: CRUD, relationships, and constraints for all 11 models
 - Auth: registration, login, logout, access control
 - Views: GET/POST responses for all routes
 - API: JSON endpoint responses and permissions
 - Scrapers: registry, dataclasses, enums
-- Analysis: statistics, weakness detection, trends
-- Services: sync service, stats service
+- Analysis: statistics, weakness detection, trends, AI analysis
+- Services: sync service, stats service, AI backfill service
+- Tag mapping: TagMapper tests
 
 ## License
 

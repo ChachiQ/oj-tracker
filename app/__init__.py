@@ -9,7 +9,7 @@ from flask import Flask, redirect, url_for
 from app.config import config_map
 from app.extensions import db, login_manager, migrate, csrf
 
-__version__ = '0.5.0'
+__version__ = '0.5.1'
 
 # Matches valid HTML tags (opening, closing, self-closing, comments).
 # Used to find and preserve real HTML while escaping stray < and > in text

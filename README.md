@@ -7,12 +7,15 @@
 ## 功能概览
 
 - **多平台同步** - 支持洛谷、BBC OJ（HOJ系统）、一本通OJ，爬虫插件化架构可轻松扩展
-- **Dashboard总览** - 统计卡片、雷达图、热力图、难度分布、刷题日历
+- **同步/AI解耦** - 内容同步与AI分析独立运行，SyncJob任务追踪，支持暂停/恢复
+- **Dashboard总览** - 统计卡片、雷达图、热力图（可选时间范围）、难度分布、刷题日历
 - **知识点图谱** - ECharts力导向图，6阶段分层展示（语法基础→NOI），节点三色状态
 - **弱项识别** - 基于年龄/年级的阶段期望值对比，自动检测薄弱知识点
-- **AI分析** - 多模型支持（Claude/OpenAI/智谱），4级分析链：题目分类→单次提交→攻克过程→综合报告
-- **周报/月报** - 自动生成学习报告，AI分析日志链降低重复分析成本
+- **AI分析** - 多模型支持（Claude/OpenAI/智谱），4阶段流水线：题目分类→提交评审→知识点评估→综合报告
+- **周报/月报/季度报告** - 自动生成学习报告，AI分析日志链降低重复分析成本
+- **KaTeX数学渲染** - 题目描述和AI分析结果中的数学公式自动渲染
 - **练习推荐** - 基于弱项的智能题目推荐
+- **可配置时区** - DISPLAY_TIMEZONE_OFFSET 支持全局时区偏移设置
 
 ## 技术栈
 
@@ -24,7 +27,7 @@
 | 定时任务 | APScheduler |
 | AI分析 | Claude / OpenAI / 智谱（多模型可配置）|
 | 数据分析 | pandas + numpy |
-| 测试 | pytest（120个测试用例）|
+| 测试 | pytest（285个测试用例）|
 
 ## 目录结构
 
@@ -34,22 +37,27 @@ oj-tracker/
 │   ├── __init__.py          # Flask app factory
 │   ├── config.py            # 配置类 (Dev/Prod/Testing)
 │   ├── extensions.py        # db, login_manager, migrate, csrf
-│   ├── models/              # 9张数据库表
+│   ├── models/              # 11张数据库表 + 1关联表
 │   ├── scrapers/            # OJ爬虫插件 (自动发现+注册)
 │   ├── analysis/            # 分析引擎 + AI分析 + LLM抽象层
 │   │   ├── engine.py        # AnalysisEngine 统计引擎
 │   │   ├── weakness.py      # WeaknessDetector 弱项识别
 │   │   ├── trend.py         # TrendAnalyzer 趋势分析
 │   │   ├── recommender.py   # ProblemRecommender 推荐
+│   │   ├── ai_analyzer.py   # AIAnalyzer 提交评审
+│   │   ├── problem_classifier.py  # ProblemClassifier 题目分类
+│   │   ├── knowledge_analyzer.py  # KnowledgeAnalyzer 知识点评估
+│   │   ├── report_generator.py    # ReportGenerator 报告生成
 │   │   ├── llm/             # 多模型LLM抽象层
 │   │   └── prompts/         # AI Prompt模板
-│   ├── services/            # SyncService, StatsService
-│   ├── views/               # Flask蓝图路由
+│   ├── services/            # SyncService, StatsService, AIBackfillService, TagMapper
+│   ├── views/               # Flask蓝图路由 (9个蓝图)
 │   ├── templates/           # Jinja2模板
 │   ├── static/              # CSS/JS
 │   └── tasks/               # APScheduler定时任务
 ├── migrations/              # Alembic数据库迁移
-├── tests/                   # pytest测试套件
+├── tests/                   # pytest测试套件 (285个用例)
+├── backfill_tags.py         # 标签回填脚本
 ├── seed_data.py             # 知识点种子数据 (80+标签)
 ├── run.py                   # 启动入口
 └── requirements.txt
@@ -95,6 +103,9 @@ SCRAPER_RATE_LIMIT=0.5
 
 # 定时任务
 SCHEDULER_ENABLED=false
+
+# 显示时区偏移 (默认 UTC+8)
+DISPLAY_TIMEZONE_OFFSET=8
 ```
 
 也可以使用环境特定配置文件 `.env.development` 或 `.env.production`。
@@ -134,21 +145,26 @@ pytest tests/ -v
 User 1──N Student 1──N PlatformAccount 1──N Submission N──1 Problem N──M Tag
                                                 │
                                            N AnalysisResult
+          Problem 1──N AnalysisResult
           Student 1──N AnalysisLog
           Student 1──N Report
+          User 1──N UserSetting
+          User 1──N SyncJob
 ```
 
 | 模型 | 说明 |
 |------|------|
 | User | 用户（家长），密码哈希存储 |
-| Student | 学生，关联年级/生日，支持年龄感知分析 |
+| Student | 学生，关联年级/生日/目标阶段，支持年龄感知分析 |
 | PlatformAccount | OJ平台账号凭据与同步状态 |
 | Problem | 题目信息，多对多关联Tag |
 | Submission | 提交记录，关联题目和平台账号 |
 | Tag | 知识点标签，带阶段(stage)和前置依赖 |
-| AnalysisResult | AI分析结果 |
+| AnalysisResult | AI分析结果，可关联Submission或Problem |
 | AnalysisLog | AI分析日志链，降低重复分析成本 |
-| Report | 周报/月报 |
+| Report | 周报/月报/季度报告 |
+| UserSetting | 用户级配置 key-value 存储 |
+| SyncJob | 同步/AI回填任务执行历史与进度 |
 
 ## 已支持的OJ平台
 
@@ -212,7 +228,14 @@ class NewOJScraper(BaseScraper):
 | `/api/weakness/<student_id>` | GET | 弱项分析数据 |
 | `/api/trend/<student_id>` | GET | 趋势分析数据 |
 | `/api/submissions/<student_id>` | GET | 提交记录（分页、筛选）|
+| `/api/knowledge/<student_id>/analyze` | POST | 知识点AI评估（SSE流式）|
+| `/api/knowledge/<student_id>/assessment` | GET | 获取知识点评估结果 |
+| `/api/knowledge/<student_id>/assessment/<log_id>` | DELETE | 删除知识点评估 |
 | `/api/problems` | GET | 题目列表（分页、筛选）|
+| `/api/problem/<problem_id>/solution` | POST | AI生成题目解析 |
+| `/api/problem/<problem_id>/full-solution` | POST | AI生成完整题解 |
+| `/api/problem/<problem_id>/resync` | POST | 重新同步题目信息 |
+| `/api/submission/<submission_id>/review` | POST | AI评审提交代码 |
 
 所有API端点需要登录且只能访问自己孩子的数据。
 
@@ -230,6 +253,10 @@ class NewOJScraper(BaseScraper):
 | `/knowledge/` | 知识点图谱 |
 | `/report/` | 报告列表 |
 | `/report/<id>` | 报告详情 |
+| `/report/generate` | 生成报告 |
+| `/report/<id>/delete` | 删除报告 |
+| `/report/<id>/regenerate` | 重新生成报告 |
+| `/sync/log` | 同步日志 |
 | `/problem/` | 题目库 |
 | `/problem/<id>` | 题目详情 |
 | `/settings/` | 设置（平台账号管理）|
@@ -247,8 +274,20 @@ class NewOJScraper(BaseScraper):
 - `BaseLLMProvider` 抽象基类
 - 支持 Claude/OpenAI/智谱，通过配置一键切换
 - Prompt模板与模型解耦
-- 4级分析链：题目分类→单次提交分析→攻克过程分析→综合报告
-- `AI_MONTHLY_BUDGET` 预算控制
+- 4阶段流水线：题目分类(ProblemClassifier)→提交评审(AIAnalyzer)→知识点评估(KnowledgeAnalyzer)→综合报告(ReportGenerator)
+- `AI_MONTHLY_BUDGET` 预算控制，用户级 AI 配置
+
+### 同步/AI解耦
+- 内容同步(SyncService)与AI分析(AIBackfillService)完全解耦
+- SyncJob 模型记录任务执行历史，支持进度轮询
+- AI回填作为独立后台任务，不阻塞同步流程
+- TagMapper 服务：OJ原生标签→知识点体系映射
+
+### 报告系统
+- 支持周报、月报、季度报告三种周期
+- ReportGenerator 基于 AnalysisLog 链生成报告
+- 报告支持生成、删除、重新生成操作
+- KaTeX 渲染数学公式
 
 ### 分析日志链
 - `AnalysisLog` 表作为AI记忆
@@ -291,24 +330,29 @@ class NewOJScraper(BaseScraper):
 - 题库 UX：智能时间展示、快速 tooltip、分页跳转
 - 8个新知识点标签 + 中文描述 + upsert 种子
 
-### v0.4.0 -- 分析与可视化增强
+### v0.4.0 / v0.4.1 (2026-02-15) -- 分析与可视化增强 ✅
 
-计划内容：
-- Dashboard增强：更丰富的统计维度
-- 知识点图谱交互优化：点击节点查看关联题目
-- 弱项识别算法升级：增加首次通过率和平均尝试次数维度
-- 能力评分公式优化
+- Dashboard增强：首次AC率卡片、提交状态分布图、周趋势图、平台分布统计
+- 知识图谱交互：前置依赖链高亮、效率指标、跳转题库、全屏模式、旋转、标签重叠优化
+- 能力评分优化：时间衰减、阶段自适应权重
+- AI评估报告分页，阶段进度详情
 
-技术要点：
-- ECharts图表交互事件绑定
-- WeaknessDetector算法迭代
+### v0.5.0 (2026-02-15) -- AI题目分析 + 代码分析 + 知识评估增强 ✅
 
-### v0.5.0 -- AI分析深度集成与推荐
+- AI题目思路分析与完整解题
+- 提交代码AI审查（质量评估、优缺点、改进建议）
+- 同步后自动触发AI分析
+- 知识评估注入代码审查洞察
+- `AnalysisResult` 支持关联 Problem（`problem_id_ref`）
 
-计划内容：
-- AI代码分析引擎深度集成
-- 分析日志机制完善（AnalysisLog日志链优化）
-- 智能推荐算法升级（ProblemRecommender）
+### v0.5.1 (2026-02-18) -- 报告系统重构 + 同步解耦 + UX全面优化 ✅
+
+- 同步/AI解耦：SyncJob模型、AIBackfillService独立后台任务
+- 季度报告、报告删除/重新生成、智能周期选择器、重复检测
+- KaTeX数学公式渲染
+- 热力图时间范围切换、可配置显示时区
+- 平台账号暂停/恢复、题库筛选改进
+- 285个自动化测试用例
 
 ### v0.6.0 -- 部署与扩展
 
@@ -324,7 +368,7 @@ class NewOJScraper(BaseScraper):
 | Phase 1 - 核心骨架 | Flask app factory, 数据库模型, 登录注册, 基础布局 | ✅ |
 | Phase 2 - 爬虫系统 | BaseScraper抽象基类, 3个爬虫, SyncService, 账号管理, 种子数据 | ✅ |
 | Phase 3 - 分析与可视化 | AnalysisEngine, Dashboard, WeaknessDetector, TrendAnalyzer, 知识点图谱 | ✅ |
-| Phase 4 - AI分析与推荐 | AI代码分析, 分析日志链, ProblemRecommender, 定时任务 | ✅ |
+| Phase 4 - AI分析与推荐 | AI 4阶段流水线, 同步/AI解耦, AIBackfillService, SyncJob, 285个测试 | ✅ |
 | Phase 5 - 部署与扩展 | 云部署, 学校OJ适配, PDF导出 | 计划中 |
 
 ## 开发指南
@@ -344,14 +388,15 @@ source venv/bin/activate
 pytest tests/ -v --tb=short
 ```
 
-测试套件包含 120 个测试用例，覆盖：
-- 模型层：9个模型的CRUD、关系、约束
+测试套件包含 285 个测试用例，覆盖：
+- 模型层：11个模型的CRUD、关系、约束
 - 认证：注册、登录、登出、权限控制
 - 视图层：所有路由的GET/POST响应
 - API层：JSON端点响应与权限
 - 爬虫：注册表、数据类、枚举
-- 分析引擎：统计、弱项、趋势
-- 服务层：同步服务、统计服务
+- 分析引擎：统计、弱项、趋势、AI分析
+- 服务层：同步服务、统计服务、AI回填服务
+- 标签映射：TagMapper 测试
 
 ## License
 

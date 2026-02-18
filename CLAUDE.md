@@ -20,17 +20,19 @@ OJ做题追踪与分析系统，帮助家长追踪孩子在多个OJ平台的做�
 oj-tracker/
 ├── app/
 │   ├── __init__.py          # Flask app factory
-│   ├── config.py            # 配置类 (Dev/Prod)
-│   ├── extensions.py        # db, login_manager, migrate
-│   ├── models/              # SQLAlchemy 数据模型 (9张表)
+│   ├── config.py            # 配置类 (Dev/Prod/Testing)
+│   ├── extensions.py        # db, login_manager, migrate, csrf
+│   ├── models/              # SQLAlchemy 数据模型 (11张表 + 1关联表)
 │   ├── scrapers/            # OJ爬虫插件 (自动发现+注册)
 │   ├── analysis/            # 分析引擎 + AI分析 + LLM抽象层
-│   ├── services/            # 业务服务 (同步, 统计)
+│   ├── services/            # 业务服务 (同步, 统计, AI回填, 标签映射)
 │   ├── views/               # Flask蓝图路由
 │   ├── templates/           # Jinja2模板
 │   ├── static/              # CSS/JS
 │   └── tasks/               # APScheduler定时任务
 ├── migrations/              # Alembic数据库迁移
+├── tests/                   # pytest测试套件 (285个用例)
+├── backfill_tags.py         # 标签回填脚本
 ├── seed_data.py             # 知识点种子数据
 ├── run.py                   # 启动入口
 └── requirements.txt
@@ -40,9 +42,11 @@ oj-tracker/
 ```
 User 1-N Student 1-N PlatformAccount 1-N Submission N-1 Problem N-M Tag
 Submission 1-N AnalysisResult
+Problem 1-N AnalysisResult
 Student 1-N AnalysisLog
 Student 1-N Report
 User 1-N UserSetting
+User 1-N SyncJob
 ```
 
 ## 关键设计决策
@@ -57,7 +61,8 @@ User 1-N UserSetting
 - `BaseLLMProvider` 抽象基类
 - 支持 Claude/OpenAI/智谱，通过配置切换
 - Prompt模板与模型解耦
-- 4级分析: 题目分类→单次提交→攻克过程→综合报告
+- 4阶段流水线: 题目分类(ProblemClassifier)→提交评审(AIAnalyzer)→知识点评估(KnowledgeAnalyzer)→综合报告(ReportGenerator)
+- 用户级 AI 配置：每用户可独立选择 AI 提供者、API KEY 和预算
 
 ### 3. 分析日志链
 - AnalysisLog 表作为AI记忆
@@ -78,6 +83,18 @@ User 1-N UserSetting
 - UserSetting key-value 模型存储用户偏好
 - AI API KEY 优先从 UserSetting 读取，回退到环境变量
 - 每用户可独立选择 AI 提供者和预算
+
+### 7. 同步/AI 解耦
+- 内容同步(SyncService)与AI分析(AIBackfillService)完全解耦
+- SyncJob 模型记录任务执行历史，支持进度轮询
+- AI回填作为独立后台任务，不阻塞同步流程
+- TagMapper 服务：OJ原生标签→知识点体系映射
+
+### 8. 报告系统
+- 支持周报、月报、季度报告三种周期
+- ReportGenerator 基于 AnalysisLog 链生成报告
+- 报告支持生成、删除、重新生成操作
+- KaTeX 渲染数学公式
 
 ## 开发约定
 - Python 代码遵循 PEP 8
