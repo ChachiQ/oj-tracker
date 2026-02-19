@@ -382,6 +382,50 @@ def problem_classify(problem_id):
     })
 
 
+@api_bp.route('/problem/<int:problem_id>/comprehensive', methods=['POST'])
+@login_required
+def problem_comprehensive(problem_id):
+    """Trigger comprehensive AI analysis: classify + solution + full solution."""
+    problem = _user_owns_problem(problem_id)
+    if not problem:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    from app.analysis.ai_analyzer import AIAnalyzer
+    from app.extensions import db
+
+    analyzer = AIAnalyzer()
+    results = analyzer.analyze_problem_comprehensive(
+        problem_id, force=True, user_id=current_user.id,
+    )
+
+    if not results:
+        return jsonify({'success': False, 'error': 'AI 分析失败，请检查 AI 配置或预算'})
+
+    db.session.refresh(problem)
+
+    ai_tags = []
+    if problem.ai_tags:
+        try:
+            ai_tags = json.loads(problem.ai_tags)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    response = {
+        'success': True,
+        'classify': {
+            'difficulty': problem.difficulty,
+            'problem_type': problem.ai_problem_type or '',
+            'knowledge_points': ai_tags,
+        },
+    }
+    if 'solution' in results:
+        response['solution'] = _safe_parse_result(results['solution'])
+    if 'full_solution' in results:
+        response['full_solution'] = _safe_parse_result(results['full_solution'])
+
+    return jsonify(response)
+
+
 @api_bp.route('/problem/<int:problem_id>/solution', methods=['POST'])
 @login_required
 def problem_solution(problem_id):

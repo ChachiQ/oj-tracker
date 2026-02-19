@@ -63,9 +63,14 @@
         <div class="chart-container">
             <div class="d-flex justify-content-between align-items-center">
                 <div class="chart-title mb-0"><i class="bi bi-robot"></i> AI 评级</div>
-                <button class="btn btn-sm btn-outline-primary" id="btn-classify" onclick="triggerClassify()">
-                    <i class="bi bi-arrow-clockwise"></i> 重新评级
-                </button>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" id="btn-classify" onclick="triggerClassify()">
+                        <i class="bi bi-arrow-clockwise"></i> 重新评级
+                    </button>
+                    <button class="btn btn-sm btn-success ms-1" id="btn-comprehensive" onclick="triggerComprehensive()">
+                        <i class="bi bi-stars"></i> 一键分析
+                    </button>
+                </div>
             </div>
 
             <!-- 现有结果（静态渲染） -->
@@ -498,6 +503,7 @@ function resyncProblem() {
 
 /* AI 评级 (classify) */
 function triggerClassify() {
+    if (!confirm('确定要重新评级吗？这将消耗 AI 额度。')) return;
     var loadingEl = document.getElementById('classify-loading');
     var resultEl = document.getElementById('classify-result');
     var btnEl = document.getElementById('btn-classify');
@@ -519,6 +525,61 @@ function triggerClassify() {
         stopTimer(loadingEl);
         loadingEl.classList.add('d-none');
         btnEl.disabled = false;
+        resultEl.innerHTML = '<div class="alert alert-danger mt-2">请求失败: ' + escapeHtml(err.message) + '</div>';
+    });
+}
+
+function triggerComprehensive() {
+    if (!confirm('一键分析将生成：评级 + 思路解析 + 完整题解。\n这将消耗较多 AI 额度，确认继续？')) return;
+
+    var loadingEl = document.getElementById('classify-loading');
+    var resultEl = document.getElementById('classify-result');
+    var btnEl = document.getElementById('btn-comprehensive');
+    var classifyBtn = document.getElementById('btn-classify');
+
+    loadingEl.querySelector('.ms-2').textContent = 'AI 正在全面分析...';
+    btnEl.disabled = true;
+    classifyBtn.disabled = true;
+    loadingEl.classList.remove('d-none');
+    startTimer(loadingEl);
+
+    apiPost('/api/problem/' + PROBLEM_ID + '/comprehensive')
+    .then(function(data) {
+        stopTimer(loadingEl);
+        loadingEl.classList.add('d-none');
+        loadingEl.querySelector('.ms-2').textContent = 'AI 正在评级...';
+        btnEl.disabled = false;
+        classifyBtn.disabled = false;
+
+        if (!data.success) {
+            resultEl.innerHTML = '<div class="alert alert-danger mt-2">' + escapeHtml(data.error || '分析失败') + '</div>';
+            return;
+        }
+
+        renderClassifyResult(data.classify, resultEl);
+
+        if (data.solution && data.solution.analysis) {
+            var solOk = renderSolution(data.solution.analysis, 'solution-result',
+                data.solution.ai_model, data.solution.analyzed_at);
+            analysisLoaded.solution = !!solOk;
+            document.getElementById('solution-result').classList.add('show');
+            if (solOk) updateAnalysisBtn(document.getElementById('btn-solution'), 'solution', true);
+        }
+
+        if (data.full_solution && data.full_solution.analysis) {
+            var fsOk = renderFullSolution(data.full_solution.analysis, 'fullsolution-result',
+                data.full_solution.ai_model, data.full_solution.analyzed_at);
+            analysisLoaded.fullsolution = !!fsOk;
+            document.getElementById('fullsolution-result').classList.add('show');
+            if (fsOk) updateAnalysisBtn(document.getElementById('btn-full-solution'), 'full-solution', true);
+        }
+    })
+    .catch(function(err) {
+        stopTimer(loadingEl);
+        loadingEl.classList.add('d-none');
+        loadingEl.querySelector('.ms-2').textContent = 'AI 正在评级...';
+        btnEl.disabled = false;
+        classifyBtn.disabled = false;
         resultEl.innerHTML = '<div class="alert alert-danger mt-2">请求失败: ' + escapeHtml(err.message) + '</div>';
     });
 }
