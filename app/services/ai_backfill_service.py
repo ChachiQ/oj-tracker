@@ -185,7 +185,7 @@ class AIBackfillService:
             Problem.description.isnot(None),
             db.or_(
                 Problem.ai_analyzed == False,  # noqa: E712
-                Problem.difficulty == 0,
+                Problem.difficulty == 0,       # classify 成功但 difficulty 无效，需重试
                 ~Problem.id.in_(classified_ids),
                 ~Problem.id.in_(has_solution_ids),
                 ~Problem.id.in_(has_full_ids),

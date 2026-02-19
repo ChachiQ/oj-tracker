@@ -211,16 +211,20 @@ class ProblemClassifier:
                     tag = Tag.query.filter_by(name=tag_name).first()
                     if tag and tag not in problem.tags:
                         problem.tags.append(tag)
+                    elif not tag:
+                        logger.warning(f"Unknown tag '{tag_name}' returned by LLM for problem {problem_id}")
 
-                # Write AI difficulty assessment
+                from .ai_analyzer import _parse_difficulty
+
                 overall = parsed.get("difficulty_assessment", {}).get("overall")
-                if overall is not None:
-                    try:
-                        difficulty_val = int(overall)
-                        if 1 <= difficulty_val <= 10:
-                            problem.difficulty = difficulty_val
-                    except (ValueError, TypeError):
-                        pass
+                difficulty_val = _parse_difficulty(overall)
+                if difficulty_val:
+                    problem.difficulty = difficulty_val
+                else:
+                    logger.warning(
+                        f"Unparseable difficulty for problem {problem_id}: {overall!r}"
+                    )
+                    # difficulty 保持 0（未评级），skip 逻辑（L147）会允许下次重试
             else:
                 problem.ai_tags = response.content
                 problem.ai_problem_type = ""

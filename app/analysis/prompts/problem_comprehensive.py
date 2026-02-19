@@ -88,10 +88,10 @@ def build_problem_comprehensive_prompt(
       {{"tag_name": "标签名", "importance": "核心/辅助"}}
     ],
     "difficulty_assessment": {{
-      "thinking": 1-10,
-      "coding": 1-10,
-      "math": 1-10,
-      "overall": 1-10
+      "thinking": 3,
+      "coding": 2,
+      "math": 1,
+      "overall": 3
     }}
   }},
   "solution": {{

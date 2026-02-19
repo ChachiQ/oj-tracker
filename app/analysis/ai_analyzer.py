@@ -54,6 +54,43 @@ def _clean_llm_json(text: str) -> str:
     return stripped
 
 
+# 中文难度描述 → 数字映射（基于 _macros.html 的 labels）
+_DIFFICULTY_TEXT_MAP = {
+    '入门': 1, '入门+': 2,
+    '普及-': 3, '普及': 4,
+    '提高-': 5, '提高': 6,
+    '省选-': 7, '省选': 8,
+    'noi-': 9, 'noi': 10,
+    # 常见 LLM 口语化表达
+    '简单': 2, '容易': 2,
+    '中等': 4, '一般': 4,
+    '较难': 6, '困难': 8, '难': 7,
+}
+
+
+def _parse_difficulty(raw_value) -> int | None:
+    """尝试将 LLM 返回的 difficulty 值解析为 1-10 整数。
+
+    支持：整数、浮点数、数字字符串、中文难度描述。
+    返回 None 表示无法解析。
+    """
+    if raw_value is None:
+        return None
+    # 尝试数字
+    try:
+        val = int(float(raw_value))  # 处理 "5.0" 等情况
+        if 1 <= val <= 10:
+            return val
+        return None
+    except (ValueError, TypeError):
+        pass
+    # 尝试中文映射
+    if isinstance(raw_value, str):
+        text = raw_value.strip().lower()
+        return _DIFFICULTY_TEXT_MAP.get(text)
+    return None
+
+
 class AIAnalyzer:
     """Orchestrates AI analysis of submissions and problem journeys.
 
@@ -535,9 +572,9 @@ class AIAnalyzer:
             "problem_classify", "problem_solution", "problem_full_solution",
         ]
 
-        # Check if all 3 types already exist with valid JSON
+        # Check which types already exist with valid JSON
+        existing_types = set()
         if not force:
-            existing_count = 0
             for atype in analysis_types:
                 existing = AnalysisResult.query.filter_by(
                     problem_id_ref=problem_id, analysis_type=atype,
@@ -545,10 +582,14 @@ class AIAnalyzer:
                 if existing and existing.result_json:
                     try:
                         json.loads(existing.result_json)
-                        existing_count += 1
+                        existing_types.add(atype)
                     except (json.JSONDecodeError, TypeError):
                         pass
-            if existing_count == 3:
+            if len(existing_types) == 3:
+                problem = Problem.query.get(problem_id)
+                if problem and not problem.difficulty:
+                    # difficulty 仍为 0，需要重新 classify
+                    return self._classify_only(problem_id, user_id)
                 # All present — return existing results
                 results = {}
                 for atype in analysis_types:
@@ -558,6 +599,10 @@ class AIAnalyzer:
                     ).first()
                 return results
 
+            # Only missing classify → run classify-only, save tokens
+            if existing_types == {"problem_solution", "problem_full_solution"}:
+                return self._classify_only(problem_id, user_id)
+
         if not self._check_budget(user_id=user_id):
             logger.warning("AI monthly budget exceeded, skipping comprehensive analysis")
             return None
@@ -566,13 +611,22 @@ class AIAnalyzer:
         if not problem or not problem.description:
             return None
 
-        # Delete old records when force or when re-analyzing
-        for atype in analysis_types:
-            old = AnalysisResult.query.filter_by(
-                problem_id_ref=problem_id, analysis_type=atype,
-            ).first()
-            if old:
-                db.session.delete(old)
+        # Delete old records: force → all; otherwise → only missing/invalid
+        if force:
+            for atype in analysis_types:
+                old = AnalysisResult.query.filter_by(
+                    problem_id_ref=problem_id, analysis_type=atype,
+                ).first()
+                if old:
+                    db.session.delete(old)
+        else:
+            for atype in analysis_types:
+                if atype not in existing_types:
+                    old = AnalysisResult.query.filter_by(
+                        problem_id_ref=problem_id, analysis_type=atype,
+                    ).first()
+                    if old:
+                        db.session.delete(old)
         db.session.commit()
 
         # Parse platform_tags
@@ -647,61 +701,82 @@ class AIAnalyzer:
                     tag = Tag.query.filter_by(name=tag_name).first()
                     if tag and tag not in problem.tags:
                         problem.tags.append(tag)
+                    elif not tag:
+                        logger.warning(f"Unknown tag '{tag_name}' returned by LLM for problem {problem_id}")
 
                 overall = classify_data.get("difficulty_assessment", {}).get("overall")
-                if overall is not None:
-                    try:
-                        difficulty_val = int(overall)
-                        if 1 <= difficulty_val <= 10:
-                            problem.difficulty = difficulty_val
-                    except (ValueError, TypeError):
-                        pass
+                difficulty_val = _parse_difficulty(overall)
+                if difficulty_val:
+                    problem.difficulty = difficulty_val
+                    problem.ai_analysis_error = None
+                else:
+                    # 无法解析 → 保持 difficulty=0（未评级），记录错误便于重试
+                    logger.warning(
+                        f"Unparseable difficulty for problem {problem_id}: {overall!r}"
+                    )
+                    problem.ai_analysis_error = f"unparseable difficulty: {overall!r}"
 
                 problem.ai_analyzed = True
-                problem.ai_analysis_error = None
                 results["classify"] = ar
             except Exception as e:
                 logger.warning(f"Comprehensive: classify part failed for {problem_id}: {e}")
+                problem.ai_analyzed = True
+                problem.ai_analysis_error = f"classify processing error: {e}"
+        else:
+            # LLM didn't return a valid classify section
+            logger.warning(f"Comprehensive: classify section missing/invalid for {problem_id}")
+            problem.ai_analyzed = True
+            problem.ai_analysis_error = "classify section missing from comprehensive response"
 
         # --- solution ---
-        solution_data = parsed.get("solution")
-        if solution_data and isinstance(solution_data, dict):
-            try:
-                result_json = json.dumps(solution_data, ensure_ascii=False)
-                ar = AnalysisResult(
-                    problem_id_ref=problem_id,
-                    analysis_type="problem_solution",
-                    result_json=result_json,
-                    summary=solution_data.get("approach", ""),
-                    ai_model=response.model or model or "",
-                    token_cost=part_tokens,
-                    cost_usd=part_cost,
-                    analyzed_at=now,
-                )
-                db.session.add(ar)
-                results["solution"] = ar
-            except Exception as e:
-                logger.warning(f"Comprehensive: solution part failed for {problem_id}: {e}")
+        if "problem_solution" in existing_types:
+            results["solution"] = AnalysisResult.query.filter_by(
+                problem_id_ref=problem_id, analysis_type="problem_solution",
+            ).first()
+        else:
+            solution_data = parsed.get("solution")
+            if solution_data and isinstance(solution_data, dict):
+                try:
+                    result_json = json.dumps(solution_data, ensure_ascii=False)
+                    ar = AnalysisResult(
+                        problem_id_ref=problem_id,
+                        analysis_type="problem_solution",
+                        result_json=result_json,
+                        summary=solution_data.get("approach", ""),
+                        ai_model=response.model or model or "",
+                        token_cost=part_tokens,
+                        cost_usd=part_cost,
+                        analyzed_at=now,
+                    )
+                    db.session.add(ar)
+                    results["solution"] = ar
+                except Exception as e:
+                    logger.warning(f"Comprehensive: solution part failed for {problem_id}: {e}")
 
         # --- full_solution ---
-        full_solution_data = parsed.get("full_solution")
-        if full_solution_data and isinstance(full_solution_data, dict):
-            try:
-                result_json = json.dumps(full_solution_data, ensure_ascii=False)
-                ar = AnalysisResult(
-                    problem_id_ref=problem_id,
-                    analysis_type="problem_full_solution",
-                    result_json=result_json,
-                    summary=full_solution_data.get("approach", ""),
-                    ai_model=response.model or model or "",
-                    token_cost=part_tokens,
-                    cost_usd=part_cost,
-                    analyzed_at=now,
-                )
-                db.session.add(ar)
-                results["full_solution"] = ar
-            except Exception as e:
-                logger.warning(f"Comprehensive: full_solution part failed for {problem_id}: {e}")
+        if "problem_full_solution" in existing_types:
+            results["full_solution"] = AnalysisResult.query.filter_by(
+                problem_id_ref=problem_id, analysis_type="problem_full_solution",
+            ).first()
+        else:
+            full_solution_data = parsed.get("full_solution")
+            if full_solution_data and isinstance(full_solution_data, dict):
+                try:
+                    result_json = json.dumps(full_solution_data, ensure_ascii=False)
+                    ar = AnalysisResult(
+                        problem_id_ref=problem_id,
+                        analysis_type="problem_full_solution",
+                        result_json=result_json,
+                        summary=full_solution_data.get("approach", ""),
+                        ai_model=response.model or model or "",
+                        token_cost=part_tokens,
+                        cost_usd=part_cost,
+                        analyzed_at=now,
+                    )
+                    db.session.add(ar)
+                    results["full_solution"] = ar
+                except Exception as e:
+                    logger.warning(f"Comprehensive: full_solution part failed for {problem_id}: {e}")
 
         try:
             db.session.commit()
@@ -715,6 +790,21 @@ class AIAnalyzer:
             f"parts ok: {list(results.keys())}"
         )
         return results if results else None
+
+    def _classify_only(self, problem_id, user_id):
+        """Only run classification for a problem that already has solution/full_solution."""
+        from .problem_classifier import ProblemClassifier
+        classifier = ProblemClassifier(app=self.app)
+        ok = classifier.classify_problem(problem_id, user_id=user_id)
+        if ok:
+            results = {}
+            for atype in ["problem_classify", "problem_solution", "problem_full_solution"]:
+                key = atype.replace("problem_", "")
+                results[key] = AnalysisResult.query.filter_by(
+                    problem_id_ref=problem_id, analysis_type=atype,
+                ).first()
+            return results
+        return None
 
     def review_submission(
         self, submission_id: int, force: bool = False, user_id: int = None,
