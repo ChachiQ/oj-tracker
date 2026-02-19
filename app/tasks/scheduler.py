@@ -63,8 +63,22 @@ def init_scheduler(app):
                 user_id=ai_user_id, status='running'
             ).first()
             if running:
-                logger.info(f"User {ai_user_id} already has running job {running.id}, skipping")
-                return
+                from datetime import datetime, timedelta
+                cutoff = datetime.utcnow() - timedelta(hours=6)
+                if running.started_at and running.started_at < cutoff:
+                    running.status = 'failed'
+                    running.error_message = '任务超时，已自动标记为失败（进程可能被终止）'
+                    running.finished_at = datetime.utcnow()
+                    db.session.commit()
+                    logger.warning(
+                        f"Cleaned up stale SyncJob {running.id} in scheduler"
+                    )
+                else:
+                    logger.info(
+                        f"User {ai_user_id} already has running job "
+                        f"{running.id}, skipping"
+                    )
+                    return
 
             # Create a SyncJob and run backfill
             job = SyncJob(

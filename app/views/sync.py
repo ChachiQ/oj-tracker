@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import threading
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import (
     Blueprint, render_template, jsonify, request, current_app,
@@ -41,10 +41,24 @@ def _get_user_account_ids():
 
 
 def _check_running_job():
-    """Return a running SyncJob for current user, or None."""
-    return SyncJob.query.filter_by(
+    """Return a running SyncJob for current user, or None.
+
+    If the running job has been stuck for more than 6 hours, it is
+    automatically marked as failed and None is returned.
+    """
+    job = SyncJob.query.filter_by(
         user_id=current_user.id, status='running'
     ).first()
+    if job and job.started_at:
+        cutoff = datetime.utcnow() - timedelta(hours=6)
+        if job.started_at < cutoff:
+            job.status = 'failed'
+            job.error_message = '任务超时，已自动标记为失败（进程可能被终止）'
+            job.finished_at = datetime.utcnow()
+            db.session.commit()
+            logger.warning(f'Marked stale SyncJob {job.id} as failed')
+            return None
+    return job
 
 
 def _check_account_ownership(account_id):

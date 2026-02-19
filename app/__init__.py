@@ -209,8 +209,20 @@ def create_app(config_name=None):
     with app.app_context():
         db.create_all()
         _fix_difficulty_data(app)
+        _cleanup_stale_jobs(app)
 
     return app
+
+
+def _cleanup_stale_jobs(app):
+    """Mark stale running SyncJobs as failed on startup."""
+    from app.models import SyncJob
+    try:
+        count = SyncJob.cleanup_stale_running()
+        if count:
+            app.logger.info(f'Cleaned up {count} stale running SyncJob(s)')
+    except Exception:
+        db.session.rollback()
 
 
 def _fix_difficulty_data(app):

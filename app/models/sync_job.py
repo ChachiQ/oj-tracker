@@ -1,7 +1,10 @@
 import json
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 
 from app.extensions import db
+
+logger = logging.getLogger(__name__)
 
 
 class SyncJob(db.Model):
@@ -62,6 +65,36 @@ class SyncJob(db.Model):
     def stats(self, value):
         """Serialize dict to stats_json."""
         self.stats_json = json.dumps(value, ensure_ascii=False) if value else None
+
+    @classmethod
+    def cleanup_stale_running(cls, max_age_hours=6):
+        """Mark long-running jobs as failed.
+
+        Jobs stuck in 'running' status longer than *max_age_hours* are
+        assumed to be stale (e.g. the process was killed) and are marked
+        as 'failed' so they no longer block new jobs.
+
+        Returns the number of jobs cleaned up.
+        """
+        cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
+        stale_jobs = cls.query.filter(
+            cls.status == 'running',
+            cls.started_at < cutoff,
+        ).all()
+
+        for job in stale_jobs:
+            job.status = 'failed'
+            job.error_message = '任务超时，已自动标记为失败（进程可能被终止）'
+            job.finished_at = datetime.utcnow()
+            logger.warning(
+                f'Cleaned up stale SyncJob {job.id} '
+                f'(started_at={job.started_at})'
+            )
+
+        if stale_jobs:
+            db.session.commit()
+
+        return len(stale_jobs)
 
     def __repr__(self):
         return (
