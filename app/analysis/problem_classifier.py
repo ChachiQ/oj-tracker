@@ -127,16 +127,17 @@ class ProblemClassifier:
                 budget = float(user_budget)
         return total_cost < budget
 
-    def classify_problem(self, problem_id: int, user_id: int = None) -> bool:
+    def classify_problem(self, problem_id: int, user_id: int = None, force: bool = False) -> bool:
         """Classify a single problem using AI.
 
         Skips problems that have already been successfully analyzed
         (ai_analyzed=True) unless they have an error recorded (eligible
-        for retry up to MAX_RETRIES).
+        for retry up to MAX_RETRIES) or ``force`` is True.
 
         Args:
             problem_id: Database ID of the problem to classify.
             user_id: Optional user id to load per-user AI configuration.
+            force: If True, skip the already-analyzed check and re-classify.
 
         Returns:
             True if classification was successful, False otherwise.
@@ -146,17 +147,18 @@ class ProblemClassifier:
             return False
         # Skip already-analyzed problems that have no error and a valid difficulty,
         # but only if a valid classify AnalysisResult actually exists
-        if problem.ai_analyzed and not problem.ai_analysis_error and problem.difficulty:
-            has_classify = AnalysisResult.query.filter_by(
-                problem_id_ref=problem.id,
-                analysis_type="problem_classify",
-            ).first()
-            if has_classify and has_classify.result_json:
-                try:
-                    json.loads(has_classify.result_json)
-                    return False
-                except (json.JSONDecodeError, TypeError):
-                    pass  # invalid record, re-classify
+        if not force:
+            if problem.ai_analyzed and not problem.ai_analysis_error and problem.difficulty:
+                has_classify = AnalysisResult.query.filter_by(
+                    problem_id_ref=problem.id,
+                    analysis_type="problem_classify",
+                ).first()
+                if has_classify and has_classify.result_json:
+                    try:
+                        json.loads(has_classify.result_json)
+                        return False
+                    except (json.JSONDecodeError, TypeError):
+                        pass  # invalid record, re-classify
 
         if not self._check_budget(user_id):
             logger.warning("AI monthly budget exceeded, skipping classification")
@@ -188,7 +190,17 @@ class ProblemClassifier:
             response = provider.chat(
                 messages,
                 model=model,
-                max_tokens=2000,
+                max_tokens=4096,
+            )
+
+            logger.info(
+                f"Classify LLM response for problem {problem_id}: "
+                f"model={model}, tokens={response.input_tokens}+{response.output_tokens}, "
+                f"cost=${response.cost}, content_len={len(response.content)}"
+            )
+            logger.debug(
+                f"Classify raw response for problem {problem_id}: "
+                f"{response.content[:2000]}"
             )
 
             # Parse response and persist results

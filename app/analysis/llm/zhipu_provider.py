@@ -108,6 +108,23 @@ class ZhipuProvider(BaseLLMProvider):
         # Extract content
         choice = response.choices[0]
         content = choice.message.content or ""
+        reasoning = getattr(choice.message, 'reasoning_content', None) or ""
+        if not content and reasoning:
+            logger.info(f"Zhipu: content empty, using reasoning_content ({len(reasoning)} chars)")
+            content = reasoning
+
+        logger.info(
+            f"Zhipu LLM response: model={model}, "
+            f"finish_reason={choice.finish_reason}, "
+            f"content_len={len(content)}, "
+            f"latency={latency_ms}ms"
+        )
+        if not content or choice.finish_reason != "stop":
+            logger.warning(
+                f"Zhipu unexpected response: finish_reason={choice.finish_reason}, "
+                f"content_len={len(content)}, model={model}, "
+                f"message={choice.message}"
+            )
 
         input_tokens = response.usage.prompt_tokens if response.usage else 0
         output_tokens = response.usage.completion_tokens if response.usage else 0
