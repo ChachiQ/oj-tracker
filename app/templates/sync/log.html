@@ -68,7 +68,7 @@
                         </td>
                         <td>
                             {% if job.job_type == 'ai_backfill' and job.current_phase %}
-                                {% set phase_labels = {'classify': '分类', 'solution': '思路', 'full_solution': '解题', 'review': '审查'} %}
+                                {% set phase_labels = {'comprehensive': '综合分析', 'review': '审查', 'classify': '分类', 'solution': '思路', 'full_solution': '解题'} %}
                                 <small>{{ phase_labels.get(job.current_phase, job.current_phase) }}
                                 {% if job.progress_total > 0 %}
                                     {{ job.progress_current }}/{{ job.progress_total }}
@@ -95,10 +95,16 @@
                                 </small>
                             {% elif job.job_type == 'ai_backfill' and stats %}
                                 <small>
+                                    {% if stats.get('comprehensive_total') is not none %}
+                                    综合 {{ stats.get('comprehensive_ok', 0) }}/{{ stats.get('comprehensive_total', 0) }}
+                                    | 审查 {{ stats.get('review_ok', 0) }}/{{ stats.get('review_total', 0) }}
+                                    {% else %}
+                                    {# backward compat: old 4-phase stats #}
                                     分类 {{ stats.get('classify_ok', 0) }}/{{ stats.get('classify_total', 0) }}
                                     | 思路 {{ stats.get('solution_ok', 0) }}/{{ stats.get('solution_total', 0) }}
                                     | 解题 {{ stats.get('full_solution_ok', 0) }}/{{ stats.get('full_solution_total', 0) }}
                                     | 审查 {{ stats.get('review_ok', 0) }}/{{ stats.get('review_total', 0) }}
+                                    {% endif %}
                                 </small>
                             {% else %}
                                 <small class="text-muted">-</small>

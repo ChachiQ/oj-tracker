@@ -289,7 +289,7 @@ def _user_owns_problem(problem_id):
     return problem if has_sub else None
 
 
-def _safe_parse_result(result):
+def _safe_parse_result(result, comprehensive_done=False):
     """Safely parse analysis result into API response dict."""
     analysis = None
     if result.result_json:
@@ -301,12 +301,15 @@ def _safe_parse_result(result):
     if result.analyzed_at and isinstance(result.analyzed_at, datetime):
         display_dt = current_app.to_display_tz(result.analyzed_at)
         analyzed_at_str = display_dt.strftime('%Y-%m-%d %H:%M')
-    return {
+    resp = {
         'success': True,
         'analysis': analysis,
         'analyzed_at': analyzed_at_str,
         'ai_model': result.ai_model,
     }
+    if comprehensive_done:
+        resp['comprehensive_done'] = True
+    return resp
 
 
 @api_bp.route('/problem/<int:problem_id>/solution', methods=['POST'])
@@ -319,16 +322,29 @@ def problem_solution(problem_id):
 
     force = request.args.get('force', '0') == '1'
 
+    # Check for existing result first
+    if not force:
+        existing = AnalysisResult.query.filter_by(
+            problem_id_ref=problem_id, analysis_type="problem_solution",
+        ).first()
+        if existing and existing.result_json:
+            try:
+                json.loads(existing.result_json)
+                return jsonify(_safe_parse_result(existing))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    # Use comprehensive method — generates all 3 types at once
     from app.analysis.ai_analyzer import AIAnalyzer
     analyzer = AIAnalyzer()
-    result = analyzer.analyze_problem_solution(
+    results = analyzer.analyze_problem_comprehensive(
         problem_id, force=force, user_id=current_user.id,
     )
 
-    if not result:
+    if not results or 'solution' not in results:
         return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
 
-    return jsonify(_safe_parse_result(result))
+    return jsonify(_safe_parse_result(results['solution'], comprehensive_done=True))
 
 
 @api_bp.route('/problem/<int:problem_id>/full-solution', methods=['POST'])
@@ -341,16 +357,29 @@ def problem_full_solution(problem_id):
 
     force = request.args.get('force', '0') == '1'
 
+    # Check for existing result first
+    if not force:
+        existing = AnalysisResult.query.filter_by(
+            problem_id_ref=problem_id, analysis_type="problem_full_solution",
+        ).first()
+        if existing and existing.result_json:
+            try:
+                json.loads(existing.result_json)
+                return jsonify(_safe_parse_result(existing))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    # Use comprehensive method — generates all 3 types at once
     from app.analysis.ai_analyzer import AIAnalyzer
     analyzer = AIAnalyzer()
-    result = analyzer.analyze_problem_full_solution(
+    results = analyzer.analyze_problem_comprehensive(
         problem_id, force=force, user_id=current_user.id,
     )
 
-    if not result:
+    if not results or 'full_solution' not in results:
         return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500
 
-    return jsonify(_safe_parse_result(result))
+    return jsonify(_safe_parse_result(results['full_solution'], comprehensive_done=True))
 
 
 @api_bp.route('/submission/<int:submission_id>/review', methods=['POST'])

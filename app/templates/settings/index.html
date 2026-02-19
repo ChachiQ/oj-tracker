@@ -599,11 +599,11 @@
         .then(function(r) { return r.json(); })
         .then(function(data) {
             var pending = data.pending;
-            var total = pending.classify + pending.solution + pending.full_solution + pending.review;
+            var total = (pending.comprehensive || 0) + (pending.review || 0);
             var msg = 'AI 分析确认：\n\n' +
                 '本月已花费: $' + data.monthly_cost + ' / $' + data.monthly_budget + '\n' +
-                '待处理: 分类 ' + pending.classify + ' | 思路 ' + pending.solution +
-                ' | 解题 ' + pending.full_solution + ' | 审查 ' + pending.review +
+                '待处理: 综合分析 ' + (pending.comprehensive || 0) +
+                ' | 审查 ' + (pending.review || 0) +
                 ' (共 ' + total + ' 项)\n\n确定启动 AI 分析？';
             return confirm(msg);
         });

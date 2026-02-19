@@ -26,6 +26,7 @@ from .prompts.single_submission import build_single_submission_prompt
 from .prompts.problem_journey import build_problem_journey_prompt
 from .prompts.problem_solution import build_problem_solution_prompt
 from .prompts.problem_full_solution import build_problem_full_solution_prompt
+from .prompts.problem_comprehensive import build_problem_comprehensive_prompt
 from .prompts.submission_review import build_submission_review_prompt
 
 logger = logging.getLogger(__name__)
@@ -510,6 +511,210 @@ class AIAnalyzer:
         except Exception as e:
             logger.error(f"Full solution analysis failed for {problem_id}: {e}")
             return None
+
+    def analyze_problem_comprehensive(
+        self, problem_id: int, force: bool = False, user_id: int = None,
+    ) -> dict | None:
+        """Perform classification + solution + full_solution in one LLM call.
+
+        Stores results as 3 separate AnalysisResult records for backward
+        compatibility. Returns a dict keyed by 'classify', 'solution',
+        'full_solution' with the AnalysisResult instances (or None per part
+        on partial failure).
+
+        Args:
+            problem_id: Database ID of the problem.
+            force: If True, delete existing analyses and re-analyze.
+            user_id: Optional user id for per-user AI config.
+
+        Returns:
+            Dict mapping analysis part names to AnalysisResult instances,
+            or None if analysis cannot be performed at all.
+        """
+        analysis_types = [
+            "problem_classify", "problem_solution", "problem_full_solution",
+        ]
+
+        # Check if all 3 types already exist with valid JSON
+        if not force:
+            existing_count = 0
+            for atype in analysis_types:
+                existing = AnalysisResult.query.filter_by(
+                    problem_id_ref=problem_id, analysis_type=atype,
+                ).first()
+                if existing and existing.result_json:
+                    try:
+                        json.loads(existing.result_json)
+                        existing_count += 1
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+            if existing_count == 3:
+                # All present — return existing results
+                results = {}
+                for atype in analysis_types:
+                    key = atype.replace("problem_", "")
+                    results[key] = AnalysisResult.query.filter_by(
+                        problem_id_ref=problem_id, analysis_type=atype,
+                    ).first()
+                return results
+
+        if not self._check_budget(user_id=user_id):
+            logger.warning("AI monthly budget exceeded, skipping comprehensive analysis")
+            return None
+
+        problem = Problem.query.get(problem_id)
+        if not problem or not problem.description:
+            return None
+
+        # Delete old records when force or when re-analyzing
+        for atype in analysis_types:
+            old = AnalysisResult.query.filter_by(
+                problem_id_ref=problem_id, analysis_type=atype,
+            ).first()
+            if old:
+                db.session.delete(old)
+        db.session.commit()
+
+        # Parse platform_tags
+        platform_tags = None
+        if problem.platform_tags:
+            try:
+                platform_tags = json.loads(problem.platform_tags)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        messages = build_problem_comprehensive_prompt(
+            title=problem.title or problem.problem_id,
+            platform=problem.platform,
+            difficulty_raw=problem.difficulty_raw,
+            description=problem.description,
+            input_desc=problem.input_desc,
+            output_desc=problem.output_desc,
+            examples=problem.examples,
+            hint=problem.hint,
+            platform_tags=platform_tags,
+        )
+
+        try:
+            provider, model = self._get_llm("basic", user_id=user_id)
+            response = provider.chat(messages, model=model, max_tokens=8192)
+        except Exception as e:
+            logger.error(f"Comprehensive analysis LLM call failed for {problem_id}: {e}")
+            return None
+
+        cleaned = _clean_llm_json(response.content)
+        try:
+            parsed = json.loads(cleaned)
+        except (json.JSONDecodeError, TypeError):
+            logger.error(f"Comprehensive analysis JSON parse failed for {problem_id}")
+            return None
+
+        total_cost = response.cost or 0
+        total_tokens = (response.input_tokens or 0) + (response.output_tokens or 0)
+        part_cost = total_cost / 3
+        part_tokens = total_tokens // 3
+        now = datetime.utcnow()
+        results = {}
+
+        # --- classify ---
+        classify_data = parsed.get("classify")
+        if classify_data and isinstance(classify_data, dict):
+            try:
+                result_json = json.dumps(classify_data, ensure_ascii=False)
+                ar = AnalysisResult(
+                    problem_id_ref=problem_id,
+                    analysis_type="problem_classify",
+                    result_json=result_json,
+                    summary=classify_data.get("problem_type", ""),
+                    ai_model=response.model or model or "",
+                    token_cost=part_tokens,
+                    cost_usd=part_cost,
+                    analyzed_at=now,
+                )
+                db.session.add(ar)
+
+                # Update Problem model fields (same as ProblemClassifier)
+                problem.ai_tags = json.dumps(
+                    classify_data.get("knowledge_points", []), ensure_ascii=False
+                )
+                problem.ai_problem_type = classify_data.get("problem_type", "")
+
+                for kp in classify_data.get("knowledge_points", []):
+                    tag_name = kp.get("tag_name")
+                    if not tag_name:
+                        continue
+                    from app.models import Tag
+                    tag = Tag.query.filter_by(name=tag_name).first()
+                    if tag and tag not in problem.tags:
+                        problem.tags.append(tag)
+
+                overall = classify_data.get("difficulty_assessment", {}).get("overall")
+                if overall is not None:
+                    try:
+                        difficulty_val = int(overall)
+                        if 1 <= difficulty_val <= 10:
+                            problem.difficulty = difficulty_val
+                    except (ValueError, TypeError):
+                        pass
+
+                problem.ai_analyzed = True
+                problem.ai_analysis_error = None
+                results["classify"] = ar
+            except Exception as e:
+                logger.warning(f"Comprehensive: classify part failed for {problem_id}: {e}")
+
+        # --- solution ---
+        solution_data = parsed.get("solution")
+        if solution_data and isinstance(solution_data, dict):
+            try:
+                result_json = json.dumps(solution_data, ensure_ascii=False)
+                ar = AnalysisResult(
+                    problem_id_ref=problem_id,
+                    analysis_type="problem_solution",
+                    result_json=result_json,
+                    summary=solution_data.get("approach", ""),
+                    ai_model=response.model or model or "",
+                    token_cost=part_tokens,
+                    cost_usd=part_cost,
+                    analyzed_at=now,
+                )
+                db.session.add(ar)
+                results["solution"] = ar
+            except Exception as e:
+                logger.warning(f"Comprehensive: solution part failed for {problem_id}: {e}")
+
+        # --- full_solution ---
+        full_solution_data = parsed.get("full_solution")
+        if full_solution_data and isinstance(full_solution_data, dict):
+            try:
+                result_json = json.dumps(full_solution_data, ensure_ascii=False)
+                ar = AnalysisResult(
+                    problem_id_ref=problem_id,
+                    analysis_type="problem_full_solution",
+                    result_json=result_json,
+                    summary=full_solution_data.get("approach", ""),
+                    ai_model=response.model or model or "",
+                    token_cost=part_tokens,
+                    cost_usd=part_cost,
+                    analyzed_at=now,
+                )
+                db.session.add(ar)
+                results["full_solution"] = ar
+            except Exception as e:
+                logger.warning(f"Comprehensive: full_solution part failed for {problem_id}: {e}")
+
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Comprehensive analysis commit failed for {problem_id}: {e}")
+            return None
+
+        logger.info(
+            f"Comprehensive analysis for {problem.platform}:{problem.problem_id} — "
+            f"parts ok: {list(results.keys())}"
+        )
+        return results if results else None
 
     def review_submission(
         self, submission_id: int, force: bool = False, user_id: int = None,

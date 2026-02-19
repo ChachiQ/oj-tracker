@@ -309,9 +309,7 @@ def job_status(job_id):
         return jsonify({'error': 'Not found'}), 404
 
     phase_labels = {
-        'classify': '分类',
-        'solution': '思路分析',
-        'full_solution': 'AI 解题',
+        'comprehensive': 'AI 综合分析',
         'review': '代码审查',
     }
 
@@ -338,9 +336,7 @@ def running_job():
         return jsonify({'running': False})
 
     phase_labels = {
-        'classify': '分类',
-        'solution': '思路分析',
-        'full_solution': 'AI 解题',
+        'comprehensive': 'AI 综合分析',
         'review': '代码审查',
     }
 
@@ -373,24 +369,28 @@ def ai_cost_info():
     if user_budget:
         monthly_budget = float(user_budget)
 
-    # Count pending items
-    unclassified = Problem.query.filter(
-        db.or_(Problem.ai_analyzed == False, Problem.difficulty == 0)  # noqa: E712
-    ).count()
+    # Count pending items — comprehensive = problems missing any of the 3 types
+    classified_ids = (
+        db.session.query(AnalysisResult.problem_id_ref)
+        .filter_by(analysis_type="problem_classify")
+    )
+    has_solution_ids = (
+        db.session.query(AnalysisResult.problem_id_ref)
+        .filter_by(analysis_type="problem_solution")
+    )
+    has_full_ids = (
+        db.session.query(AnalysisResult.problem_id_ref)
+        .filter_by(analysis_type="problem_full_solution")
+    )
 
-    no_solution = Problem.query.filter(
+    comprehensive_pending = Problem.query.filter(
         Problem.description.isnot(None),
-        ~Problem.id.in_(
-            db.session.query(AnalysisResult.problem_id_ref)
-            .filter_by(analysis_type="problem_solution")
-        ),
-    ).count()
-
-    no_full_solution = Problem.query.filter(
-        Problem.description.isnot(None),
-        ~Problem.id.in_(
-            db.session.query(AnalysisResult.problem_id_ref)
-            .filter_by(analysis_type="problem_full_solution")
+        db.or_(
+            Problem.ai_analyzed == False,  # noqa: E712
+            Problem.difficulty == 0,
+            ~Problem.id.in_(classified_ids),
+            ~Problem.id.in_(has_solution_ids),
+            ~Problem.id.in_(has_full_ids),
         ),
     ).count()
 
@@ -408,9 +408,7 @@ def ai_cost_info():
         'monthly_cost': round(monthly_cost, 4),
         'monthly_budget': monthly_budget,
         'pending': {
-            'classify': unclassified,
-            'solution': no_solution,
-            'full_solution': no_full_solution,
+            'comprehensive': comprehensive_pending,
             'review': no_review,
         },
     })

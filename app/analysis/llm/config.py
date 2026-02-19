@@ -7,6 +7,7 @@ from __future__ import annotations
 
 MODEL_CONFIG = {
     "claude": {
+        "max_concurrency": 4,
         "models": {
             "claude-haiku-4-5": {
                 "input_price": 1.0,
@@ -21,6 +22,7 @@ MODEL_CONFIG = {
         }
     },
     "openai": {
+        "max_concurrency": 4,
         "models": {
             "gpt-4.1-mini": {
                 "input_price": 0.40,
@@ -35,6 +37,7 @@ MODEL_CONFIG = {
         }
     },
     "zhipu": {
+        "max_concurrency": 3,
         "models": {
             "glm-5": {
                 "input_price": 1.0,
@@ -64,6 +67,18 @@ def get_all_models_for_provider(provider: str) -> list[str]:
     """Return all model identifiers for a given provider."""
     provider_config = MODEL_CONFIG.get(provider, {})
     return list(provider_config.get("models", {}).keys())
+
+
+def get_max_concurrency(provider: str) -> int:
+    """Return the max concurrency setting for a given provider.
+
+    Args:
+        provider: Provider name (e.g. 'claude', 'openai', 'zhipu').
+
+    Returns:
+        Max concurrency value, defaults to 3 if not configured.
+    """
+    return MODEL_CONFIG.get(provider, {}).get("max_concurrency", 3)
 
 
 def get_models_by_tier(tier: str) -> list[dict]:

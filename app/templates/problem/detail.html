@@ -505,6 +505,15 @@ function triggerAnalysis(type, force) {
             analysisLoaded[key] = !!ok;
             resultEl.classList.add('show');
             if (ok && btnEl) updateAnalysisBtn(btnEl, type, true);
+
+            /* When comprehensive analysis completed both parts, eagerly load the sibling */
+            if (data.comprehensive_done) {
+                var siblingType = (type === 'full-solution') ? 'solution' : 'full-solution';
+                var siblingKey = (siblingType === 'full-solution') ? 'fullsolution' : 'solution';
+                if (!analysisLoaded[siblingKey]) {
+                    loadSiblingAnalysis(siblingType);
+                }
+            }
         } else {
             resultEl.innerHTML = '<div class="alert alert-danger">' + (data.error || '分析失败') + '</div>';
             resultEl.classList.add('show');
@@ -518,6 +527,25 @@ function triggerAnalysis(type, force) {
         resultEl.classList.add('show');
         if (btnEl) btnEl.disabled = false;
     });
+}
+
+/* Silently fetch and render the sibling analysis that was generated in the same comprehensive call */
+function loadSiblingAnalysis(type) {
+    var key = type === 'full-solution' ? 'fullsolution' : 'solution';
+    var resultEl = document.getElementById(key + '-result');
+    var btnEl = document.getElementById('btn-' + type);
+
+    apiPost('/api/problem/' + PROBLEM_ID + '/' + type)
+    .then(function(data) {
+        if (data.success) {
+            var ok;
+            if (type === 'full-solution') ok = renderFullSolution(data.analysis, 'fullsolution-result', data.ai_model, data.analyzed_at);
+            else ok = renderSolution(data.analysis, 'solution-result', data.ai_model, data.analyzed_at);
+            analysisLoaded[key] = !!ok;
+            if (ok && btnEl) updateAnalysisBtn(btnEl, type, true);
+        }
+    })
+    .catch(function() { /* silent — user didn't request this */ });
 }
 
 function updateAnalysisBtn(btnEl, type, hasData) {

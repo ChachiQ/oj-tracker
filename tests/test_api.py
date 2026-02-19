@@ -170,7 +170,9 @@ class TestProblemSolutionAPI:
         mock_result.ai_model = "test-model"
 
         with patch('app.analysis.ai_analyzer.AIAnalyzer') as MockAnalyzer:
-            MockAnalyzer.return_value.analyze_problem_solution.return_value = mock_result
+            MockAnalyzer.return_value.analyze_problem_comprehensive.return_value = {
+                'classify': MagicMock(), 'solution': mock_result, 'full_solution': MagicMock(),
+            }
             resp = client.post(f'/api/problem/{pid}/solution')
 
         assert resp.status_code == 200
@@ -205,7 +207,9 @@ class TestProblemSolutionAPI:
         mock_result.ai_model = "test-model"
 
         with patch('app.analysis.ai_analyzer.AIAnalyzer') as MockAnalyzer:
-            MockAnalyzer.return_value.analyze_problem_full_solution.return_value = mock_result
+            MockAnalyzer.return_value.analyze_problem_comprehensive.return_value = {
+                'classify': MagicMock(), 'solution': MagicMock(), 'full_solution': mock_result,
+            }
             resp = client.post(f'/api/problem/{pid}/full-solution')
 
         assert resp.status_code == 200
@@ -224,10 +228,12 @@ class TestProblemSolutionAPI:
         mock_result.ai_model = "test-model"
 
         with patch('app.analysis.ai_analyzer.AIAnalyzer') as MockAnalyzer:
-            MockAnalyzer.return_value.analyze_problem_solution.return_value = mock_result
+            MockAnalyzer.return_value.analyze_problem_comprehensive.return_value = {
+                'classify': MagicMock(), 'solution': mock_result, 'full_solution': MagicMock(),
+            }
             resp = client.post(f'/api/problem/{pid}/solution?force=1')
             assert resp.status_code == 200
-            MockAnalyzer.return_value.analyze_problem_solution.assert_called_once_with(
+            MockAnalyzer.return_value.analyze_problem_comprehensive.assert_called_once_with(
                 pid, force=True, user_id=data['user_id'],
             )
 

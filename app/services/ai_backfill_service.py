@@ -1,12 +1,18 @@
-"""Unified 4-phase AI backfill service.
+"""2-phase AI backfill service with concurrent execution.
 
-Consolidates AI analysis logic previously scattered across SyncService,
-scheduler, and backfill_tags.py. Designed to run in a background thread
-with Flask app context, updating SyncJob progress as it goes.
+Phase 1 (comprehensive): Merges classification + solution approach + full
+solution into a single LLM call per problem via ``analyze_problem_comprehensive``.
+
+Phase 2 (review): Code review of individual submissions (unchanged logic).
+
+Both phases use ``ThreadPoolExecutor`` for concurrent processing, with the
+concurrency limit read from the LLM provider config.
 """
 from __future__ import annotations
 
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from itertools import groupby
 
@@ -15,6 +21,7 @@ from sqlalchemy import func as sa_func
 from app.extensions import db
 from app.models import (
     Problem, Submission, AnalysisResult, PlatformAccount, SyncJob,
+    UserSetting,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,10 +30,15 @@ logger = logging.getLogger(__name__)
 class AIBackfillService:
     def __init__(self, app):
         self.app = app
+        self._progress_lock = threading.Lock()
+
+    # ------------------------------------------------------------------
+    # Public entry point
+    # ------------------------------------------------------------------
 
     def run(self, job_id: int, user_id: int, platform: str = None,
             account_id: int = None, limit: int = 0):
-        """Main entry: run 4-phase AI backfill, updating SyncJob progress."""
+        """Main entry: run 2-phase AI backfill, updating SyncJob progress."""
         with self.app.app_context():
             job = db.session.get(SyncJob, job_id)
             if not job:
@@ -38,30 +50,19 @@ class AIBackfillService:
             db.session.commit()
 
             stats = {
-                'classify_ok': 0, 'classify_total': 0,
-                'solution_ok': 0, 'solution_total': 0,
-                'full_solution_ok': 0, 'full_solution_total': 0,
+                'comprehensive_ok': 0, 'comprehensive_total': 0,
                 'review_ok': 0, 'review_total': 0,
             }
 
             try:
-                from app.analysis.problem_classifier import ProblemClassifier
                 from app.analysis.ai_analyzer import AIAnalyzer
-
-                classifier = ProblemClassifier(app=self.app)
                 analyzer = AIAnalyzer(app=self.app)
 
-                self._run_phase_classify(
-                    job, classifier, stats, user_id, platform, limit
-                )
-                self._run_phase_solution(
-                    job, analyzer, stats, user_id, platform, limit
-                )
-                self._run_phase_full_solution(
-                    job, analyzer, stats, user_id, platform, limit
+                self._run_phase_comprehensive(
+                    job, analyzer, stats, user_id, platform, limit,
                 )
                 self._run_phase_review(
-                    job, analyzer, stats, user_id, platform, account_id, limit
+                    job, analyzer, stats, user_id, platform, account_id, limit,
                 )
 
                 job.status = 'completed'
@@ -77,109 +78,145 @@ class AIBackfillService:
                 job.current_phase = None
                 db.session.commit()
 
-    def _run_phase_classify(self, job, classifier, stats, user_id,
-                            platform, limit):
-        """Phase 1: AI classification of unanalyzed problems."""
-        job.current_phase = 'classify'
+    # ------------------------------------------------------------------
+    # Concurrency helpers
+    # ------------------------------------------------------------------
 
-        query = Problem.query.filter(
-            db.or_(Problem.ai_analyzed == False, Problem.difficulty == 0)  # noqa: E712
-        ).order_by(Problem.created_at.desc())
-        if platform:
-            query = query.filter_by(platform=platform)
-        if limit:
-            query = query.limit(limit)
+    def _get_max_workers(self, user_id: int) -> int:
+        """Determine concurrency from user's AI provider config."""
+        from app.analysis.llm.config import get_max_concurrency
 
-        problems = query.all()
-        stats['classify_total'] = len(problems)
-        job.progress_total = len(problems)
+        provider_name = self.app.config.get("AI_PROVIDER", "zhipu")
+        if user_id:
+            user_prov = UserSetting.get(user_id, 'ai_provider')
+            if user_prov:
+                provider_name = user_prov
+        return get_max_concurrency(provider_name)
+
+    def _run_phase_concurrent(self, job, items, process_fn, stat_ok_key,
+                              stat_total_key, stats, user_id):
+        """Generic concurrent executor for a backfill phase.
+
+        Args:
+            job: SyncJob to update progress on.
+            items: Iterable of work items (problem ids, submission ids, etc.).
+            process_fn: Callable(item, user_id) -> bool. Executed in worker
+                threads with app context.
+            stat_ok_key: Stats dict key for successful count.
+            stat_total_key: Stats dict key for total count.
+            stats: Mutable stats dict.
+            user_id: User id forwarded to process_fn.
+        """
+        item_list = list(items)
+        stats[stat_total_key] = len(item_list)
+        job.progress_total = len(item_list)
         job.progress_current = 0
         db.session.commit()
 
-        for i, p in enumerate(problems, 1):
-            try:
-                if classifier.classify_problem(p.id, user_id=user_id):
-                    stats['classify_ok'] += 1
-            except Exception as e:
-                logger.debug(f"Classify failed for {p.problem_id}: {e}")
-            job.progress_current = i
-            db.session.commit()
+        if not item_list:
+            return
 
-    def _run_phase_solution(self, job, analyzer, stats, user_id,
-                            platform, limit):
-        """Phase 2: Solution analysis for problems missing it."""
-        job.current_phase = 'solution'
+        max_workers = self._get_max_workers(user_id)
+        completed = 0
+        ok_count = 0
+        consecutive_errors = 0
 
-        query = Problem.query.filter(
-            Problem.description.isnot(None),
-            ~Problem.id.in_(
-                db.session.query(AnalysisResult.problem_id_ref)
-                .filter_by(analysis_type="problem_solution")
-            ),
-        )
-        if platform:
-            query = query.filter_by(platform=platform)
-        if limit:
-            query = query.limit(limit)
+        def _run_one(item):
+            with self.app.app_context():
+                return process_fn(item, user_id)
 
-        problems = query.all()
-        stats['solution_total'] = len(problems)
-        job.progress_total = len(problems)
-        job.progress_current = 0
-        db.session.commit()
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_run_one, item): item
+                for item in item_list
+            }
 
-        for i, p in enumerate(problems, 1):
-            try:
-                result = analyzer.analyze_problem_solution(
-                    p.id, user_id=user_id
-                )
-                if result:
-                    stats['solution_ok'] += 1
-            except Exception as e:
-                logger.debug(f"Solution analysis failed for {p.problem_id}: {e}")
-            job.progress_current = i
-            db.session.commit()
+            for future in as_completed(futures):
+                completed += 1
+                try:
+                    if future.result():
+                        ok_count += 1
+                        consecutive_errors = 0
+                    else:
+                        consecutive_errors += 1
+                except Exception:
+                    consecutive_errors += 1
 
-    def _run_phase_full_solution(self, job, analyzer, stats, user_id,
+                with self._progress_lock:
+                    job.progress_current = completed
+                    db.session.commit()
+
+                if consecutive_errors >= 3:
+                    logger.warning(
+                        "AI backfill: 3+ consecutive errors in %s phase",
+                        job.current_phase,
+                    )
+
+        stats[stat_ok_key] = ok_count
+
+    # ------------------------------------------------------------------
+    # Phase 1: Comprehensive (classify + solution + full_solution)
+    # ------------------------------------------------------------------
+
+    def _run_phase_comprehensive(self, job, analyzer, stats, user_id,
                                  platform, limit):
-        """Phase 3: Full solution (code) generation for problems."""
-        job.current_phase = 'full_solution'
+        """Phase 1: Comprehensive analysis for problems missing any of
+        classify / solution / full_solution."""
+        job.current_phase = 'comprehensive'
+
+        # Problems that need comprehensive analysis:
+        # - not classified (ai_analyzed=False or difficulty=0)
+        # - OR missing solution analysis
+        # - OR missing full_solution analysis
+        classified_ids = (
+            db.session.query(AnalysisResult.problem_id_ref)
+            .filter_by(analysis_type="problem_classify")
+        )
+        has_solution_ids = (
+            db.session.query(AnalysisResult.problem_id_ref)
+            .filter_by(analysis_type="problem_solution")
+        )
+        has_full_ids = (
+            db.session.query(AnalysisResult.problem_id_ref)
+            .filter_by(analysis_type="problem_full_solution")
+        )
 
         query = Problem.query.filter(
             Problem.description.isnot(None),
-            ~Problem.id.in_(
-                db.session.query(AnalysisResult.problem_id_ref)
-                .filter_by(analysis_type="problem_full_solution")
+            db.or_(
+                Problem.ai_analyzed == False,  # noqa: E712
+                Problem.difficulty == 0,
+                ~Problem.id.in_(classified_ids),
+                ~Problem.id.in_(has_solution_ids),
+                ~Problem.id.in_(has_full_ids),
             ),
-        )
+        ).order_by(Problem.created_at.desc())
+
         if platform:
             query = query.filter_by(platform=platform)
         if limit:
             query = query.limit(limit)
 
-        problems = query.all()
-        stats['full_solution_total'] = len(problems)
-        job.progress_total = len(problems)
-        job.progress_current = 0
-        db.session.commit()
+        problem_ids = [p.id for p in query.all()]
 
-        for i, p in enumerate(problems, 1):
-            try:
-                result = analyzer.analyze_problem_full_solution(
-                    p.id, user_id=user_id
-                )
-                if result:
-                    stats['full_solution_ok'] += 1
-            except Exception as e:
-                logger.debug(
-                    f"Full solution failed for {p.problem_id}: {e}"
-                )
-            job.progress_current = i
-            db.session.commit()
+        def _process(pid, uid):
+            result = analyzer.analyze_problem_comprehensive(
+                pid, force=False, user_id=uid,
+            )
+            return result is not None and len(result) > 0
+
+        self._run_phase_concurrent(
+            job, problem_ids, _process,
+            'comprehensive_ok', 'comprehensive_total', stats, user_id,
+        )
+
+    # ------------------------------------------------------------------
+    # Phase 2: Code review (unchanged logic, now concurrent)
+    # ------------------------------------------------------------------
 
     def _run_phase_review(self, job, analyzer, stats, user_id,
                           platform, account_id, limit):
-        """Phase 4: Code review of submissions."""
+        """Phase 2: Code review of submissions."""
         job.current_phase = 'review'
 
         # Count existing reviews per (problem, account)
@@ -243,17 +280,13 @@ class AIBackfillService:
             )
             submissions.extend(subs[:remaining])
 
-        stats['review_total'] = len(submissions)
-        job.progress_total = len(submissions)
-        job.progress_current = 0
-        db.session.commit()
+        submission_ids = [s.id for s in submissions]
 
-        for i, sub in enumerate(submissions, 1):
-            try:
-                result = analyzer.review_submission(sub.id, user_id=user_id)
-                if result:
-                    stats['review_ok'] += 1
-            except Exception as e:
-                logger.debug(f"Review failed for submission {sub.id}: {e}")
-            job.progress_current = i
-            db.session.commit()
+        def _process(sid, uid):
+            result = analyzer.review_submission(sid, user_id=uid)
+            return result is not None
+
+        self._run_phase_concurrent(
+            job, submission_ids, _process,
+            'review_ok', 'review_total', stats, user_id,
+        )
