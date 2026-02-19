@@ -312,6 +312,76 @@ def _safe_parse_result(result, comprehensive_done=False):
     return resp
 
 
+@api_bp.route('/problem/<int:problem_id>/classify', methods=['POST'])
+@login_required
+def problem_classify(problem_id):
+    """Trigger AI classification for a problem and return interaction details."""
+    problem = _user_owns_problem(problem_id)
+    if not problem:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    from app.extensions import db
+    from app.analysis.problem_classifier import ProblemClassifier
+    from app.analysis.prompts.problem_classify import build_classify_prompt
+
+    # Build prompt (for display in interaction log)
+    platform_tags = None
+    if problem.platform_tags:
+        try:
+            platform_tags = json.loads(problem.platform_tags)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    prompt_messages = build_classify_prompt(
+        title=problem.title or problem.problem_id,
+        platform=problem.platform,
+        difficulty_raw=problem.difficulty_raw,
+        description=problem.description,
+        input_desc=problem.input_desc,
+        output_desc=problem.output_desc,
+        examples=problem.examples,
+        hint=problem.hint,
+        platform_tags=platform_tags,
+    )
+
+    # Execute classification with force=True
+    classifier = ProblemClassifier(app=current_app._get_current_object())
+    success = classifier.classify_problem(problem_id, user_id=current_user.id, force=True)
+
+    # Read back results
+    db.session.refresh(problem)
+    ar = AnalysisResult.query.filter_by(
+        problem_id_ref=problem_id, analysis_type="problem_classify",
+    ).first()
+
+    # Parse knowledge_points
+    ai_tags = []
+    if problem.ai_tags:
+        try:
+            ai_tags = json.loads(problem.ai_tags)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    analyzed_at_str = ''
+    if ar and ar.analyzed_at:
+        display_dt = current_app.to_display_tz(ar.analyzed_at)
+        analyzed_at_str = display_dt.strftime('%Y-%m-%d %H:%M')
+
+    return jsonify({
+        'success': success,
+        'difficulty': problem.difficulty,
+        'problem_type': problem.ai_problem_type or '',
+        'knowledge_points': ai_tags,
+        'prompt': prompt_messages[0]['content'] if prompt_messages else '',
+        'raw_response': ar.result_json if ar else '',
+        'ai_model': ar.ai_model if ar else '',
+        'analyzed_at': analyzed_at_str,
+        'cost_usd': round(ar.cost_usd, 6) if ar and ar.cost_usd else 0,
+        'token_cost': ar.token_cost if ar else 0,
+        'error': problem.ai_analysis_error or '',
+    })
+
+
 @api_bp.route('/problem/<int:problem_id>/solution', methods=['POST'])
 @login_required
 def problem_solution(problem_id):
@@ -476,6 +546,10 @@ def problem_resync(problem_id):
                     problem.tags.append(tag)
         problem.last_scanned_at = datetime.utcnow()
         db.session.commit()
+        logger.info(
+            f"Resync OK for {problem.platform}:{problem.problem_id} — "
+            f"title={scraped.title!r}, tags={scraped.tags}"
+        )
     except Exception as e:
         db.session.rollback()
         logger.error(f"Resync update failed for {problem.platform}:{problem.problem_id}: {e}")
