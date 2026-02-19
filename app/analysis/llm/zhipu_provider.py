@@ -105,11 +105,19 @@ class ZhipuProvider(BaseLLMProvider):
         )
         latency_ms = int((time.time() - start_time) * 1000)
 
-        # Extract content
+        # Extract content — reasoning models may swap content/reasoning_content
         choice = response.choices[0]
         content = choice.message.content or ""
         reasoning = getattr(choice.message, 'reasoning_content', None) or ""
-        if not content and reasoning:
+        if content and reasoning:
+            c_stripped = content.strip()
+            r_stripped = reasoning.strip()
+            content_looks_json = c_stripped.startswith('{') or c_stripped.startswith('```')
+            reasoning_looks_json = r_stripped.startswith('{') or r_stripped.startswith('```')
+            if not content_looks_json and reasoning_looks_json:
+                logger.info(f"Zhipu: swapping content/reasoning_content (reasoning has JSON, {len(reasoning)} chars)")
+                content = reasoning
+        elif not content and reasoning:
             logger.info(f"Zhipu: content empty, using reasoning_content ({len(reasoning)} chars)")
             content = reasoning
 

@@ -63,14 +63,9 @@
         <div class="chart-container">
             <div class="d-flex justify-content-between align-items-center">
                 <div class="chart-title mb-0"><i class="bi bi-robot"></i> AI 评级</div>
-                <div>
-                    <button class="btn btn-sm btn-outline-primary" id="btn-classify" onclick="triggerClassify()">
-                        <i class="bi bi-arrow-clockwise"></i> 重新评级
-                    </button>
-                    <button class="btn btn-sm btn-success ms-1" id="btn-comprehensive" onclick="triggerComprehensive()">
-                        <i class="bi bi-stars"></i> 一键分析
-                    </button>
-                </div>
+                <button class="btn btn-sm btn-success" id="btn-comprehensive" onclick="triggerComprehensive()">
+                    <i class="bi bi-stars"></i> 一键分析
+                </button>
             </div>
 
             <!-- 现有结果（静态渲染） -->
@@ -103,7 +98,7 @@
                     AI 分类失败（已重试 {{ problem.ai_retry_count }} 次）：{{ problem.ai_analysis_error }}
                 </div>
                 {% else %}
-                <p class="text-muted mb-0 mt-2">尚未进行 AI 评级，点击上方按钮获取。</p>
+                <p class="text-muted mb-0 mt-2">尚未进行 AI 分析，点击「一键分析」获取。</p>
                 {% endif %}
             </div>
 
@@ -125,13 +120,11 @@
 
         <!-- AI Solution Approach -->
         <div class="chart-container">
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="chart-title mb-0"><i class="bi bi-lightbulb"></i> 思路解析</div>
-                <button class="btn btn-sm btn-outline-primary" id="btn-solution"
-                        onclick="toggleAnalysis('solution')">
-                    <i class="bi bi-lightbulb"></i> 思路解析
-                </button>
-            </div>
+            <a class="chart-title mb-0 text-decoration-none d-block" role="button"
+               data-bs-toggle="collapse" href="#solution-result" id="solution-toggle">
+                <i class="bi bi-lightbulb"></i> 思路解析
+                <i class="bi bi-chevron-down ms-1 small d-none" id="solution-chevron"></i>
+            </a>
             <div class="collapse mt-3" id="solution-result"></div>
             <div id="solution-loading" class="text-center py-3 d-none">
                 <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
@@ -142,13 +135,11 @@
 
         <!-- AI Full Solution -->
         <div class="chart-container">
-            <div class="d-flex justify-content-between align-items-center">
-                <div class="chart-title mb-0"><i class="bi bi-code-square"></i> AI 解题</div>
-                <button class="btn btn-sm btn-outline-primary" id="btn-full-solution"
-                        onclick="toggleAnalysis('full-solution')">
-                    <i class="bi bi-code-square"></i> AI 解题
-                </button>
-            </div>
+            <a class="chart-title mb-0 text-decoration-none d-block" role="button"
+               data-bs-toggle="collapse" href="#fullsolution-result" id="fullsolution-toggle">
+                <i class="bi bi-code-square"></i> AI 解题
+                <i class="bi bi-chevron-down ms-1 small d-none" id="fullsolution-chevron"></i>
+            </a>
             <div class="collapse mt-3" id="fullsolution-result"></div>
             <div id="fullsolution-loading" class="text-center py-3 d-none">
                 <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
@@ -337,31 +328,30 @@ function stopTimer(loadingEl) {
 var analysisLoaded = { solution: false, fullsolution: false };
 var reviewLoaded = {};
 
-function renderMeta(aiModel, analyzedAt, refreshFn) {
-    var html = '<div class="border-top mt-3 pt-2 d-flex justify-content-between align-items-center">' +
+function showChevron(key) {
+    var chevron = document.getElementById(key + '-chevron');
+    if (chevron) chevron.classList.remove('d-none');
+}
+
+function renderMeta(aiModel, analyzedAt) {
+    return '<div class="border-top mt-3 pt-2">' +
         '<small class="text-muted"><i class="bi bi-robot"></i> ' + (aiModel || '-') +
-        ' &middot; <i class="bi bi-clock"></i> ' + (analyzedAt || '-') + '</small>';
-    if (refreshFn) {
-        html += '<button class="btn btn-sm btn-outline-warning ms-2" onclick="' + refreshFn + '" title="重新生成">' +
-            '<i class="bi bi-arrow-clockwise"></i> 刷新</button>';
-    }
-    html += '</div>';
-    return html;
+        ' &middot; <i class="bi bi-clock"></i> ' + (analyzedAt || '-') + '</small></div>';
 }
 
 /* Render empty/error state with a prominent regenerate button */
-function renderEmpty(containerId, message, regenerateFn) {
+function renderEmpty(containerId, message) {
     var container = document.getElementById(containerId);
     container.innerHTML = '<div class="text-center py-3">' +
         '<p class="text-muted mb-2">' + message + '</p>' +
-        '<button class="btn btn-sm btn-primary" onclick="' + regenerateFn + '">' +
-        '<i class="bi bi-arrow-clockwise"></i> 重新生成</button></div>';
+        '<button class="btn btn-sm btn-success" onclick="triggerComprehensive()">' +
+        '<i class="bi bi-stars"></i> 一键分析</button></div>';
 }
 
 function renderSolution(data, containerId, aiModel, analyzedAt) {
     var container = document.getElementById(containerId);
     if (!data || !data.approach) {
-        renderEmpty(containerId, '分析结果为空', "triggerAnalysis('solution',true)");
+        renderEmpty(containerId, '分析结果为空');
         return false;
     }
     var html = '';
@@ -383,7 +373,7 @@ function renderSolution(data, containerId, aiModel, analyzedAt) {
         data.common_pitfalls.forEach(function(p) { html += '<li>' + p + '</li>'; });
         html += '</ul>';
     }
-    html += renderMeta(aiModel, analyzedAt, "confirmRefresh('solution')");
+    html += renderMeta(aiModel, analyzedAt);
     container.innerHTML = html;
     return true;
 }
@@ -391,7 +381,7 @@ function renderSolution(data, containerId, aiModel, analyzedAt) {
 function renderFullSolution(data, containerId, aiModel, analyzedAt) {
     var container = document.getElementById(containerId);
     if (!data || (!data.approach && !data.code)) {
-        renderEmpty(containerId, '解题结果为空', "triggerAnalysis('full-solution',true)");
+        renderEmpty(containerId, '解题结果为空');
         return false;
     }
     var html = '';
@@ -404,7 +394,7 @@ function renderFullSolution(data, containerId, aiModel, analyzedAt) {
         data.alternative_approaches.forEach(function(a) { html += '<li><strong>' + a.name + '：</strong>' + a.brief + '</li>'; });
         html += '</ul>';
     }
-    html += renderMeta(aiModel, analyzedAt, "confirmRefresh('full-solution')");
+    html += renderMeta(aiModel, analyzedAt);
     container.innerHTML = html;
     return true;
 }
@@ -501,33 +491,6 @@ function resyncProblem() {
     });
 }
 
-/* AI 评级 (classify) */
-function triggerClassify() {
-    if (!confirm('确定要重新评级吗？这将消耗 AI 额度。')) return;
-    var loadingEl = document.getElementById('classify-loading');
-    var resultEl = document.getElementById('classify-result');
-    var btnEl = document.getElementById('btn-classify');
-    var logEl = document.getElementById('classify-log');
-
-    btnEl.disabled = true;
-    loadingEl.classList.remove('d-none');
-    startTimer(loadingEl);
-
-    apiPost('/api/problem/' + PROBLEM_ID + '/classify')
-    .then(function(data) {
-        stopTimer(loadingEl);
-        loadingEl.classList.add('d-none');
-        btnEl.disabled = false;
-        renderClassifyResult(data, resultEl);
-        renderClassifyLog(data, logEl);
-    })
-    .catch(function(err) {
-        stopTimer(loadingEl);
-        loadingEl.classList.add('d-none');
-        btnEl.disabled = false;
-        resultEl.innerHTML = '<div class="alert alert-danger mt-2">请求失败: ' + escapeHtml(err.message) + '</div>';
-    });
-}
 
 function triggerComprehensive() {
     if (!confirm('一键分析将生成：评级 + 思路解析 + 完整题解。\n这将消耗较多 AI 额度，确认继续？')) return;
@@ -535,11 +498,9 @@ function triggerComprehensive() {
     var loadingEl = document.getElementById('classify-loading');
     var resultEl = document.getElementById('classify-result');
     var btnEl = document.getElementById('btn-comprehensive');
-    var classifyBtn = document.getElementById('btn-classify');
 
     loadingEl.querySelector('.ms-2').textContent = 'AI 正在全面分析...';
     btnEl.disabled = true;
-    classifyBtn.disabled = true;
     loadingEl.classList.remove('d-none');
     startTimer(loadingEl);
 
@@ -549,7 +510,6 @@ function triggerComprehensive() {
         loadingEl.classList.add('d-none');
         loadingEl.querySelector('.ms-2').textContent = 'AI 正在评级...';
         btnEl.disabled = false;
-        classifyBtn.disabled = false;
 
         if (!data.success) {
             resultEl.innerHTML = '<div class="alert alert-danger mt-2">' + escapeHtml(data.error || '分析失败') + '</div>';
@@ -562,16 +522,16 @@ function triggerComprehensive() {
             var solOk = renderSolution(data.solution.analysis, 'solution-result',
                 data.solution.ai_model, data.solution.analyzed_at);
             analysisLoaded.solution = !!solOk;
+            if (solOk) showChevron('solution');
             document.getElementById('solution-result').classList.add('show');
-            if (solOk) updateAnalysisBtn(document.getElementById('btn-solution'), 'solution', true);
         }
 
         if (data.full_solution && data.full_solution.analysis) {
             var fsOk = renderFullSolution(data.full_solution.analysis, 'fullsolution-result',
                 data.full_solution.ai_model, data.full_solution.analyzed_at);
             analysisLoaded.fullsolution = !!fsOk;
+            if (fsOk) showChevron('fullsolution');
             document.getElementById('fullsolution-result').classList.add('show');
-            if (fsOk) updateAnalysisBtn(document.getElementById('btn-full-solution'), 'full-solution', true);
         }
     })
     .catch(function(err) {
@@ -579,7 +539,6 @@ function triggerComprehensive() {
         loadingEl.classList.add('d-none');
         loadingEl.querySelector('.ms-2').textContent = 'AI 正在评级...';
         btnEl.disabled = false;
-        classifyBtn.disabled = false;
         resultEl.innerHTML = '<div class="alert alert-danger mt-2">请求失败: ' + escapeHtml(err.message) + '</div>';
     });
 }
@@ -660,103 +619,9 @@ function renderClassifyLog(data, logWrapper) {
     logWrapper.classList.add('show');
 }
 
-/* Confirm before refresh */
-function confirmRefresh(type) {
-    if (confirm('确定要重新生成分析吗？这将消耗 AI 额度。')) {
-        triggerAnalysis(type, true);
-    }
-}
 function confirmRefreshReview(subId) {
     if (confirm('确定要重新生成解析吗？这将消耗 AI 额度。')) {
         triggerReview(subId, true);
-    }
-}
-
-/* Problem-level: toggle panel, auto-trigger if no data */
-function toggleAnalysis(type) {
-    var key = type === 'full-solution' ? 'fullsolution' : 'solution';
-    var resultEl = document.getElementById(key + '-result');
-
-    if (analysisLoaded[key]) {
-        var bsCollapse = bootstrap.Collapse.getOrCreateInstance(resultEl);
-        bsCollapse.toggle();
-    } else {
-        triggerAnalysis(type, false);
-    }
-}
-
-function triggerAnalysis(type, force) {
-    var key = type === 'full-solution' ? 'fullsolution' : 'solution';
-    var loadingEl = document.getElementById(key + '-loading');
-    var resultEl = document.getElementById(key + '-result');
-    var btnEl = document.getElementById('btn-' + type);
-
-    loadingEl.classList.remove('d-none');
-    startTimer(loadingEl);
-    if (btnEl) btnEl.disabled = true;
-
-    var url = '/api/problem/' + PROBLEM_ID + '/' + type + (force ? '?force=1' : '');
-    apiPost(url)
-    .then(function(data) {
-        stopTimer(loadingEl);
-        loadingEl.classList.add('d-none');
-        if (data.success) {
-            var ok;
-            if (type === 'full-solution') ok = renderFullSolution(data.analysis, 'fullsolution-result', data.ai_model, data.analyzed_at);
-            else ok = renderSolution(data.analysis, 'solution-result', data.ai_model, data.analyzed_at);
-            analysisLoaded[key] = !!ok;
-            resultEl.classList.add('show');
-            if (ok && btnEl) updateAnalysisBtn(btnEl, type, true);
-
-            /* When comprehensive analysis completed both parts, eagerly load the sibling */
-            if (data.comprehensive_done) {
-                var siblingType = (type === 'full-solution') ? 'solution' : 'full-solution';
-                var siblingKey = (siblingType === 'full-solution') ? 'fullsolution' : 'solution';
-                if (!analysisLoaded[siblingKey]) {
-                    loadSiblingAnalysis(siblingType);
-                }
-            }
-        } else {
-            resultEl.innerHTML = '<div class="alert alert-danger">' + (data.error || '分析失败') + '</div>';
-            resultEl.classList.add('show');
-        }
-        if (btnEl) btnEl.disabled = false;
-    })
-    .catch(function(err) {
-        stopTimer(loadingEl);
-        loadingEl.classList.add('d-none');
-        resultEl.innerHTML = '<div class="alert alert-danger">请求失败: ' + err.message + '</div>';
-        resultEl.classList.add('show');
-        if (btnEl) btnEl.disabled = false;
-    });
-}
-
-/* Silently fetch and render the sibling analysis that was generated in the same comprehensive call */
-function loadSiblingAnalysis(type) {
-    var key = type === 'full-solution' ? 'fullsolution' : 'solution';
-    var resultEl = document.getElementById(key + '-result');
-    var btnEl = document.getElementById('btn-' + type);
-
-    apiPost('/api/problem/' + PROBLEM_ID + '/' + type)
-    .then(function(data) {
-        if (data.success) {
-            var ok;
-            if (type === 'full-solution') ok = renderFullSolution(data.analysis, 'fullsolution-result', data.ai_model, data.analyzed_at);
-            else ok = renderSolution(data.analysis, 'solution-result', data.ai_model, data.analyzed_at);
-            analysisLoaded[key] = !!ok;
-            if (ok && btnEl) updateAnalysisBtn(btnEl, type, true);
-        }
-    })
-    .catch(function() { /* silent — user didn't request this */ });
-}
-
-function updateAnalysisBtn(btnEl, type, hasData) {
-    var icon = type === 'full-solution' ? 'code-square' : 'lightbulb';
-    var label = type === 'full-solution' ? 'AI 解题' : '思路解析';
-    if (hasData) {
-        btnEl.innerHTML = '<i class="bi bi-' + icon + '"></i> ' + label + ' <i class="bi bi-chevron-down"></i>';
-    } else {
-        btnEl.innerHTML = '<i class="bi bi-' + icon + '"></i> ' + label;
     }
 }
 
@@ -821,10 +686,9 @@ document.addEventListener('DOMContentLoaded', function() {
             '{{ solution_analysis.ai_model or "" }}',
             '{{ solution_analysis.analyzed_at|datefmt }}');
         analysisLoaded.solution = !!solOk;
-        if (solOk) updateAnalysisBtn(document.getElementById('btn-solution'), 'solution', true);
+        if (solOk) showChevron('solution');
     } catch(e) {
-        /* JSON parse failed: show empty state with regenerate */
-        renderEmpty('solution-result', '分析结果异常', "triggerAnalysis('solution',true)");
+        renderEmpty('solution-result', '分析结果异常');
     }
     {% endif %}
 
@@ -835,9 +699,9 @@ document.addEventListener('DOMContentLoaded', function() {
             '{{ full_solution.ai_model or "" }}',
             '{{ full_solution.analyzed_at|datefmt }}');
         analysisLoaded.fullsolution = !!fsOk;
-        if (fsOk) updateAnalysisBtn(document.getElementById('btn-full-solution'), 'full-solution', true);
+        if (fsOk) showChevron('fullsolution');
     } catch(e) {
-        renderEmpty('fullsolution-result', '解题结果异常', "triggerAnalysis('full-solution',true)");
+        renderEmpty('fullsolution-result', '解题结果异常');
     }
     {% endif %}
 
@@ -854,6 +718,16 @@ document.addEventListener('DOMContentLoaded', function() {
     } catch(e) {}
     {% endif %}
     {% endfor %}
+
+    /* Track collapse toggle icons for solution / full-solution */
+    ['solution', 'fullsolution'].forEach(function(key) {
+        var panel = document.getElementById(key + '-result');
+        var chevron = document.getElementById(key + '-chevron');
+        if (panel && chevron) {
+            panel.addEventListener('show.bs.collapse', function() { chevron.className = 'bi bi-chevron-up ms-1 small'; });
+            panel.addEventListener('hide.bs.collapse', function() { chevron.className = 'bi bi-chevron-down ms-1 small'; });
+        }
+    });
 
     /* Track collapse toggle icons for submissions */
     document.querySelectorAll('[id^="ai-panel-"]').forEach(function(panel) {

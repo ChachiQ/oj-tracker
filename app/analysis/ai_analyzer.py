@@ -666,7 +666,7 @@ class AIAnalyzer:
 
         try:
             provider, model = self._get_llm("basic", user_id=user_id)
-            response = provider.chat(messages, model=model, max_tokens=8192)
+            response = provider.chat(messages, model=model, max_tokens=16384)
         except Exception as e:
             logger.error(f"Comprehensive analysis LLM call failed for {problem_id}: {e}")
             return None
