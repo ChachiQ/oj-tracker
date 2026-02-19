@@ -459,16 +459,26 @@ function highlightCode(container) {
     });
 }
 
-function apiPost(url) {
+function apiPost(url, timeoutMs) {
+    var controller = new AbortController();
+    var timeoutId = timeoutMs ? setTimeout(function() { controller.abort(); }, timeoutMs) : null;
     return fetch(url, {
         method: 'POST',
         headers: {
             'X-CSRFToken': CSRF_TOKEN,
             'X-Requested-With': 'XMLHttpRequest'
-        }
+        },
+        signal: controller.signal
     }).then(function(r) {
+        if (timeoutId) clearTimeout(timeoutId);
         if (!r.ok) return r.text().then(function(t) { throw new Error('HTTP ' + r.status); });
         return r.json();
+    }).catch(function(err) {
+        if (timeoutId) clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+            throw new Error('请求超时（AI 分析时间过长，请稍后重试）');
+        }
+        throw err;
     });
 }
 
@@ -511,7 +521,7 @@ function triggerComprehensive() {
     loadingEl.classList.remove('d-none');
     startTimer(loadingEl);
 
-    apiPost('/api/problem/' + PROBLEM_ID + '/comprehensive')
+    apiPost('/api/problem/' + PROBLEM_ID + '/comprehensive', 660000)
     .then(function(data) {
         stopTimer(loadingEl);
         loadingEl.classList.add('d-none');
@@ -667,7 +677,7 @@ function triggerReview(subId, force) {
     startTimer(loadingEl);
 
     var url = '/api/submission/' + subId + '/review' + (force ? '?force=1' : '');
-    apiPost(url)
+    apiPost(url, 300000)
     .then(function(data) {
         stopTimer(loadingEl);
         loadingEl.classList.add('d-none');

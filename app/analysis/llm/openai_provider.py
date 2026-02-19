@@ -51,7 +51,7 @@ class OpenAIProvider(BaseLLMProvider):
     def __init__(self, api_key: str = None):
         super().__init__(api_key=api_key)
         if _OPENAI_AVAILABLE and api_key:
-            self._client = openai.OpenAI(api_key=api_key)
+            self._client = openai.OpenAI(api_key=api_key, timeout=600.0)
         else:
             self._client = None
 
@@ -65,7 +65,7 @@ class OpenAIProvider(BaseLLMProvider):
                 )
             if not self.api_key:
                 raise ValueError("OpenAI API key is required.")
-            self._client = openai.OpenAI(api_key=self.api_key)
+            self._client = openai.OpenAI(api_key=self.api_key, timeout=600.0)
         return self._client
 
     def chat(

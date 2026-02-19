@@ -52,7 +52,7 @@ class ClaudeProvider(BaseLLMProvider):
     def __init__(self, api_key: str = None):
         super().__init__(api_key=api_key)
         if _ANTHROPIC_AVAILABLE and api_key:
-            self._client = anthropic.Anthropic(api_key=api_key)
+            self._client = anthropic.Anthropic(api_key=api_key, timeout=600.0)
         else:
             self._client = None
 
@@ -66,7 +66,7 @@ class ClaudeProvider(BaseLLMProvider):
                 )
             if not self.api_key:
                 raise ValueError("Anthropic API key is required.")
-            self._client = anthropic.Anthropic(api_key=self.api_key)
+            self._client = anthropic.Anthropic(api_key=self.api_key, timeout=600.0)
         return self._client
 
     def chat(

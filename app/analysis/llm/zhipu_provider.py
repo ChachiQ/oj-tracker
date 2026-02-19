@@ -50,7 +50,7 @@ class ZhipuProvider(BaseLLMProvider):
     def __init__(self, api_key: str = None):
         super().__init__(api_key=api_key)
         if _ZHIPU_AVAILABLE and api_key:
-            self._client = ZhipuAI(api_key=api_key)
+            self._client = ZhipuAI(api_key=api_key, timeout=600)
         else:
             self._client = None
 
@@ -66,7 +66,7 @@ class ZhipuProvider(BaseLLMProvider):
                 raise ValueError("Zhipu API key is required.")
             from zhipuai import ZhipuAI
 
-            self._client = ZhipuAI(api_key=self.api_key)
+            self._client = ZhipuAI(api_key=self.api_key, timeout=600)
         return self._client
 
     def chat(
