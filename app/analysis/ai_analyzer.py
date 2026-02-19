@@ -71,12 +71,25 @@ _DIFFICULTY_TEXT_MAP = {
 def _parse_difficulty(raw_value) -> int | None:
     """尝试将 LLM 返回的 difficulty 值解析为 1-10 整数。
 
-    支持：整数、浮点数、数字字符串、中文难度描述。
+    支持：整数、浮点数、数字字符串、中文难度描述、
+    "4/10" 分数格式、"难度：3" / "difficulty: 5" 嵌入格式、
+    dict 如 {"overall": 3} 递归提取。
     返回 None 表示无法解析。
     """
     if raw_value is None:
         return None
-    # 尝试数字
+
+    # dict → 递归提取 "overall" 或第一个值
+    if isinstance(raw_value, dict):
+        if "overall" in raw_value:
+            return _parse_difficulty(raw_value["overall"])
+        for v in raw_value.values():
+            result = _parse_difficulty(v)
+            if result is not None:
+                return result
+        return None
+
+    # 尝试直接数字
     try:
         val = int(float(raw_value))  # 处理 "5.0" 等情况
         if 1 <= val <= 10:
@@ -84,10 +97,30 @@ def _parse_difficulty(raw_value) -> int | None:
         return None
     except (ValueError, TypeError):
         pass
-    # 尝试中文映射
+
     if isinstance(raw_value, str):
-        text = raw_value.strip().lower()
-        return _DIFFICULTY_TEXT_MAP.get(text)
+        text = raw_value.strip()
+
+        # "4/10" 格式 → 提取分子
+        if '/' in text:
+            import re
+            m = re.match(r'(\d+)\s*/\s*\d+', text)
+            if m:
+                val = int(m.group(1))
+                if 1 <= val <= 10:
+                    return val
+
+        # "难度：3" / "difficulty: 5" → 提取嵌入数字
+        import re
+        m = re.search(r'(\d+)', text)
+        if m:
+            val = int(m.group(1))
+            if 1 <= val <= 10:
+                return val
+
+        # 中文映射
+        return _DIFFICULTY_TEXT_MAP.get(text.lower())
+
     return None
 
 
@@ -611,24 +644,6 @@ class AIAnalyzer:
         if not problem or not problem.description:
             return None
 
-        # Delete old records: force → all; otherwise → only missing/invalid
-        if force:
-            for atype in analysis_types:
-                old = AnalysisResult.query.filter_by(
-                    problem_id_ref=problem_id, analysis_type=atype,
-                ).first()
-                if old:
-                    db.session.delete(old)
-        else:
-            for atype in analysis_types:
-                if atype not in existing_types:
-                    old = AnalysisResult.query.filter_by(
-                        problem_id_ref=problem_id, analysis_type=atype,
-                    ).first()
-                    if old:
-                        db.session.delete(old)
-        db.session.commit()
-
         # Parse platform_tags
         platform_tags = None
         if problem.platform_tags:
@@ -662,6 +677,19 @@ class AIAnalyzer:
         except (json.JSONDecodeError, TypeError):
             logger.error(f"Comprehensive analysis JSON parse failed for {problem_id}")
             return None
+
+        # Delete old records AFTER LLM success + JSON parse — prevents data loss
+        if force:
+            for atype in analysis_types:
+                AnalysisResult.query.filter_by(
+                    problem_id_ref=problem_id, analysis_type=atype,
+                ).delete()
+        else:
+            for atype in analysis_types:
+                if atype not in existing_types:
+                    AnalysisResult.query.filter_by(
+                        problem_id_ref=problem_id, analysis_type=atype,
+                    ).delete()
 
         total_cost = response.cost or 0
         total_tokens = (response.input_tokens or 0) + (response.output_tokens or 0)

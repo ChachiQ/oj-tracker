@@ -171,11 +171,14 @@ class TestProblemClassifier:
         classifier = ProblemClassifier(app=app)
         result = classifier.classify_problem(problem.id)
 
-        assert result is True
+        assert result is False
         p = Problem.query.get(problem.id)
         assert p.ai_analyzed is True
         # Should store raw content since parsing failed
         assert p.ai_tags == "This is not valid JSON at all"
+        # Should record parse error for retry eligibility
+        assert p.ai_analysis_error is not None
+        assert "JSON parse failed" in p.ai_analysis_error
 
     @patch('app.analysis.problem_classifier.get_provider')
     def test_classify_extracts_json_from_text(self, mock_get_provider, app, db):

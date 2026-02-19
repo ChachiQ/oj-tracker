@@ -16,6 +16,7 @@ from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import Problem, Tag, UserSetting, AnalysisResult
+from .ai_analyzer import _clean_llm_json
 from .llm import get_provider
 from .llm.config import MODEL_CONFIG
 from .prompts.problem_classify import build_classify_prompt
@@ -181,20 +182,11 @@ class ProblemClassifier:
             )
 
             # Parse response and persist results
+            cleaned = _clean_llm_json(response.content)
             try:
-                parsed = json.loads(response.content)
-            except json.JSONDecodeError:
-                # Try to extract JSON from response
-                content = response.content
-                start = content.find('{')
-                end = content.rfind('}')
-                if start != -1 and end != -1:
-                    try:
-                        parsed = json.loads(content[start:end + 1])
-                    except json.JSONDecodeError:
-                        parsed = None
-                else:
-                    parsed = None
+                parsed = json.loads(cleaned)
+            except (json.JSONDecodeError, TypeError):
+                parsed = None
 
             if parsed:
                 # Store raw AI response in ai_tags
@@ -220,23 +212,56 @@ class ProblemClassifier:
                 difficulty_val = _parse_difficulty(overall)
                 if difficulty_val:
                     problem.difficulty = difficulty_val
+                    problem.ai_analysis_error = None
                 else:
                     logger.warning(
                         f"Unparseable difficulty for problem {problem_id}: {overall!r}"
                     )
-                    # difficulty 保持 0（未评级），skip 逻辑（L147）会允许下次重试
+                    # difficulty 保持 0（未评级），记录错误便于重试
+                    problem.ai_analysis_error = f"unparseable difficulty: {overall!r}"
+
+                problem.ai_analyzed = True
             else:
                 problem.ai_tags = response.content
                 problem.ai_problem_type = ""
+                problem.ai_analyzed = True
+                problem.ai_analysis_error = f"classify JSON parse failed: {response.content[:200]}"
 
-            problem.ai_analyzed = True
-            problem.ai_analysis_error = None  # Clear any previous error
+                # Still record cost even on parse failure
+                AnalysisResult.query.filter_by(
+                    problem_id_ref=problem.id,
+                    analysis_type="problem_classify",
+                ).delete()
+
+                cost_record = AnalysisResult(
+                    problem_id_ref=problem.id,
+                    analysis_type="problem_classify",
+                    result_json=response.content,
+                    summary="",
+                    ai_model=model or "",
+                    token_cost=(response.input_tokens + response.output_tokens),
+                    cost_usd=response.cost,
+                    analyzed_at=datetime.utcnow(),
+                )
+                db.session.add(cost_record)
+                db.session.commit()
+                logger.warning(
+                    f"Classify JSON parse failed for problem {problem_id}, "
+                    f"raw response stored"
+                )
+                return False
+
+            # Delete old classify records to prevent duplicates
+            AnalysisResult.query.filter_by(
+                problem_id_ref=problem.id,
+                analysis_type="problem_classify",
+            ).delete()
 
             # Record cost so budget tracking can see classification spending
             cost_record = AnalysisResult(
                 problem_id_ref=problem.id,
                 analysis_type="problem_classify",
-                result_json=response.content,
+                result_json=cleaned,
                 summary=problem.ai_problem_type,
                 ai_model=model or "",
                 token_cost=(response.input_tokens + response.output_tokens),
