@@ -146,11 +146,14 @@ class AIBackfillService:
                     job.progress_current = completed
                     db.session.commit()
 
-                if consecutive_errors >= 3:
+                if consecutive_errors >= 10:
                     logger.warning(
-                        "AI backfill: 3+ consecutive errors in %s phase",
+                        "AI backfill: 10+ consecutive errors in %s phase, stopping",
                         job.current_phase,
                     )
+                    for f in futures:
+                        f.cancel()
+                    break
 
         stats[stat_ok_key] = ok_count
 

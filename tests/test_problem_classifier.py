@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from app.extensions import db
-from app.models import Problem, Tag
+from app.models import Problem, Tag, AnalysisResult
 from app.analysis.problem_classifier import ProblemClassifier
 
 
@@ -121,8 +121,20 @@ class TestProblemClassifier:
 
     @patch('app.analysis.problem_classifier.get_provider')
     def test_classify_skips_already_analyzed(self, mock_get_provider, app, db):
-        """Should skip problems already analyzed."""
+        """Should skip problems already analyzed with a valid classify record."""
         problem = self._create_problem(ai_analyzed=True, difficulty=5)
+        # Create a valid AnalysisResult so the skip logic is satisfied
+        ar = AnalysisResult(
+            problem_id_ref=problem.id,
+            analysis_type="problem_classify",
+            result_json=json.dumps({"problem_type": "test", "knowledge_points": []}),
+            summary="test",
+            ai_model="test",
+            token_cost=0,
+            cost_usd=0,
+        )
+        db.session.add(ar)
+        db.session.commit()
 
         classifier = ProblemClassifier(app=app)
         result = classifier.classify_problem(problem.id)

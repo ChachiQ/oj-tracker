@@ -144,9 +144,19 @@ class ProblemClassifier:
         problem = Problem.query.get(problem_id)
         if not problem:
             return False
-        # Skip already-analyzed problems that have no error and a valid difficulty
+        # Skip already-analyzed problems that have no error and a valid difficulty,
+        # but only if a valid classify AnalysisResult actually exists
         if problem.ai_analyzed and not problem.ai_analysis_error and problem.difficulty:
-            return False
+            has_classify = AnalysisResult.query.filter_by(
+                problem_id_ref=problem.id,
+                analysis_type="problem_classify",
+            ).first()
+            if has_classify and has_classify.result_json:
+                try:
+                    json.loads(has_classify.result_json)
+                    return False
+                except (json.JSONDecodeError, TypeError):
+                    pass  # invalid record, re-classify
 
         if not self._check_budget(user_id):
             logger.warning("AI monthly budget exceeded, skipping classification")
