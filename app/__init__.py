@@ -1,7 +1,9 @@
+import logging
 import os
 import re
 
 from datetime import datetime, timezone, timedelta
+from logging.handlers import RotatingFileHandler
 
 from dotenv import load_dotenv
 from flask import Flask, redirect, url_for
@@ -73,6 +75,9 @@ def create_app(config_name=None):
     # Load configuration
     config_class = config_map.get(config_name, config_map['development'])
     app.config.from_object(config_class)
+
+    # Configure file logging
+    _configure_logging(app)
 
     # Initialize extensions
     db.init_app(app)
@@ -214,6 +219,32 @@ def create_app(config_name=None):
     return app
 
 
+def _configure_logging(app):
+    """Set up RotatingFileHandler on the root logger."""
+    max_bytes = app.config.get('LOG_FILE_MAX_BYTES', 0)
+    if not max_bytes:
+        return
+
+    log_dir = os.path.join(app.instance_path, 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    log_file = os.path.join(log_dir, 'app.log')
+    handler = RotatingFileHandler(
+        log_file,
+        maxBytes=max_bytes,
+        backupCount=app.config.get('LOG_FILE_BACKUP_COUNT', 3),
+    )
+    handler.setFormatter(logging.Formatter(
+        app.config.get('LOG_FORMAT', '%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+    ))
+    handler.setLevel(logging.DEBUG)
+
+    root = logging.getLogger()
+    root.addHandler(handler)
+    if root.level == logging.WARNING:
+        root.setLevel(logging.DEBUG)
+
+
 def _cleanup_stale_jobs(app):
     """Mark stale running SyncJobs as failed on startup."""
     from app.models import SyncJob
@@ -250,6 +281,7 @@ def _register_blueprints(app):
     from app.views.api import api_bp
     from app.views.problem import problem_bp
     from app.views.sync import sync_bp
+    from app.views.logs import logs_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(dashboard_bp, url_prefix='/dashboard')
@@ -260,6 +292,7 @@ def _register_blueprints(app):
     app.register_blueprint(api_bp)
     app.register_blueprint(problem_bp)
     app.register_blueprint(sync_bp)
+    app.register_blueprint(logs_bp)
 
 
 def _init_scheduler(app):

@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, empty_state %}
+
+{% block title %}应用日志 - OJ Tracker{% endblock %}
+
+{% block extra_css %}
+<style>
+.log-table-wrap {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+.log-table-wrap thead { position: sticky; top: 0; z-index: 1; }
+.log-table td, .log-table th { font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .82rem; }
+.log-table td.msg-col { white-space: pre-wrap; word-break: break-all; max-width: 60vw; }
+.log-level-DEBUG  { color: #6c757d; }
+.log-level-INFO   { color: #0d6efd; }
+.log-level-WARNING{ color: #ffc107; }
+.log-level-ERROR, .log-level-CRITICAL { color: #dc3545; font-weight: 600; }
+tr.row-WARNING td:first-child { border-left: 3px solid #ffc107; }
+tr.row-ERROR td:first-child, tr.row-CRITICAL td:first-child { border-left: 3px solid #dc3545; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% call page_header('应用日志', 'bi-terminal') %}
+    <a href="{{ url_for('sync.log_page') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-clock-history"></i> 同步日志
+    </a>
+{% endcall %}
+
+<!-- Filters -->
+<div class="card shadow-sm mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-auto">
+                <label class="form-label mb-0 small">级别</label>
+                <select name="level" class="form-select form-select-sm">
+                    <option value="">全部</option>
+                    {% for lv in ['DEBUG','INFO','WARNING','ERROR','CRITICAL'] %}
+                    <option value="{{ lv }}" {% if current_level == lv %}selected{% endif %}>{{ lv }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <label class="form-label mb-0 small">关键词</label>
+                <input type="text" name="keyword" class="form-control form-control-sm" style="width:200px"
+                       value="{{ current_keyword }}" placeholder="搜索日志内容...">
+            </div>
+            <div class="col-auto">
+                <label class="form-label mb-0 small">行数</label>
+                <select name="lines" class="form-select form-select-sm">
+                    {% for n in [200, 500, 1000, 2000] %}
+                    <option value="{{ n }}" {% if current_lines == n %}selected{% endif %}>{{ n }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> 筛选</button>
+            </div>
+            <div class="col-auto">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="location.reload()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+            </div>
+            <div class="col-auto">
+                <div class="form-check form-switch mt-1">
+                    <input class="form-check-input" type="checkbox" id="autoRefresh">
+                    <label class="form-check-label small" for="autoRefresh">自动刷新</label>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Log Table -->
+{% if entries and entries|length > 0 %}
+<div class="card shadow-sm">
+    <div class="card-body p-0 log-table-wrap">
+        <table class="table table-hover table-sm mb-0 log-table align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:170px">时间</th>
+                    <th style="width:80px">级别</th>
+                    <th style="width:180px">来源</th>
+                    <th>消息</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in entries %}
+                <tr class="row-{{ e.level }}">
+                    <td><small>{{ e.time }}</small></td>
+                    <td><span class="log-level-{{ e.level }}">{{ e.level }}</span></td>
+                    <td><small class="text-muted">{{ e.source }}</small></td>
+                    <td class="msg-col">{{ e.message }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer text-muted small py-1">
+        显示 {{ entries|length }} 条日志
+    </div>
+</div>
+{% else %}
+{{ empty_state('bi-terminal', '暂无日志', '应用运行后日志将显示在这里。') }}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function() {
+    var timer = null;
+    var checkbox = document.getElementById('autoRefresh');
+    checkbox.addEventListener('change', function() {
+        if (this.checked) {
+            timer = setInterval(function() { location.reload(); }, 5000);
+        } else if (timer) {
+            clearInterval(timer);
+            timer = null;
+        }
+    });
+})();
+</script>
+{% endblock %}

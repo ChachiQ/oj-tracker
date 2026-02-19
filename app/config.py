@@ -33,6 +33,11 @@ class BaseConfig:
     # Scraper settings
     SCRAPER_RATE_LIMIT = float(os.environ.get('SCRAPER_RATE_LIMIT', '0.5'))
 
+    # Logging
+    LOG_FILE_MAX_BYTES = 5 * 1024 * 1024  # 5MB per file
+    LOG_FILE_BACKUP_COUNT = 3
+    LOG_FORMAT = '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+
     # Scheduler
     SCHEDULER_ENABLED = os.environ.get(
         'SCHEDULER_ENABLED', 'false'
@@ -71,6 +76,7 @@ class TestingConfig(BaseConfig):
     SECRET_KEY = 'test-secret-key'
     SCHEDULER_ENABLED = False
     SERVER_NAME = 'localhost'
+    LOG_FILE_MAX_BYTES = 0  # Disable file logging in tests
 
 
 config_map = {

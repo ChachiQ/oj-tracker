@@ -58,6 +58,7 @@
                             <li><a class="dropdown-item {% if request.endpoint and request.endpoint.startswith('student') %}active{% endif %}" href="{{ url_for('student.list_students') }}"><i class="bi bi-people"></i> 学生管理</a></li>
                             <li><a class="dropdown-item {% if request.endpoint and request.endpoint.startswith('settings') %}active{% endif %}" href="{{ url_for('settings.index') }}"><i class="bi bi-gear"></i> 设置</a></li>
                             <li><a class="dropdown-item {% if request.endpoint and request.endpoint.startswith('sync') %}active{% endif %}" href="{{ url_for('sync.log_page') }}"><i class="bi bi-clock-history"></i> 同步日志</a></li>
+                            <li><a class="dropdown-item {% if request.endpoint and request.endpoint.startswith('logs') %}active{% endif %}" href="{{ url_for('logs.index') }}"><i class="bi bi-terminal"></i> 应用日志</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right"></i> 退出登录</a></li>
                         </ul>
