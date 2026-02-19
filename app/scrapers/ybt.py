@@ -40,6 +40,10 @@ _RESULT_STATUS_MAP = {
     'Waiting': SubmissionStatus.PENDING,
     'Compiling': SubmissionStatus.JUDGING,
     'Running': SubmissionStatus.JUDGING,
+    # Chinese status texts from YBT
+    '完全正确': SubmissionStatus.AC,
+    '不完全正确': SubmissionStatus.WA,
+    '编译错误': SubmissionStatus.CE,
 }
 
 # Records per page on YBT status page
