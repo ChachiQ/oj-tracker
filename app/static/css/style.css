@@ -355,6 +355,11 @@ main {
     padding: 0;
 }
 
+.code-viewer code.hljs {
+    background: none;
+    padding: 0;
+}
+
 /* Cards Enhancement */
 .card {
     border: none;

@@ -59,6 +59,7 @@ def build_problem_full_solution_prompt(
 要求：
 - approach 限 2-3 句话
 - code 只保留必要注释，不写多余空行
+- 代码风格：使用 #include <bits/stdc++.h> 和 using namespace std;，不要用 ios::sync_with_stdio / cin.tie
 - explanation 限 3-5 句关键说明，不要逐行解释
 - alternative_approaches 最多 2 个，每个一句话
 - 控制总回复在 2000 字以内

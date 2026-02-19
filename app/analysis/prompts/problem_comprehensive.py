@@ -77,6 +77,7 @@ def build_problem_comprehensive_prompt(
 
 **full_solution 部分要求**：
 - code 为可直接提交的完整 C++ 代码，只保留必要注释
+- 代码风格：使用 #include <bits/stdc++.h> 和 using namespace std;，不要用 ios::sync_with_stdio / cin.tie
 - explanation 限 3-5 句关键说明
 - alternative_approaches 最多 2 个，每个一句话
 
