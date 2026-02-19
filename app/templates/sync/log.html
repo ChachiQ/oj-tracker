@@ -58,12 +58,18 @@
                                     <span class="spinner-border spinner-border-sm" style="width:.7rem;height:.7rem"></span>
                                     运行中
                                 </span>
+                                <button class="btn btn-sm btn-outline-danger ms-1 btn-cancel-job" data-job-id="{{ job.id }}">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
                             {% elif job.status == 'failed' %}
                                 <span class="badge bg-danger" title="{{ job.error_message or '' }}" data-bs-toggle="tooltip">
                                     <i class="bi bi-x-circle"></i> 失败
                                 </span>
                             {% elif job.status == 'pending' %}
                                 <span class="badge bg-secondary">等待中</span>
+                                <button class="btn btn-sm btn-outline-danger ms-1 btn-cancel-job" data-job-id="{{ job.id }}">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
                             {% endif %}
                         </td>
                         <td>
@@ -137,8 +143,8 @@
 {% block extra_scripts %}
 <script>
 (function() {
-    // Auto-refresh if there's a running job
-    var hasRunning = document.querySelector('tr[data-status="running"]');
+    // Auto-refresh if there's a running or pending job
+    var hasRunning = document.querySelector('tr[data-status="running"], tr[data-status="pending"]');
     if (hasRunning) {
         setTimeout(function() { location.reload(); }, 5000);
     }
@@ -146,6 +152,23 @@
     // Tooltips
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
         new bootstrap.Tooltip(el);
+    });
+
+    // Cancel job buttons
+    var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    document.querySelectorAll('.btn-cancel-job').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            var jobId = this.dataset.jobId;
+            fetch('/sync/job/' + jobId + '/cancel', {
+                method: 'POST',
+                headers: {'X-CSRFToken': csrfToken}
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) location.reload();
+                else alert(data.message);
+            });
+        });
     });
 })();
 </script>

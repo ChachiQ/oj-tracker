@@ -58,14 +58,18 @@ def init_scheduler(app):
                 logger.info("No user with AI API key found, skipping AI batch")
                 return
 
-            # Check no running job for this user
-            running = SyncJob.query.filter_by(
-                user_id=ai_user_id, status='running'
+            # Check no pending/running job for this user
+            from datetime import datetime, timedelta
+            running = SyncJob.query.filter(
+                SyncJob.user_id == ai_user_id,
+                SyncJob.status.in_(['pending', 'running']),
             ).first()
             if running:
-                from datetime import datetime, timedelta
-                cutoff = datetime.utcnow() - timedelta(hours=6)
-                if running.started_at and running.started_at < cutoff:
+                cutoff_running = datetime.utcnow() - timedelta(hours=6)
+                cutoff_pending = datetime.utcnow() - timedelta(minutes=10)
+                if (running.status == 'running'
+                        and running.started_at
+                        and running.started_at < cutoff_running):
                     running.status = 'failed'
                     running.error_message = '任务超时，已自动标记为失败（进程可能被终止）'
                     running.finished_at = datetime.utcnow()
@@ -73,9 +77,20 @@ def init_scheduler(app):
                     logger.warning(
                         f"Cleaned up stale SyncJob {running.id} in scheduler"
                     )
+                elif (running.status == 'pending'
+                        and running.created_at
+                        and running.created_at < cutoff_pending):
+                    running.status = 'failed'
+                    running.error_message = '任务启动超时，已自动标记为失败'
+                    running.finished_at = datetime.utcnow()
+                    db.session.commit()
+                    logger.warning(
+                        f"Cleaned up stale pending SyncJob {running.id} "
+                        f"in scheduler"
+                    )
                 else:
                     logger.info(
-                        f"User {ai_user_id} already has running job "
+                        f"User {ai_user_id} already has pending/running job "
                         f"{running.id}, skipping"
                     )
                     return

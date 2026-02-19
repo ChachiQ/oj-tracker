@@ -41,15 +41,20 @@ def _get_user_account_ids():
 
 
 def _check_running_job():
-    """Return a running SyncJob for current user, or None.
+    """Return a pending/running SyncJob for current user, or None.
 
-    If the running job has been stuck for more than 6 hours, it is
-    automatically marked as failed and None is returned.
+    Checks both 'pending' and 'running' statuses to prevent duplicate
+    jobs created during the window between job creation and thread start.
+    Stale jobs are automatically marked as failed.
     """
-    job = SyncJob.query.filter_by(
-        user_id=current_user.id, status='running'
+    job = SyncJob.query.filter(
+        SyncJob.user_id == current_user.id,
+        SyncJob.status.in_(['pending', 'running']),
     ).first()
-    if job and job.started_at:
+    if not job:
+        return None
+    # Running job stuck > 6 hours
+    if job.status == 'running' and job.started_at:
         cutoff = datetime.utcnow() - timedelta(hours=6)
         if job.started_at < cutoff:
             job.status = 'failed'
@@ -57,6 +62,16 @@ def _check_running_job():
             job.finished_at = datetime.utcnow()
             db.session.commit()
             logger.warning(f'Marked stale SyncJob {job.id} as failed')
+            return None
+    # Pending job stuck > 10 minutes (thread never started)
+    if job.status == 'pending' and job.created_at:
+        cutoff = datetime.utcnow() - timedelta(minutes=10)
+        if job.created_at < cutoff:
+            job.status = 'failed'
+            job.error_message = '任务启动超时，已自动标记为失败'
+            job.finished_at = datetime.utcnow()
+            db.session.commit()
+            logger.warning(f'Marked stale pending SyncJob {job.id} as failed')
             return None
     return job
 
@@ -312,6 +327,22 @@ def start_ai_backfill():
         'message': 'AI 分析已在后台启动',
         'job_id': job.id,
     })
+
+
+@sync_bp.route('/job/<int:job_id>/cancel', methods=['POST'])
+@login_required
+def cancel_job(job_id):
+    """Cancel a pending or running job."""
+    job = db.session.get(SyncJob, job_id)
+    if not job or job.user_id != current_user.id:
+        return jsonify({'success': False, 'message': '未找到任务'}), 404
+    if job.status not in ('pending', 'running'):
+        return jsonify({'success': False, 'message': '任务已结束，无法取消'})
+    job.status = 'failed'
+    job.error_message = '用户手动取消'
+    job.finished_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True, 'message': '任务已取消'})
 
 
 @sync_bp.route('/job/<int:job_id>/status')
