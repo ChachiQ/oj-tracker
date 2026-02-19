@@ -250,10 +250,15 @@ YBT_TAG_MAP: dict[str, list[str]] = {
     # 一本通 currently returns empty tags
 }
 
+CTOJ_TAG_MAP: dict[str, list[str]] = {
+    # CTOJ 标签暂为空，后续按需补充
+}
+
 _PLATFORM_MAPS: dict[str, dict[str, list[str]]] = {
     "luogu": LUOGU_TAG_MAP,
     "bbcoj": BBCOJ_TAG_MAP,
     "ybt": YBT_TAG_MAP,
+    "ctoj": CTOJ_TAG_MAP,
 }
 
 
