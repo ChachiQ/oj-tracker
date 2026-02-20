@@ -161,24 +161,14 @@ class CTOJScraper(BaseScraper):
                 if not records:
                     break
 
-                # Build uid→uname map from udocs if available
-                udict = {}
-                for udoc in data.get('udocs', []):
-                    udict[udoc.get('_id')] = udoc.get('uname', '')
-
-                # Build pid→title map from pdict if available
-                pdict = data.get('pdict', {})
-
                 for record in records:
                     # Record ID namespaced by domain
                     rid = str(record.get('_id', ''))
                     record_id = f"{domain}/{rid}"
 
-                    # Filter by user: Hydro returns all records, filter by uid/uname
-                    record_uid = record.get('uid', '')
-                    record_uname = udict.get(record_uid, '')
-                    if str(record_uid) != uid and record_uname != uid:
-                        continue
+                    # No client-side user filter needed: the uidOrName query
+                    # parameter already asks the Hydro server to return only
+                    # records belonging to the requested user.
 
                     # Cursor check
                     if cursor and record_id == cursor:
