@@ -33,10 +33,10 @@
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" href="#" onclick="syncContentAll(); return false;">
-                        <i class="bi bi-cloud-download"></i> 全部同步内容
+                        <i class="bi bi-cloud-download"></i> 同步最新记录
                     </a></li>
                     <li><a class="dropdown-item" href="#" onclick="syncContentAllAndAI(); return false;">
-                        <i class="bi bi-arrow-repeat"></i> 全部同步 + AI
+                        <i class="bi bi-arrow-repeat"></i> 同步最新记录 + AI分析
                     </a></li>
                     <li><a class="dropdown-item" href="#" onclick="startAIBackfill(); return false;">
                         <i class="bi bi-robot"></i> 全部 AI 回填
@@ -126,7 +126,7 @@
                                     <ul class="dropdown-menu dropdown-menu-end">
                                         <li><a class="dropdown-item" href="#"
                                                onclick="syncContent({{ account.id }}, this); return false;">
-                                            <i class="bi bi-cloud-download"></i> 同步内容
+                                            <i class="bi bi-cloud-download"></i> 同步最新记录
                                         </a></li>
                                         <li><a class="dropdown-item" href="#"
                                                onclick="syncContentAndAI({{ account.id }}, this); return false;">
@@ -417,6 +417,7 @@
             <span class="visually-hidden">同步中...</span>
         </div>
         <p class="mb-0 fw-bold" id="sync-overlay-text">正在同步数据，请稍候...</p>
+        <p class="mb-0 mt-2 text-muted small" id="sync-overlay-detail"></p>
     </div>
 </div>
 
@@ -492,9 +493,11 @@
     var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
     var overlay = document.getElementById('sync-overlay');
     var overlayText = document.getElementById('sync-overlay-text');
+    var overlayDetail = document.getElementById('sync-overlay-detail');
     var banner = document.getElementById('running-job-banner');
     var bannerText = document.getElementById('running-job-text');
     var pollTimer = null;
+    var syncPollTimer = null;
     var beforeUnloadHandler = function(e) { e.preventDefault(); e.returnValue = ''; };
 
     // ── Requires-login platforms (from template) ──
@@ -547,6 +550,7 @@
 
     function hideOverlay() {
         overlay.style.display = 'none';
+        overlayDetail.textContent = '';
         window.removeEventListener('beforeunload', beforeUnloadHandler);
     }
 
@@ -589,6 +593,56 @@
             return confirm('该平台需要登录同步，会踢掉你在 ' + platform + ' 网站上的活跃会话，确定继续？');
         }
         return true;
+    }
+
+    // ── Check if any account requires login (for "all" sync) ──
+    function hasLoginPlatforms() {
+        var found = false;
+        document.querySelectorAll('.sync-dropdown[data-requires-login="true"]').forEach(function() {
+            found = true;
+        });
+        return found;
+    }
+
+    // ── Poll sync overlay for content-all job ──
+    function pollSyncOverlay(jobId, onComplete) {
+        if (syncPollTimer) clearInterval(syncPollTimer);
+        var startTime = Date.now();
+        disableSyncButtons();
+
+        syncPollTimer = setInterval(function() {
+            fetch('/sync/job/' + jobId + '/status', {
+                headers: { 'X-CSRFToken': csrfToken }
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var elapsed = Math.floor((Date.now() - startTime) / 1000);
+
+                if (data.status === 'running' || data.status === 'pending') {
+                    var text = '正在同步数据...';
+                    if (data.current_phase && data.progress_total > 0) {
+                        text = '正在同步 ' + data.current_phase + ' (' + (data.progress_current || 0) + '/' + data.progress_total + ')';
+                    } else if (data.current_phase) {
+                        text = '正在同步 ' + data.current_phase + '...';
+                    }
+                    overlayText.textContent = text;
+                    overlayDetail.textContent = '已用时间: ' + elapsed + '秒';
+                } else {
+                    clearInterval(syncPollTimer);
+                    syncPollTimer = null;
+                    hideOverlay();
+                    enableSyncButtons();
+                    onComplete(data);
+                }
+            })
+            .catch(function() {
+                clearInterval(syncPollTimer);
+                syncPollTimer = null;
+                hideOverlay();
+                enableSyncButtons();
+                onComplete({ status: 'failed', error_message: '轮询失败' });
+            });
+        }, 2000);
     }
 
     // ── AI cost confirmation ──
@@ -689,9 +743,15 @@
         });
     };
 
-    // ── Sync Content All ──
+    // ── Sync Content All (async with progress) ──
     window.syncContentAll = function() {
-        showOverlay('正在同步所有平台数据...');
+        var msg = '确定要同步所有平台的最新记录吗？';
+        if (hasLoginPlatforms()) {
+            msg += '\n\n注意：部分平台需要登录，同步时会踢掉对应OJ网站的活跃会话。';
+        }
+        if (!confirm(msg)) return;
+
+        showOverlay('正在启动同步...');
 
         fetch('/sync/content-all', {
             method: 'POST',
@@ -699,11 +759,23 @@
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            hideOverlay();
-            showAlert(data.message, data.success ? 'success' : 'danger');
-            if (data.success) {
-                setTimeout(function() { location.reload(); }, 1500);
+            if (!data.success) {
+                hideOverlay();
+                showAlert(data.message, 'danger');
+                return;
             }
+            pollSyncOverlay(data.job_id, function(result) {
+                if (result.status === 'completed') {
+                    var stats = result.stats || {};
+                    var detail = '同步完成: ' + (stats.accounts_synced || 0) + ' 个账号, ' +
+                        '新增 ' + (stats.total_new_submissions || 0) + ' 条提交, ' +
+                        (stats.total_new_problems || 0) + ' 道题目';
+                    showAlert(detail, 'success');
+                    setTimeout(function() { location.reload(); }, 1500);
+                } else {
+                    showAlert('同步失败: ' + (result.error_message || '未知错误'), 'danger');
+                }
+            });
         })
         .catch(function(err) {
             hideOverlay();
@@ -747,41 +819,57 @@
 
     // ── Sync Content All + AI ──
     window.syncContentAllAndAI = function() {
+        var msg = '确定要同步所有平台的最新记录吗？';
+        if (hasLoginPlatforms()) {
+            msg += '\n\n注意：部分平台需要登录，同步时会踢掉对应OJ网站的活跃会话。';
+        }
+        if (!confirm(msg)) return;
+
         confirmAICost().then(function(ok) {
             if (!ok) return;
 
-            showOverlay('正在同步所有平台数据...');
+            showOverlay('正在启动同步...');
 
-            // First sync all content
             fetch('/sync/content-all', {
                 method: 'POST',
                 headers: { 'X-CSRFToken': csrfToken },
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {
-                hideOverlay();
                 if (!data.success) {
+                    hideOverlay();
                     showAlert(data.message, 'danger');
                     return;
                 }
-                // Then start AI backfill
-                return fetch('/sync/ai-backfill', {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': csrfToken,
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({}),
-                })
-                .then(function(r) { return r.json(); })
-                .then(function(aiData) {
-                    showAlert(
-                        data.message + ' AI 分析已在后台启动。<a href="/sync/log" class="alert-link">查看日志</a>',
-                        'success'
-                    );
-                    if (aiData.job_id) {
-                        pollJobStatus(aiData.job_id);
+                pollSyncOverlay(data.job_id, function(result) {
+                    if (result.status !== 'completed') {
+                        showAlert('同步失败: ' + (result.error_message || '未知错误'), 'danger');
+                        return;
                     }
+                    var stats = result.stats || {};
+                    var detail = '同步完成: ' + (stats.accounts_synced || 0) + ' 个账号, ' +
+                        '新增 ' + (stats.total_new_submissions || 0) + ' 条提交, ' +
+                        (stats.total_new_problems || 0) + ' 道题目。正在启动 AI 分析...';
+                    showAlert(detail, 'success');
+
+                    // Start AI backfill
+                    fetch('/sync/ai-backfill', {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRFToken': csrfToken,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({}),
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(aiData) {
+                        if (aiData.job_id) {
+                            pollJobStatus(aiData.job_id);
+                        }
+                    })
+                    .catch(function(err) {
+                        showAlert('AI 分析启动失败: ' + err.message, 'danger');
+                    });
                 });
             })
             .catch(function(err) {

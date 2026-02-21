@@ -180,7 +180,7 @@ class TestSyncBlueprintJSON:
         assert resp.content_type.startswith('application/json')
         body = resp.get_json()
         assert 'success' in body
-        assert 'stats' in body
+        assert 'job_id' in body
 
 
 class TestPlatformRateLimiter:

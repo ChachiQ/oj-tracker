@@ -111,6 +111,95 @@ def _start_ai_thread(job_id, user_id, platform=None, account_id=None):
     t.start()
 
 
+def _start_content_sync_thread(job_id, user_id):
+    """Run content sync for all active accounts in a background thread."""
+    app = current_app._get_current_object()
+
+    def _run():
+        with app.app_context():
+            job = db.session.get(SyncJob, job_id)
+            if not job:
+                return
+
+            job.status = 'running'
+            job.started_at = datetime.utcnow()
+            db.session.commit()
+
+            try:
+                # Get active accounts for this user
+                student_ids = [
+                    s.id for s in Student.query.filter_by(parent_id=user_id).all()
+                ]
+                accounts = []
+                if student_ids:
+                    accounts = PlatformAccount.query.filter(
+                        PlatformAccount.student_id.in_(student_ids),
+                        PlatformAccount.is_active == True,  # noqa: E712
+                    ).all()
+
+                if not accounts:
+                    job.status = 'completed'
+                    job.stats = {
+                        'accounts_synced': 0,
+                        'total_new_submissions': 0,
+                        'total_new_problems': 0,
+                    }
+                    job.finished_at = datetime.utcnow()
+                    db.session.commit()
+                    return
+
+                job.progress_total = len(accounts)
+                job.progress_current = 0
+                db.session.commit()
+
+                service = SyncService()
+                total_subs = 0
+                total_probs = 0
+                synced = 0
+                errors = []
+
+                for i, account in enumerate(accounts):
+                    job.current_phase = account.platform
+                    job.progress_current = i
+                    db.session.commit()
+
+                    try:
+                        stats = service.sync_account(account.id)
+                        if 'error' not in stats:
+                            synced += 1
+                            total_subs += stats.get('new_submissions', 0)
+                            total_probs += stats.get('new_problems', 0)
+                        else:
+                            errors.append(f'{account.platform}: {stats["error"]}')
+                    except Exception as e:
+                        logger.error(
+                            f'Content sync failed for account {account.id}: {e}'
+                        )
+                        errors.append(f'{account.platform}: {e}')
+
+                job.progress_current = len(accounts)
+                job.current_phase = None
+                job.status = 'completed'
+                job.stats = {
+                    'accounts_synced': synced,
+                    'total_new_submissions': total_subs,
+                    'total_new_problems': total_probs,
+                    'errors': errors,
+                }
+                job.finished_at = datetime.utcnow()
+                db.session.commit()
+
+            except Exception as e:
+                logger.error(f'Content sync all thread failed: {e}')
+                job.status = 'failed'
+                job.error_message = str(e)
+                job.finished_at = datetime.utcnow()
+                db.session.commit()
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
+
 @sync_bp.route('/log')
 @login_required
 def log_page():
@@ -185,7 +274,7 @@ def sync_content(account_id):
 @sync_bp.route('/content-all', methods=['POST'])
 @login_required
 def sync_content_all():
-    """Sync content for all active accounts (synchronous)."""
+    """Sync content for all active accounts (async background thread)."""
     running = _check_running_job()
     if running:
         return jsonify({
@@ -195,36 +284,13 @@ def sync_content_all():
         })
 
     job = _create_sync_job('content_sync')
-    job.status = 'running'
-    job.started_at = datetime.utcnow()
-    db.session.commit()
+    _start_content_sync_thread(job.id, current_user.id)
 
-    try:
-        service = SyncService()
-        stats = service.sync_all_accounts(user_id=current_user.id)
-
-        job.status = 'completed'
-        job.stats = stats
-        job.finished_at = datetime.utcnow()
-        db.session.commit()
-
-        return jsonify({
-            'success': True,
-            'message': (
-                f'同步完成: {stats["accounts_synced"]} 个账号, '
-                f'新增 {stats["total_new_submissions"]} 条提交, '
-                f'{stats["total_new_problems"]} 道题目'
-            ),
-            'stats': stats,
-            'job_id': job.id,
-        })
-
-    except Exception as e:
-        job.status = 'failed'
-        job.error_message = str(e)
-        job.finished_at = datetime.utcnow()
-        db.session.commit()
-        return jsonify({'success': False, 'message': f'同步失败: {e}'})
+    return jsonify({
+        'success': True,
+        'message': '同步已启动',
+        'job_id': job.id,
+    })
 
 
 @sync_bp.route('/content-and-ai/<int:account_id>', methods=['POST'])
