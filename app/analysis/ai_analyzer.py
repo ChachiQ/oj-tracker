@@ -676,6 +676,10 @@ class AIAnalyzer:
             parsed = json.loads(cleaned)
         except (json.JSONDecodeError, TypeError):
             logger.error(f"Comprehensive analysis JSON parse failed for {problem_id}")
+            problem.difficulty = 0
+            problem.ai_analyzed = True
+            problem.ai_analysis_error = f"comprehensive JSON parse failed: {response.content[:200]}"
+            db.session.commit()
             return None
 
         # Delete old records AFTER LLM success + JSON parse — prevents data loss
@@ -738,21 +742,23 @@ class AIAnalyzer:
                     problem.difficulty = difficulty_val
                     problem.ai_analysis_error = None
                 else:
-                    # 无法解析 → 保持 difficulty=0（未评级），记录错误便于重试
                     logger.warning(
                         f"Unparseable difficulty for problem {problem_id}: {overall!r}"
                     )
+                    problem.difficulty = 0
                     problem.ai_analysis_error = f"unparseable difficulty: {overall!r}"
 
                 problem.ai_analyzed = True
                 results["classify"] = ar
             except Exception as e:
                 logger.warning(f"Comprehensive: classify part failed for {problem_id}: {e}")
+                problem.difficulty = 0
                 problem.ai_analyzed = True
                 problem.ai_analysis_error = f"classify processing error: {e}"
         else:
             # LLM didn't return a valid classify section
             logger.warning(f"Comprehensive: classify section missing/invalid for {problem_id}")
+            problem.difficulty = 0
             problem.ai_analyzed = True
             problem.ai_analysis_error = "classify section missing from comprehensive response"
 

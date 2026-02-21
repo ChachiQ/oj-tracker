@@ -239,13 +239,14 @@ class ProblemClassifier:
                     logger.warning(
                         f"Unparseable difficulty for problem {problem_id}: {overall!r}"
                     )
-                    # difficulty 保持 0（未评级），记录错误便于重试
+                    problem.difficulty = 0
                     problem.ai_analysis_error = f"unparseable difficulty: {overall!r}"
 
                 problem.ai_analyzed = True
             else:
                 problem.ai_tags = response.content
                 problem.ai_problem_type = ""
+                problem.difficulty = 0
                 problem.ai_analyzed = True
                 problem.ai_analysis_error = f"classify JSON parse failed: {response.content[:200]}"
 
