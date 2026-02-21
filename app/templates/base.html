@@ -101,6 +101,40 @@
         {% endwith %}
     </div>
 
+    {% if current_user.is_authenticated %}
+    <!-- Global Sync Progress Banner (hidden by default) -->
+    <section id="global-sync-banner" class="container-fluid d-none">
+        <div class="alert alert-info mb-0 mt-2 py-2" role="alert" style="display:flex;align-items:center">
+            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+            <span id="global-sync-text">任务运行中...</span>
+            <span class="ms-auto" style="display:flex;align-items:center;gap:.5rem">
+                <a href="{{ url_for('sync.log_page') }}" class="alert-link small">查看日志</a>
+                <button type="button" class="btn btn-sm btn-outline-danger" id="global-sync-cancel" style="display:none">取消</button>
+            </span>
+        </div>
+        <div class="progress mt-1" style="height:4px;" id="global-sync-progress-bar">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width:0%"></div>
+        </div>
+    </section>
+
+    <!-- New Submissions Reminder Banner (hidden by default) -->
+    <section id="new-submissions-banner" class="container-fluid d-none">
+        <div class="alert alert-success alert-dismissible mb-0 mt-2 py-2" role="alert">
+            <i class="bi bi-bell"></i>
+            <span id="new-submissions-text"></span>
+            <span class="d-inline-flex gap-2 ms-2">
+                <button type="button" class="btn btn-sm btn-success" id="new-sub-sync-btn">
+                    <i class="bi bi-cloud-download"></i> 同步提交记录
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-success" id="new-sub-sync-ai-btn">
+                    <i class="bi bi-robot"></i> 同步 + AI 分析
+                </button>
+            </span>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
+        </div>
+    </section>
+    {% endif %}
+
     <!-- Main Content -->
     <main class="container-fluid py-3">
         {% block content %}{% endblock %}
@@ -121,6 +155,226 @@
         new bootstrap.Tooltip(el, {delay: {show: 200, hide: 0}});
     });
     </script>
+    {% if current_user.is_authenticated %}
+    <script>
+    (function() {
+        var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        var banner = document.getElementById('global-sync-banner');
+        var bannerText = document.getElementById('global-sync-text');
+        var cancelBtn = document.getElementById('global-sync-cancel');
+        var progressBar = banner ? banner.querySelector('.progress-bar') : null;
+
+        var _pollTimer = null;
+        var _currentJobId = null;
+
+        var jobTypeLabels = {
+            'content_sync': '内容同步',
+            'ai_backfill': 'AI 分析',
+        };
+        var phaseLabels = {
+            'comprehensive': 'AI 综合分析',
+            'review': '代码审查',
+        };
+
+        function showGlobalBanner(text, jobId) {
+            if (!banner) return;
+            banner.classList.remove('d-none');
+            bannerText.textContent = text || '任务运行中...';
+            if (jobId) {
+                cancelBtn.style.display = '';
+                cancelBtn.onclick = function() {
+                    fetch('/sync/job/' + jobId + '/cancel', {
+                        method: 'POST',
+                        headers: {'X-CSRFToken': csrfToken}
+                    }).then(function(r) { return r.json(); }).then(function(d) {
+                        if (d.success) bannerText.textContent = '已取消';
+                    });
+                };
+            }
+        }
+
+        function hideGlobalBanner() {
+            if (!banner) return;
+            banner.classList.add('d-none');
+            cancelBtn.style.display = 'none';
+            if (progressBar) progressBar.style.width = '0%';
+        }
+
+        function showGlobalAlert(message, type) {
+            var container = document.querySelector('.container-fluid.mt-3');
+            if (!container) return;
+            var alertDiv = document.createElement('div');
+            alertDiv.className = 'alert alert-' + type + ' alert-dismissible fade show';
+            alertDiv.setAttribute('role', 'alert');
+            alertDiv.innerHTML = message +
+                '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>';
+            container.appendChild(alertDiv);
+            setTimeout(function() { if (alertDiv.parentElement) alertDiv.remove(); }, 10000);
+        }
+
+        function updateProgress(current, total) {
+            if (!progressBar || !total) return;
+            var pct = Math.round((current / total) * 100);
+            progressBar.style.width = pct + '%';
+        }
+
+        function startGlobalSyncPoll(jobId) {
+            if (_pollTimer) clearInterval(_pollTimer);
+            _currentJobId = jobId;
+
+            showGlobalBanner('任务运行中...', jobId);
+
+            _pollTimer = setInterval(function() {
+                fetch('/sync/job/' + jobId + '/status', {
+                    headers: {'X-CSRFToken': csrfToken}
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.status === 'running' || data.status === 'pending') {
+                        var label = jobTypeLabels[data.job_type] || '任务';
+                        var text = label + ' 运行中';
+                        if (data.phase_label) text = data.phase_label + ' 运行中';
+                        else if (data.current_phase) text += ' - ' + data.current_phase;
+                        if (data.progress_total > 0) {
+                            text += '  (' + (data.progress_current || 0) + '/' + data.progress_total + ')';
+                            updateProgress(data.progress_current || 0, data.progress_total);
+                        }
+                        bannerText.textContent = text;
+                    } else {
+                        clearInterval(_pollTimer);
+                        _pollTimer = null;
+                        _currentJobId = null;
+                        hideGlobalBanner();
+                        if (data.status === 'completed') {
+                            var msg = (jobTypeLabels[data.job_type] || '任务') + '已完成';
+                            if (data.stats) {
+                                if (data.job_type === 'content_sync') {
+                                    var s = data.stats;
+                                    msg += ': 新增 ' + (s.total_new_submissions || s.new_submissions || 0) + ' 条提交, ' +
+                                           (s.total_new_problems || s.new_problems || 0) + ' 道题目';
+                                }
+                            }
+                            showGlobalAlert(msg + ' <a href="/sync/log" class="alert-link">查看日志</a>', 'success');
+                        } else if (data.status === 'failed') {
+                            showGlobalAlert((jobTypeLabels[data.job_type] || '任务') + '失败: ' +
+                                (data.error_message || '未知错误'), 'danger');
+                        }
+                    }
+                })
+                .catch(function() {
+                    clearInterval(_pollTimer);
+                    _pollTimer = null;
+                    _currentJobId = null;
+                    hideGlobalBanner();
+                });
+            }, 3000);
+        }
+
+        function isGlobalSyncActive() {
+            return !!_currentJobId;
+        }
+
+        // ── New submissions banner helpers ──
+        var newSubBanner = document.getElementById('new-submissions-banner');
+        var newSubText = document.getElementById('new-submissions-text');
+        var newSubSyncBtn = document.getElementById('new-sub-sync-btn');
+        var newSubSyncAIBtn = document.getElementById('new-sub-sync-ai-btn');
+
+        function showNewSubmissionsBanner(accounts) {
+            if (!newSubBanner || !accounts || accounts.length === 0) return;
+            var platforms = accounts.map(function(a) {
+                var label = a.platform + ':' + a.platform_uid;
+                if (a.check_method === 'time_based') label += ' (超过24h未同步)';
+                return label;
+            });
+            newSubText.textContent = '检测到可能有新提交: ' + platforms.join(', ');
+            newSubBanner.classList.remove('d-none');
+        }
+
+        function hideNewSubmissionsBanner() {
+            if (newSubBanner) newSubBanner.classList.add('d-none');
+        }
+
+        // Sync button handlers for the new-submissions banner
+        if (newSubSyncBtn) {
+            newSubSyncBtn.addEventListener('click', function() {
+                hideNewSubmissionsBanner();
+                fetch('/sync/content-all', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': csrfToken},
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.job_id) {
+                        startGlobalSyncPoll(data.job_id);
+                    } else if (data.message) {
+                        showGlobalAlert(data.message, data.success ? 'info' : 'danger');
+                    }
+                })
+                .catch(function(err) {
+                    showGlobalAlert('同步请求失败: ' + err.message, 'danger');
+                });
+            });
+        }
+
+        if (newSubSyncAIBtn) {
+            newSubSyncAIBtn.addEventListener('click', function() {
+                hideNewSubmissionsBanner();
+                // Start content sync first, then AI
+                fetch('/sync/content-all', {
+                    method: 'POST',
+                    headers: {'X-CSRFToken': csrfToken},
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success && data.job_id) {
+                        // Poll until content sync completes, then start AI
+                        startGlobalSyncPoll(data.job_id);
+                        // After content sync, the user can trigger AI from settings
+                        // For simplicity, redirect to settings page for the AI confirmation flow
+                        showGlobalAlert('内容同步已启动。完成后请前往 <a href="/settings" class="alert-link">设置页</a> 启动 AI 分析。', 'info');
+                    } else if (data.message) {
+                        showGlobalAlert(data.message, data.success ? 'info' : 'danger');
+                    }
+                })
+                .catch(function(err) {
+                    showGlobalAlert('同步请求失败: ' + err.message, 'danger');
+                });
+            });
+        }
+
+        // Expose global API
+        window.startGlobalSyncPoll = startGlobalSyncPoll;
+        window.isGlobalSyncActive = isGlobalSyncActive;
+        window.showGlobalAlert = showGlobalAlert;
+        window.hideNewSubmissionsBanner = hideNewSubmissionsBanner;
+
+        // ── Page load: check for running job, then check for new submissions ──
+        var isSettingsPage = window.location.pathname.indexOf('/settings') === 0;
+
+        fetch('/sync/running-job', { headers: {'X-CSRFToken': csrfToken} })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.running) {
+                startGlobalSyncPoll(data.job_id);
+            } else if (!isSettingsPage) {
+                // No running job — check for new submissions after 2s delay
+                setTimeout(function() {
+                    fetch('/sync/check-new', { headers: {'X-CSRFToken': csrfToken} })
+                    .then(function(r) { return r.json(); })
+                    .then(function(result) {
+                        if (result.accounts_with_new && result.accounts_with_new.length > 0) {
+                            showNewSubmissionsBanner(result.accounts_with_new);
+                        }
+                    })
+                    .catch(function() {});
+                }, 2000);
+            }
+        })
+        .catch(function() {});
+    })();
+    </script>
+    {% endif %}
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

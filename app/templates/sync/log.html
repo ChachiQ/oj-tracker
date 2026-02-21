@@ -28,7 +28,8 @@
                 </thead>
                 <tbody>
                     {% for job in jobs %}
-                    <tr data-job-id="{{ job.id }}" data-status="{{ job.status }}">
+                    <tr data-job-id="{{ job.id }}" data-status="{{ job.status }}"
+                        style="cursor:pointer" onclick="toggleJobDetail({{ job.id }}, this)">
                         <td>
                             <small title="{{ job.created_at|datefmt }}" data-bs-toggle="tooltip">
                                 {{ job.created_at|smarttime }}
@@ -58,7 +59,8 @@
                                     <span class="spinner-border spinner-border-sm" style="width:.7rem;height:.7rem"></span>
                                     运行中
                                 </span>
-                                <button class="btn btn-sm btn-outline-danger ms-1 btn-cancel-job" data-job-id="{{ job.id }}">
+                                <button class="btn btn-sm btn-outline-danger ms-1 btn-cancel-job"
+                                        data-job-id="{{ job.id }}" onclick="event.stopPropagation()">
                                     <i class="bi bi-x-lg"></i>
                                 </button>
                             {% elif job.status == 'failed' %}
@@ -67,7 +69,8 @@
                                 </span>
                             {% elif job.status == 'pending' %}
                                 <span class="badge bg-secondary">等待中</span>
-                                <button class="btn btn-sm btn-outline-danger ms-1 btn-cancel-job" data-job-id="{{ job.id }}">
+                                <button class="btn btn-sm btn-outline-danger ms-1 btn-cancel-job"
+                                        data-job-id="{{ job.id }}" onclick="event.stopPropagation()">
                                     <i class="bi bi-x-lg"></i>
                                 </button>
                             {% endif %}
@@ -105,7 +108,6 @@
                                     综合 {{ stats.get('comprehensive_ok', 0) }}/{{ stats.get('comprehensive_total', 0) }}
                                     | 审查 {{ stats.get('review_ok', 0) }}/{{ stats.get('review_total', 0) }}
                                     {% else %}
-                                    {# backward compat: old 4-phase stats #}
                                     分类 {{ stats.get('classify_ok', 0) }}/{{ stats.get('classify_total', 0) }}
                                     | 思路 {{ stats.get('solution_ok', 0) }}/{{ stats.get('solution_total', 0) }}
                                     | 解题 {{ stats.get('full_solution_ok', 0) }}/{{ stats.get('full_solution_total', 0) }}
@@ -126,6 +128,12 @@
                             {% else %}
                                 <small class="text-muted">-</small>
                             {% endif %}
+                        </td>
+                    </tr>
+                    {# Detail expansion row (hidden by default) #}
+                    <tr id="detail-row-{{ job.id }}" class="d-none" onclick="event.stopPropagation()">
+                        <td colspan="7" class="bg-light p-3" id="detail-content-{{ job.id }}">
+                            <div class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> 加载中...</div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -170,6 +178,164 @@
             });
         });
     });
+
+    // ── Job detail expansion ──
+    var detailCache = {};
+
+    window.toggleJobDetail = function(jobId, triggerRow) {
+        var detailRow = document.getElementById('detail-row-' + jobId);
+        if (!detailRow) return;
+
+        // Toggle visibility
+        if (!detailRow.classList.contains('d-none')) {
+            detailRow.classList.add('d-none');
+            return;
+        }
+
+        detailRow.classList.remove('d-none');
+
+        // Use cache if available
+        if (detailCache[jobId]) {
+            renderJobDetail(jobId, detailCache[jobId]);
+            return;
+        }
+
+        // Fetch detail
+        fetch('/sync/job/' + jobId + '/detail', {
+            headers: {'X-CSRFToken': csrfToken}
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            detailCache[jobId] = data;
+            renderJobDetail(jobId, data);
+        })
+        .catch(function() {
+            document.getElementById('detail-content-' + jobId).innerHTML =
+                '<div class="text-danger"><i class="bi bi-exclamation-triangle"></i> 加载失败</div>';
+        });
+    };
+
+    function renderJobDetail(jobId, data) {
+        var container = document.getElementById('detail-content-' + jobId);
+        var html = '';
+
+        if (data.error_message) {
+            html += '<div class="alert alert-danger py-1 mb-2 small"><i class="bi bi-exclamation-triangle"></i> ' +
+                    escapeHtml(data.error_message) + '</div>';
+        }
+
+        if (data.job_type === 'content_sync') {
+            html += renderContentSyncDetail(data);
+        } else if (data.job_type === 'ai_backfill') {
+            html += renderAIBackfillDetail(data);
+        }
+
+        if (!html) {
+            html = '<div class="text-muted small">无详细信息</div>';
+        }
+
+        container.innerHTML = html;
+    }
+
+    function renderContentSyncDetail(data) {
+        var details = data.account_details || [];
+        if (details.length === 0) return '<div class="text-muted small">无账号同步记录</div>';
+
+        var html = '<table class="table table-sm table-bordered mb-0 small">';
+        html += '<thead class="table-light"><tr><th>平台</th><th>账号</th><th>学生</th><th>新提交</th><th>新题目</th><th>状态</th></tr></thead><tbody>';
+
+        for (var i = 0; i < details.length; i++) {
+            var d = details[i];
+            html += '<tr>';
+            html += '<td>' + escapeHtml(d.platform || '') + '</td>';
+            html += '<td><code>' + escapeHtml(d.platform_uid || '') + '</code></td>';
+            html += '<td>' + escapeHtml(d.student_name || '') + '</td>';
+            if (d.status === 'ok') {
+                html += '<td>' + (d.new_submissions || 0) + '</td>';
+                html += '<td>' + (d.new_problems || 0) + '</td>';
+                html += '<td><span class="badge bg-success">成功</span></td>';
+            } else {
+                html += '<td colspan="2" class="text-danger">' + escapeHtml(d.error || '未知错误') + '</td>';
+                html += '<td><span class="badge bg-danger">失败</span></td>';
+            }
+            html += '</tr>';
+        }
+
+        html += '</tbody></table>';
+
+        if (data.errors && data.errors.length > 0) {
+            html += '<div class="mt-2 small text-danger">';
+            for (var j = 0; j < data.errors.length; j++) {
+                html += '<div><i class="bi bi-exclamation-circle"></i> ' + escapeHtml(data.errors[j]) + '</div>';
+            }
+            html += '</div>';
+        }
+
+        return html;
+    }
+
+    function renderAIBackfillDetail(data) {
+        var html = '';
+        var comp = data.comprehensive || [];
+        var revs = data.reviews || [];
+
+        if (comp.length > 0) {
+            html += '<div class="fw-bold small mb-1">综合分析 (' + comp.length + ')</div>';
+            html += '<table class="table table-sm table-bordered mb-2 small">';
+            html += '<thead class="table-light"><tr><th>题目</th><th>平台</th><th>题号</th><th>类型</th><th>模型</th><th class="text-end">费用</th></tr></thead><tbody>';
+
+            var typeLabels = {
+                'problem_classify': '分类',
+                'problem_solution': '思路',
+                'problem_full_solution': '解题',
+            };
+            for (var i = 0; i < comp.length; i++) {
+                var c = comp[i];
+                html += '<tr>';
+                html += '<td>' + escapeHtml(c.problem_name || '-') + '</td>';
+                html += '<td>' + escapeHtml(c.platform || '-') + '</td>';
+                html += '<td><code>' + escapeHtml(c.problem_id || '-') + '</code></td>';
+                html += '<td>' + (typeLabels[c.analysis_type] || c.analysis_type) + '</td>';
+                html += '<td><code class="small">' + escapeHtml(c.model || '-') + '</code></td>';
+                html += '<td class="text-end">$' + (c.cost || 0).toFixed(6) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+        }
+
+        if (revs.length > 0) {
+            html += '<div class="fw-bold small mb-1">代码审查 (' + revs.length + ')</div>';
+            html += '<table class="table table-sm table-bordered mb-2 small">';
+            html += '<thead class="table-light"><tr><th>题目</th><th>提交状态</th><th>模型</th><th class="text-end">费用</th></tr></thead><tbody>';
+
+            for (var j = 0; j < revs.length; j++) {
+                var r = revs[j];
+                html += '<tr>';
+                html += '<td>' + escapeHtml(r.problem_name || '-') + '</td>';
+                html += '<td>' + escapeHtml(r.submission_status || '-') + '</td>';
+                html += '<td><code class="small">' + escapeHtml(r.model || '-') + '</code></td>';
+                html += '<td class="text-end">$' + (r.cost || 0).toFixed(6) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+        }
+
+        if (comp.length === 0 && revs.length === 0) {
+            html += '<div class="text-muted small">无分析记录</div>';
+        }
+
+        if (data.total_cost > 0) {
+            html += '<div class="text-end small fw-bold">总费用: $' + data.total_cost.toFixed(6) + '</div>';
+        }
+
+        return html;
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
 })();
 </script>
 {% endblock %}

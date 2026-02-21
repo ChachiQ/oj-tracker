@@ -6,15 +6,6 @@
 {% block content %}
 <h4 class="fw-bold mb-4"><i class="bi bi-gear"></i> 系统设置</h4>
 
-{# ── Running job banner (hidden by default, shown by JS) ── #}
-<div id="running-job-banner" class="alert alert-info d-none" role="alert">
-    <div class="d-flex align-items-center">
-        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-        <span id="running-job-text">任务运行中...</span>
-        <a href="{{ url_for('sync.log_page') }}" class="ms-2 alert-link">查看日志</a>
-    </div>
-</div>
-
 {# ── Section 1: Platform Accounts (full width) ── #}
 <div class="card shadow-sm mb-4">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -494,9 +485,6 @@
     var overlay = document.getElementById('sync-overlay');
     var overlayText = document.getElementById('sync-overlay-text');
     var overlayDetail = document.getElementById('sync-overlay-detail');
-    var banner = document.getElementById('running-job-banner');
-    var bannerText = document.getElementById('running-job-text');
-    var pollTimer = null;
     var syncPollTimer = null;
     var beforeUnloadHandler = function(e) { e.preventDefault(); e.returnValue = ''; };
 
@@ -574,7 +562,6 @@
 
     function enableSyncButtons() {
         document.querySelectorAll('.sync-dropdown .dropdown-toggle').forEach(function(btn) {
-            // Only re-enable if account is active (not paused)
             var dd = btn.closest('.sync-dropdown');
             if (dd && !dd.querySelector('[data-paused]')) {
                 btn.disabled = false;
@@ -595,7 +582,6 @@
         return true;
     }
 
-    // ── Check if any account requires login (for "all" sync) ──
     function hasLoginPlatforms() {
         var found = false;
         document.querySelectorAll('.sync-dropdown[data-requires-login="true"]').forEach(function() {
@@ -661,60 +647,6 @@
                 ' (共 ' + total + ' 项)\n\n确定启动 AI 分析？';
             return confirm(msg);
         });
-    }
-
-    // ── Poll job status ──
-    function pollJobStatus(jobId) {
-        if (pollTimer) clearInterval(pollTimer);
-
-        banner.classList.remove('d-none');
-        disableSyncButtons();
-
-        pollTimer = setInterval(function() {
-            fetch('/sync/job/' + jobId + '/status', {
-                headers: { 'X-CSRFToken': csrfToken }
-            })
-            .then(function(r) { return r.json(); })
-            .then(function(data) {
-                if (data.status === 'running') {
-                    var text = (data.phase_label || 'AI 分析') + ' 运行中';
-                    if (data.progress_total > 0) {
-                        text += '  (' + data.progress_current + '/' + data.progress_total + ')';
-                    }
-                    bannerText.textContent = text;
-                } else {
-                    clearInterval(pollTimer);
-                    pollTimer = null;
-                    banner.classList.add('d-none');
-                    enableSyncButtons();
-                    if (data.status === 'completed') {
-                        showAlert('AI 分析已完成', 'success');
-                    } else if (data.status === 'failed') {
-                        showAlert('AI 分析失败: ' + (data.error_message || '未知错误'), 'danger');
-                    }
-                }
-            })
-            .catch(function() {
-                clearInterval(pollTimer);
-                pollTimer = null;
-                banner.classList.add('d-none');
-                enableSyncButtons();
-            });
-        }, 3000);
-    }
-
-    // ── Check for running job on page load ──
-    function checkRunningJob() {
-        fetch('/sync/running-job', {
-            headers: { 'X-CSRFToken': csrfToken }
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.running) {
-                pollJobStatus(data.job_id);
-            }
-        })
-        .catch(function() {});
     }
 
     // ── Sync Content (single account) ──
@@ -804,7 +736,7 @@
                 if (data.success) {
                     showAlert(data.message + ' <a href="/sync/log" class="alert-link">查看日志</a>', 'success');
                     if (data.ai_job_id) {
-                        pollJobStatus(data.ai_job_id);
+                        window.startGlobalSyncPoll(data.ai_job_id);
                     }
                 } else {
                     showAlert(data.message, 'danger');
@@ -864,7 +796,7 @@
                     .then(function(r) { return r.json(); })
                     .then(function(aiData) {
                         if (aiData.job_id) {
-                            pollJobStatus(aiData.job_id);
+                            window.startGlobalSyncPoll(aiData.job_id);
                         }
                     })
                     .catch(function(err) {
@@ -899,7 +831,7 @@
                 if (data.success) {
                     showAlert(data.message + ' <a href="/sync/log" class="alert-link">查看日志</a>', 'success');
                     if (data.job_id) {
-                        pollJobStatus(data.job_id);
+                        window.startGlobalSyncPoll(data.job_id);
                     }
                 } else {
                     showAlert(data.message, 'danger');
@@ -910,9 +842,6 @@
             });
         });
     };
-
-    // ── Init: check for running job ──
-    checkRunningJob();
 })();
 </script>
 {% endblock %}

@@ -1,6 +1,7 @@
 """Sync blueprint: content sync + AI backfill routes."""
 from __future__ import annotations
 
+import json
 import threading
 import logging
 from datetime import datetime, timedelta
@@ -157,11 +158,18 @@ def _start_content_sync_thread(job_id, user_id):
                 total_probs = 0
                 synced = 0
                 errors = []
+                account_details = []
 
                 for i, account in enumerate(accounts):
                     job.current_phase = account.platform
                     job.progress_current = i
                     db.session.commit()
+
+                    detail = {
+                        'platform': account.platform,
+                        'platform_uid': account.platform_uid,
+                        'student_name': account.student.name,
+                    }
 
                     try:
                         stats = service.sync_account(account.id)
@@ -169,13 +177,22 @@ def _start_content_sync_thread(job_id, user_id):
                             synced += 1
                             total_subs += stats.get('new_submissions', 0)
                             total_probs += stats.get('new_problems', 0)
+                            detail.update(
+                                status='ok',
+                                new_submissions=stats.get('new_submissions', 0),
+                                new_problems=stats.get('new_problems', 0),
+                            )
                         else:
                             errors.append(f'{account.platform}: {stats["error"]}')
+                            detail.update(status='error', error=stats['error'])
                     except Exception as e:
                         logger.error(
                             f'Content sync failed for account {account.id}: {e}'
                         )
                         errors.append(f'{account.platform}: {e}')
+                        detail.update(status='error', error=str(e))
+
+                    account_details.append(detail)
 
                 job.progress_current = len(accounts)
                 job.current_phase = None
@@ -185,6 +202,7 @@ def _start_content_sync_thread(job_id, user_id):
                     'total_new_submissions': total_subs,
                     'total_new_problems': total_probs,
                     'errors': errors,
+                    'account_details': account_details,
                 }
                 job.finished_at = datetime.utcnow()
                 db.session.commit()
@@ -244,6 +262,15 @@ def sync_content(account_id):
             job.error_message = stats['error']
         else:
             job.status = 'completed'
+            # Enrich stats with platform/account info for detail view
+            stats['account_details'] = [{
+                'platform': account.platform,
+                'platform_uid': account.platform_uid,
+                'student_name': account.student.name,
+                'status': 'ok',
+                'new_submissions': stats.get('new_submissions', 0),
+                'new_problems': stats.get('new_problems', 0),
+            }]
             job.stats = stats
 
         job.finished_at = datetime.utcnow()
@@ -438,6 +465,69 @@ def job_status(job_id):
     })
 
 
+@sync_bp.route('/job/<int:job_id>/detail')
+@login_required
+def job_detail(job_id):
+    """Return detailed breakdown of a sync job."""
+    job = db.session.get(SyncJob, job_id)
+    if not job or job.user_id != current_user.id:
+        return jsonify({'error': 'Not found'}), 404
+
+    result = {'job_type': job.job_type, 'status': job.status}
+
+    if job.job_type == 'content_sync':
+        stats = job.stats or {}
+        result['account_details'] = stats.get('account_details', [])
+        result['errors'] = stats.get('errors', [])
+    elif job.job_type == 'ai_backfill':
+        # Query AnalysisResult records created during this job's time window
+        comprehensive = []
+        reviews = []
+        total_cost = 0.0
+
+        if job.started_at:
+            end_time = job.finished_at or datetime.utcnow()
+            query = (
+                AnalysisResult.query
+                .filter(
+                    AnalysisResult.analyzed_at >= job.started_at,
+                    AnalysisResult.analyzed_at <= end_time,
+                )
+                .order_by(AnalysisResult.analyzed_at.desc())
+                .limit(100)
+                .all()
+            )
+
+            for ar in query:
+                cost = float(ar.cost_usd or 0)
+                total_cost += cost
+                item = {
+                    'analysis_type': ar.analysis_type,
+                    'model': ar.model_name,
+                    'cost': round(cost, 6),
+                    'analyzed_at': ar.analyzed_at.isoformat() if ar.analyzed_at else None,
+                }
+                if ar.problem:
+                    item['problem_name'] = ar.problem.title or ar.problem.problem_id
+                    item['platform'] = ar.problem.platform
+                    item['problem_id'] = ar.problem.problem_id
+                if ar.submission:
+                    item['submission_status'] = ar.submission.status
+                if ar.analysis_type == 'submission_review':
+                    reviews.append(item)
+                else:
+                    comprehensive.append(item)
+
+        result['comprehensive'] = comprehensive
+        result['reviews'] = reviews
+        result['total_cost'] = round(total_cost, 6)
+
+    if job.error_message:
+        result['error_message'] = job.error_message
+
+    return jsonify(result)
+
+
 @sync_bp.route('/running-job')
 @login_required
 def running_job():
@@ -460,6 +550,133 @@ def running_job():
         'progress_current': job.progress_current,
         'progress_total': job.progress_total,
     })
+
+
+@sync_bp.route('/check-new')
+@login_required
+def check_new():
+    """Check if there are new submissions to sync.
+
+    Uses a user-level lock (via UserSetting) so concurrent requests from
+    multiple tabs/devices don't all fire network requests.  Results are
+    cached for 30 minutes.
+    """
+    from app.scrapers import get_scraper_class, get_scraper_instance
+
+    user_id = current_user.id
+    now = datetime.utcnow()
+
+    # ── Check lock ──
+    lock_val = UserSetting.get(user_id, 'check_new_lock')
+    if lock_val:
+        try:
+            lock_time = datetime.fromisoformat(lock_val)
+            if (now - lock_time).total_seconds() < 60:
+                # Another request is running — return cached result if any
+                cached = _get_check_new_cache(user_id, now)
+                if cached is not None:
+                    return jsonify({'accounts_with_new': cached, 'locked': True})
+                return jsonify({'accounts_with_new': [], 'locked': True})
+        except (ValueError, TypeError):
+            pass
+
+    # ── Check cache (valid for 30 minutes) ──
+    cached = _get_check_new_cache(user_id, now)
+    if cached is not None:
+        return jsonify({'accounts_with_new': cached, 'cached': True})
+
+    # ── Set lock ──
+    UserSetting.set(user_id, 'check_new_lock', now.isoformat())
+    db.session.commit()
+
+    try:
+        # Get active accounts
+        student_ids = [s.id for s in Student.query.filter_by(parent_id=user_id).all()]
+        accounts = []
+        if student_ids:
+            accounts = PlatformAccount.query.filter(
+                PlatformAccount.student_id.in_(student_ids),
+                PlatformAccount.is_active == True,  # noqa: E712
+            ).all()
+
+        accounts_with_new = []
+        for account in accounts:
+            scraper_cls = get_scraper_class(account.platform)
+            if not scraper_cls:
+                continue
+
+            if scraper_cls.REQUIRES_LOGIN:
+                # Time-based check: flag if last sync > 24h ago
+                if account.last_sync_at and (now - account.last_sync_at).total_seconds() > 86400:
+                    accounts_with_new.append({
+                        'account_id': account.id,
+                        'platform': account.platform,
+                        'platform_uid': account.platform_uid,
+                        'student_name': account.student.name,
+                        'check_method': 'time_based',
+                    })
+                elif not account.last_sync_at:
+                    accounts_with_new.append({
+                        'account_id': account.id,
+                        'platform': account.platform,
+                        'platform_uid': account.platform_uid,
+                        'student_name': account.student.name,
+                        'check_method': 'time_based',
+                    })
+                continue
+
+            # For non-login platforms: try fetching one submission
+            try:
+                scraper = get_scraper_instance(
+                    account.platform,
+                    auth_cookie=account.auth_cookie,
+                )
+                gen = scraper.fetch_submissions(
+                    platform_uid=account.platform_uid,
+                    since=account.last_sync_at,
+                    cursor=account.sync_cursor,
+                )
+                first = next(gen, None)
+                if first is not None:
+                    accounts_with_new.append({
+                        'account_id': account.id,
+                        'platform': account.platform,
+                        'platform_uid': account.platform_uid,
+                        'student_name': account.student.name,
+                        'check_method': 'api_check',
+                    })
+            except Exception as e:
+                logger.debug(f'check-new: error checking {account.platform}:{account.platform_uid}: {e}')
+
+        # ── Write cache, clear lock ──
+        UserSetting.set(user_id, 'check_new_result', json.dumps(accounts_with_new))
+        UserSetting.set(user_id, 'check_new_result_at', now.isoformat())
+        UserSetting.set(user_id, 'check_new_lock', '')
+        db.session.commit()
+
+        return jsonify({'accounts_with_new': accounts_with_new})
+
+    except Exception as e:
+        logger.error(f'check-new failed for user {user_id}: {e}')
+        UserSetting.set(user_id, 'check_new_lock', '')
+        db.session.commit()
+        return jsonify({'accounts_with_new': [], 'error': str(e)})
+
+
+def _get_check_new_cache(user_id, now):
+    """Return cached check-new result if still valid (< 30 min), else None."""
+    result_at = UserSetting.get(user_id, 'check_new_result_at')
+    if not result_at:
+        return None
+    try:
+        cache_time = datetime.fromisoformat(result_at)
+        if (now - cache_time).total_seconds() < 1800:
+            raw = UserSetting.get(user_id, 'check_new_result')
+            if raw:
+                return json.loads(raw)
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 @sync_bp.route('/ai-cost-info')
