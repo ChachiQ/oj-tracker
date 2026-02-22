@@ -17,9 +17,10 @@ class BaseScraper(ABC):
     SUPPORT_CODE_FETCH: bool = False
     REQUIRES_LOGIN: bool = False
 
-    def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0):
+    def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0, platform_uid: str = None):
         self.auth_cookie = auth_cookie
         self.auth_password = auth_password
+        self.platform_uid = platform_uid
         self.rate_limiter = get_platform_limiter(self.PLATFORM_NAME, rate_limit)
         self.logger = logging.getLogger(f'scraper.{self.PLATFORM_NAME}')
         self.session = self._create_session()

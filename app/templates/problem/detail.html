@@ -487,7 +487,9 @@ function apiPost(url, timeoutMs) {
         signal: controller.signal
     }).then(function(r) {
         if (timeoutId) clearTimeout(timeoutId);
-        if (!r.ok) return r.text().then(function(t) { throw new Error('HTTP ' + r.status); });
+        if (!r.ok) return r.json().catch(function() { return {}; }).then(function(body) {
+            throw new Error(body.error || body.message || 'HTTP ' + r.status);
+        });
         return r.json();
     }).catch(function(err) {
         if (timeoutId) clearTimeout(timeoutId);

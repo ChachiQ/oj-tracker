@@ -38,8 +38,8 @@ class CTOJScraper(BaseScraper):
     SUPPORT_CODE_FETCH = True
     REQUIRES_LOGIN = True
 
-    def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0):
-        super().__init__(auth_cookie=auth_cookie, auth_password=auth_password, rate_limit=rate_limit)
+    def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0, platform_uid: str = None):
+        super().__init__(auth_cookie=auth_cookie, auth_password=auth_password, rate_limit=rate_limit, platform_uid=platform_uid)
         self._logged_in = False
         self._domains_cache = None
         # Hydro supports JSON responses via Accept header
@@ -245,6 +245,11 @@ class CTOJScraper(BaseScraper):
     def fetch_problem(self, problem_id: str) -> ScrapedProblem | None:
         """Fetch problem details. problem_id format: {domain}/{pid}."""
         try:
+            uid = self.platform_uid
+            if uid and not self._ensure_logged_in(uid):
+                self.logger.error("Cannot fetch problem: login failed")
+                return None
+
             parts = problem_id.split('/', 1)
             if len(parts) != 2:
                 self.logger.warning(f"Invalid CTOJ problem_id format: {problem_id}")
@@ -348,6 +353,11 @@ class CTOJScraper(BaseScraper):
     def fetch_submission_code(self, record_id: str) -> str | None:
         """Fetch source code for a submission. record_id format: {domain}/{rid}."""
         try:
+            uid = self.platform_uid
+            if uid and not self._ensure_logged_in(uid):
+                self.logger.error("Cannot fetch submission code: login failed")
+                return None
+
             parts = record_id.split('/', 1)
             if len(parts) != 2:
                 self.logger.warning(f"Invalid CTOJ record_id format: {record_id}")

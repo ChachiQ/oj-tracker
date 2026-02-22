@@ -562,6 +562,8 @@ def problem_resync(problem_id):
                     scraper_kwargs['auth_cookie'] = acct.auth_cookie
                 if acct.auth_password:
                     scraper_kwargs['auth_password'] = acct.auth_password
+                if acct.platform_uid:
+                    scraper_kwargs['platform_uid'] = acct.platform_uid
                 break
         if scraper_kwargs:
             break
@@ -578,7 +580,7 @@ def problem_resync(problem_id):
         return jsonify({'success': False, 'error': f'抓取失败: {e}'}), 500
 
     if not scraped:
-        return jsonify({'success': False, 'error': '平台未返回题目数据'}), 404
+        return jsonify({'success': False, 'error': '平台未返回题目数据'}), 502
 
     # Force-overwrite all content fields
     try:
