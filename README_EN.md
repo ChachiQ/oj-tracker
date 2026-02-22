@@ -6,7 +6,7 @@ A web application that helps parents track their children's competitive programm
 
 ## Features
 
-- **Multi-Platform Sync** - Supports Luogu, BBC OJ (HOJ system), and Ybt OJ, with a plugin-based scraper architecture for easy extension
+- **Multi-Platform Sync** - Supports Luogu, BBC OJ (HOJ system), Ybt OJ, and CTOJ (Cool Think OJ), with a plugin-based scraper architecture for easy extension
 - **Sync/AI Decoupling** - Content sync and AI analysis run independently, SyncJob task tracking, pause/resume support
 - **Dashboard** - Stats cards, radar chart, heatmap (selectable time range), difficulty distribution, and submission calendar
 - **Knowledge Graph** - ECharts force-directed graph with 6-stage layered display (Syntax Basics to NOI), tri-color node status
@@ -27,7 +27,7 @@ A web application that helps parents track their children's competitive programm
 | Scheduler | APScheduler |
 | AI Analysis | Claude / OpenAI / Zhipu (configurable multi-model) |
 | Data Analysis | pandas + numpy |
-| Testing | pytest (285 test cases) |
+| Testing | pytest (292 test cases) |
 
 ## Project Structure
 
@@ -56,7 +56,7 @@ oj-tracker/
 │   ├── static/              # CSS/JS
 │   └── tasks/               # APScheduler scheduled tasks
 ├── migrations/              # Alembic database migrations
-├── tests/                   # pytest test suite (285 cases)
+├── tests/                   # pytest test suite (292 cases)
 ├── backfill_tags.py         # Tag backfill script
 ├── seed_data.py             # Knowledge point seed data (80+ tags)
 ├── run.py                   # Entry point
@@ -173,6 +173,7 @@ User 1──N Student 1──N PlatformAccount 1──N Submission N──1 Prob
 | Luogu | `luogu` | JSON API (x-lentille-request header) |
 | BBC OJ | `bbcoj` | HOJ system REST API |
 | Ybt (Yi Ben Tong) | `ybt` | PHP system HTML/JS parsing |
+| CTOJ (Cool Think OJ) | `ctoj` | Hydro system REST API |
 
 ### Adding a New Platform
 
@@ -236,6 +237,8 @@ Switch via `FLASK_ENV` environment variable or `create_app(config_name)`.
 | `/api/problem/<problem_id>/full-solution` | POST | AI-generated full solution |
 | `/api/problem/<problem_id>/resync` | POST | Re-sync problem information |
 | `/api/submission/<submission_id>/review` | POST | AI review of submission code |
+| `/api/problem/<problem_id>/classify` | POST | AI problem classification |
+| `/api/problem/<problem_id>/comprehensive` | POST | One-click comprehensive analysis |
 
 All API endpoints require authentication and only allow access to the current user's children's data.
 
@@ -260,6 +263,7 @@ All API endpoints require authentication and only allow access to the current us
 | `/problem/` | Problem library |
 | `/problem/<id>` | Problem detail |
 | `/settings/` | Settings (platform account management) |
+| `/logs/` | Web log viewer |
 
 ## Architecture Highlights
 
@@ -354,7 +358,16 @@ All foundational features complete:
 - Platform account pause/resume, problem list filter improvements
 - 285 automated test cases
 
-### v0.6.0 -- Deployment & Extensions
+### v0.6.0 (2026-02-22) -- CTOJ Platform + One-Click Comprehensive Analysis + Global Sync Progress + Image Multimodal AI ✅
+
+- CTOJ (Cool Think OJ) scraper: Hydro system REST API integration
+- One-click comprehensive analysis: merge 3 serial LLM calls into 1, concurrent AI backfill
+- Web log viewer (/logs page) + global sync progress bar
+- Image rendering + AI multimodal support
+- Numerous AI analysis stability fixes (GLM-5 compatibility, JSON fault tolerance, timeout control)
+- 292 automated test cases
+
+### v0.7.0 -- Deployment & Extensions
 
 Planned:
 - Cloud deployment (Gunicorn + Nginx)
@@ -368,7 +381,7 @@ Planned:
 | Phase 1 - Core Skeleton | Flask app factory, database models, auth, base layout | ✅ |
 | Phase 2 - Scraper System | BaseScraper, 3 scrapers, SyncService, account management, seed data | ✅ |
 | Phase 3 - Analysis & Visualization | AnalysisEngine, Dashboard, WeaknessDetector, TrendAnalyzer, knowledge graph | ✅ |
-| Phase 4 - AI Analysis & Recommendations | AI 4-stage pipeline, sync/AI decoupling, AIBackfillService, SyncJob, 285 tests | ✅ |
+| Phase 4 - AI Analysis & Recommendations | AI 4-stage pipeline, sync/AI decoupling, AIBackfillService, SyncJob, 292 tests | ✅ |
 | Phase 5 - Deployment & Extensions | Cloud deployment, school OJ adapters, PDF export | Planned |
 
 ## Development Guide
@@ -388,7 +401,7 @@ source venv/bin/activate
 pytest tests/ -v --tb=short
 ```
 
-The test suite includes 285 test cases covering:
+The test suite includes 292 test cases covering:
 - Models: CRUD, relationships, and constraints for all 11 models
 - Auth: registration, login, logout, access control
 - Views: GET/POST responses for all routes

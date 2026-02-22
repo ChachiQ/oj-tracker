@@ -31,7 +31,7 @@ oj-tracker/
 │   ├── static/              # CSS/JS
 │   └── tasks/               # APScheduler定时任务
 ├── migrations/              # Alembic数据库迁移
-├── tests/                   # pytest测试套件 (285个用例)
+├── tests/                   # pytest测试套件 (292个用例)
 ├── backfill_tags.py         # 标签回填脚本
 ├── seed_data.py             # 知识点种子数据
 ├── run.py                   # 启动入口
@@ -108,6 +108,7 @@ User 1-N SyncJob
 - 洛谷 (luogu) - JSON API（无需登录）
 - BBC OJ (bbcoj) - HOJ系统 REST API（需密码登录，会影响活跃会话）
 - 一本通 (ybt) - PHP系统 HTML解析（需密码登录，会影响活跃会话）
+- CTOJ 酷思未来 (ctoj) - Hydro系统 REST API（需密码登录，会影响活跃会话）
 
 ## 当前进度
 见 CHANGELOG.md

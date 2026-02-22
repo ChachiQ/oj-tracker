@@ -6,7 +6,7 @@
 
 ## 功能概览
 
-- **多平台同步** - 支持洛谷、BBC OJ（HOJ系统）、一本通OJ，爬虫插件化架构可轻松扩展
+- **多平台同步** - 支持洛谷、BBC OJ（HOJ系统）、一本通OJ、CTOJ酷思未来，爬虫插件化架构可轻松扩展
 - **同步/AI解耦** - 内容同步与AI分析独立运行，SyncJob任务追踪，支持暂停/恢复
 - **Dashboard总览** - 统计卡片、雷达图、热力图（可选时间范围）、难度分布、刷题日历
 - **知识点图谱** - ECharts力导向图，6阶段分层展示（语法基础→NOI），节点三色状态
@@ -27,7 +27,7 @@
 | 定时任务 | APScheduler |
 | AI分析 | Claude / OpenAI / 智谱（多模型可配置）|
 | 数据分析 | pandas + numpy |
-| 测试 | pytest（285个测试用例）|
+| 测试 | pytest（292个测试用例）|
 
 ## 目录结构
 
@@ -56,7 +56,7 @@ oj-tracker/
 │   ├── static/              # CSS/JS
 │   └── tasks/               # APScheduler定时任务
 ├── migrations/              # Alembic数据库迁移
-├── tests/                   # pytest测试套件 (285个用例)
+├── tests/                   # pytest测试套件 (292个用例)
 ├── backfill_tags.py         # 标签回填脚本
 ├── seed_data.py             # 知识点种子数据 (80+标签)
 ├── run.py                   # 启动入口
@@ -173,6 +173,7 @@ User 1──N Student 1──N PlatformAccount 1──N Submission N──1 Prob
 | 洛谷 | `luogu` | JSON API（x-lentille-request 头获取数据）|
 | BBC OJ | `bbcoj` | HOJ系统 REST API |
 | 一本通 | `ybt` | PHP系统 HTML/JS 解析 |
+| CTOJ 酷思未来 | `ctoj` | Hydro系统 REST API |
 
 ### 添加新平台
 
@@ -236,6 +237,8 @@ class NewOJScraper(BaseScraper):
 | `/api/problem/<problem_id>/full-solution` | POST | AI生成完整题解 |
 | `/api/problem/<problem_id>/resync` | POST | 重新同步题目信息 |
 | `/api/submission/<submission_id>/review` | POST | AI评审提交代码 |
+| `/api/problem/<problem_id>/classify` | POST | AI分类题目 |
+| `/api/problem/<problem_id>/comprehensive` | POST | 一键综合分析 |
 
 所有API端点需要登录且只能访问自己孩子的数据。
 
@@ -260,6 +263,7 @@ class NewOJScraper(BaseScraper):
 | `/problem/` | 题目库 |
 | `/problem/<id>` | 题目详情 |
 | `/settings/` | 设置（平台账号管理）|
+| `/logs/` | Web 日志查看器 |
 
 ## 关键设计
 
@@ -354,7 +358,16 @@ class NewOJScraper(BaseScraper):
 - 平台账号暂停/恢复、题库筛选改进
 - 285个自动化测试用例
 
-### v0.6.0 -- 部署与扩展
+### v0.6.0 (2026-02-22) -- CTOJ平台 + 一键综合分析 + 全局同步进度 + 图片多模态AI ✅
+
+- CTOJ（酷思未来）爬虫：Hydro系统 REST API 对接
+- 一键综合分析：合并3次串行LLM调用为1次，支持并发AI回填
+- Web日志查看器（/logs页面）+ 全局同步进度条
+- 图片渲染 + AI多模态支持
+- 大量AI分析稳定性修复（GLM-5兼容、JSON容错、超时控制）
+- 292个自动化测试用例
+
+### v0.7.0 -- 部署与扩展
 
 计划内容：
 - 云服务器部署方案（Gunicorn + Nginx）
@@ -368,7 +381,7 @@ class NewOJScraper(BaseScraper):
 | Phase 1 - 核心骨架 | Flask app factory, 数据库模型, 登录注册, 基础布局 | ✅ |
 | Phase 2 - 爬虫系统 | BaseScraper抽象基类, 3个爬虫, SyncService, 账号管理, 种子数据 | ✅ |
 | Phase 3 - 分析与可视化 | AnalysisEngine, Dashboard, WeaknessDetector, TrendAnalyzer, 知识点图谱 | ✅ |
-| Phase 4 - AI分析与推荐 | AI 4阶段流水线, 同步/AI解耦, AIBackfillService, SyncJob, 285个测试 | ✅ |
+| Phase 4 - AI分析与推荐 | AI 4阶段流水线, 同步/AI解耦, AIBackfillService, SyncJob, 292个测试 | ✅ |
 | Phase 5 - 部署与扩展 | 云部署, 学校OJ适配, PDF导出 | 计划中 |
 
 ## 开发指南
@@ -388,7 +401,7 @@ source venv/bin/activate
 pytest tests/ -v --tb=short
 ```
 
-测试套件包含 285 个测试用例，覆盖：
+测试套件包含 292 个测试用例，覆盖：
 - 模型层：11个模型的CRUD、关系、约束
 - 认证：注册、登录、登出、权限控制
 - 视图层：所有路由的GET/POST响应
