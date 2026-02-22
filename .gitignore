@@ -65,6 +65,9 @@ instance/
 *.db
 migrations/versions/*.pyc
 
+# Claude Code
+.claude/
+
 # IDEs
 .vscode/
 .idea/
