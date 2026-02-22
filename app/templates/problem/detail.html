@@ -559,7 +559,7 @@ function triggerComprehensive(overrideMaxTokens) {
     startTimer(loadingEl);
 
     var body = overrideMaxTokens ? JSON.stringify({max_tokens: overrideMaxTokens}) : null;
-    apiPost('/api/problem/' + PROBLEM_ID + '/comprehensive', 660000, body)
+    apiPost('/api/problem/' + PROBLEM_ID + '/comprehensive', 900000, body)
     .then(function(data) {
         stopTimer(loadingEl);
         loadingEl.classList.add('d-none');
@@ -731,7 +731,7 @@ function triggerReview(subId, force) {
     startTimer(resultEl);
 
     var url = '/api/submission/' + subId + '/review' + (force ? '?force=1' : '');
-    apiPost(url, 300000)
+    apiPost(url, 480000)
     .then(function(data) {
         stopTimer(resultEl);
         if (data.success) {
