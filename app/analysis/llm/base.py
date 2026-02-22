@@ -18,6 +18,7 @@ class LLMResponse:
     output_tokens: int = 0
     cost: float = 0.0
     latency_ms: int = 0
+    finish_reason: str = ""
 
 
 class BaseLLMProvider(ABC):

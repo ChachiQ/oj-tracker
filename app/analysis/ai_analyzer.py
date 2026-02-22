@@ -55,6 +55,149 @@ def _clean_llm_json(text: str) -> str:
     return stripped
 
 
+def _fix_json_escape_sequences(text: str) -> str:
+    """Fix invalid JSON escape sequences like \\max, \\min from LaTeX.
+
+    Scans character-by-character and doubles any backslash that is followed
+    by a character not valid in JSON escapes (not one of: " \\ / b f n r t u).
+    Only call this as a fallback after json.loads fails on the original text.
+    """
+    if not text:
+        return text
+    _VALID_ESCAPES = set('"\\\/bfnrtu')
+    result = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == '\\' and i + 1 < len(text):
+            next_ch = text[i + 1]
+            if next_ch in _VALID_ESCAPES:
+                result.append(ch)
+            else:
+                # Invalid escape like \max → \\max
+                result.append('\\\\')
+            i += 1
+            result.append(text[i])
+        else:
+            result.append(ch)
+        i += 1
+    return ''.join(result)
+
+
+def _repair_truncated_json(text: str) -> str:
+    """Attempt to close a truncated JSON string by tracking bracket/quote nesting.
+
+    If the JSON is already complete, returns it unchanged.
+    """
+    if not text:
+        return text
+    text = text.rstrip()
+
+    # Quick check: if it parses, return as-is
+    try:
+        json.loads(text)
+        return text
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    in_string = False
+    escape_next = False
+    stack = []  # tracks { and [
+
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == '\\' and in_string:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch in ('{', '['):
+            stack.append(ch)
+        elif ch == '}':
+            if stack and stack[-1] == '{':
+                stack.pop()
+        elif ch == ']':
+            if stack and stack[-1] == '[':
+                stack.pop()
+
+    if not stack and not in_string:
+        # Balanced already — truncation isn't about brackets
+        return text
+
+    repaired = text.rstrip()
+
+    # If we're inside a string, close it
+    if in_string:
+        repaired += '"'
+
+    # Strip trailing comma or incomplete value tokens
+    repaired = repaired.rstrip()
+    while repaired and repaired[-1] in (',', ':'):
+        repaired = repaired[:-1].rstrip()
+
+    # Close unclosed brackets in reverse order
+    for opener in reversed(stack):
+        repaired += '}' if opener == '{' else ']'
+
+    return repaired
+
+
+def _parse_llm_json(text: str) -> dict | None:
+    """Multi-level tolerant JSON parser for LLM responses.
+
+    Tries increasingly aggressive repair strategies:
+    1. _clean_llm_json → json.loads (existing logic)
+    2. _fix_json_escape_sequences → json.loads
+    3. _repair_truncated_json → json.loads
+    4. escape fix + truncation repair combined
+    """
+    if not text:
+        return None
+
+    # Level 1: clean + parse
+    cleaned = _clean_llm_json(text)
+    try:
+        result = json.loads(cleaned)
+        if isinstance(result, dict):
+            return result
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Level 2: fix escape sequences
+    try:
+        fixed = _fix_json_escape_sequences(cleaned)
+        result = json.loads(fixed)
+        if isinstance(result, dict):
+            return result
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Level 3: repair truncation
+    try:
+        repaired = _repair_truncated_json(cleaned)
+        result = json.loads(repaired)
+        if isinstance(result, dict):
+            return result
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Level 4: escape fix + truncation repair combined
+    try:
+        combined = _repair_truncated_json(fixed)
+        result = json.loads(combined)
+        if isinstance(result, dict):
+            return result
+    except (json.JSONDecodeError, TypeError, UnboundLocalError):
+        pass
+
+    return None
+
+
 # 中文难度描述 → 数字映射（基于 _macros.html 的 labels）
 _DIFFICULTY_TEXT_MAP = {
     '入门': 1, '入门+': 2,
@@ -725,14 +868,18 @@ class AIAnalyzer:
             db.session.commit()
             return None
 
-        cleaned = _clean_llm_json(response.content)
-        try:
-            parsed = json.loads(cleaned)
-        except (json.JSONDecodeError, TypeError):
+        if response.finish_reason in ("max_tokens", "length"):
+            logger.warning(f"Comprehensive response TRUNCATED for problem {problem_id}: "
+                           f"finish_reason={response.finish_reason}, output_tokens={response.output_tokens}")
+
+        parsed = _parse_llm_json(response.content)
+        if parsed is None:
             logger.error(f"Comprehensive analysis JSON parse failed for {problem_id}")
+            truncated = (f" [TRUNCATED: {response.finish_reason}]"
+                         if response.finish_reason in ("max_tokens", "length") else "")
             problem.difficulty = 0
             problem.ai_analyzed = True
-            problem.ai_analysis_error = f"comprehensive JSON parse failed: {response.content[:200]}"
+            problem.ai_analysis_error = f"comprehensive JSON parse failed{truncated}: {response.content[:200]}"
             problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
             if problem.ai_retry_count >= 3:
                 problem.ai_skip_backfill = True
@@ -762,6 +909,12 @@ class AIAnalyzer:
 
         # --- classify ---
         classify_data = parsed.get("classify")
+        if not classify_data and isinstance(parsed.get("problem_type"), str):
+            classify_data = {
+                "problem_type": parsed.get("problem_type", ""),
+                "knowledge_points": parsed.get("knowledge_points", []),
+                "difficulty_assessment": parsed.get("difficulty_assessment", {}),
+            }
         if classify_data and isinstance(classify_data, dict):
             try:
                 result_json = json.dumps(classify_data, ensure_ascii=False)

@@ -16,7 +16,7 @@ from sqlalchemy import or_
 
 from app.extensions import db
 from app.models import Problem, Tag, UserSetting, AnalysisResult
-from .ai_analyzer import _clean_llm_json
+from .ai_analyzer import _clean_llm_json, _parse_llm_json
 from .llm import get_provider
 from .llm.config import MODEL_CONFIG
 from .prompts.problem_classify import build_classify_prompt
@@ -207,11 +207,8 @@ class ProblemClassifier:
             )
 
             # Parse response and persist results
+            parsed = _parse_llm_json(response.content)
             cleaned = _clean_llm_json(response.content)
-            try:
-                parsed = json.loads(cleaned)
-            except (json.JSONDecodeError, TypeError):
-                parsed = None
 
             if parsed:
                 # Store raw AI response in ai_tags

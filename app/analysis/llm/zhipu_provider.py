@@ -146,6 +146,7 @@ class ZhipuProvider(BaseLLMProvider):
             output_tokens=output_tokens,
             cost=cost,
             latency_ms=latency_ms,
+            finish_reason=choice.finish_reason or "",
         )
 
     def list_models(self) -> list[str]:

@@ -44,8 +44,17 @@ def build_problem_comprehensive_prompt(
 
     return [
         {
+            "role": "system",
+            "content": (
+                "你是信息学竞赛题目分类和解题专家。"
+                "你必须严格只输出 JSON，不要输出任何其他文字、解释或 markdown 代码块标记。"
+                "JSON 字符串值中如果包含反斜杠（如 LaTeX 公式 \\max），请使用双反斜杠转义。"
+                "确保输出完整的 JSON，不要截断。"
+            ),
+        },
+        {
             "role": "user",
-            "content": f"""你是信息学竞赛题目分类专家兼资深教练。请对以下题目进行完整分析，包括分类、解题思路和完整代码。
+            "content": f"""请对以下题目进行完整分析，包括分类、解题思路和完整代码。
 
 ## 题目信息
 标题：{title}
