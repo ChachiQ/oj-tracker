@@ -1,3 +1,4 @@
+import inspect
 import os
 import importlib
 import pkgutil
@@ -27,7 +28,11 @@ def get_scraper_instance(platform_name: str, **kwargs):
     cls = _registry.get(platform_name)
     if cls is None:
         raise ValueError(f"Unknown platform: {platform_name}")
-    return cls(**kwargs)
+    # Filter kwargs to only those accepted by the scraper's __init__
+    sig = inspect.signature(cls.__init__)
+    accepted = set(sig.parameters.keys()) - {'self'}
+    filtered = {k: v for k, v in kwargs.items() if k in accepted}
+    return cls(**filtered)
 
 
 def _auto_discover():

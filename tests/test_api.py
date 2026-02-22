@@ -180,18 +180,30 @@ class TestProblemSolutionAPI:
         assert result['success'] is True
         assert result['analysis']['approach'] == 'test approach'
 
-    def test_problem_solution_unauthorized(self, app, db, logged_in_client):
-        """Cannot analyze a problem the user has no submissions for."""
+    def test_problem_solution_no_submissions_ok(self, app, db, logged_in_client):
+        """Can analyze a problem even without submissions (e.g. added via URL parser)."""
         client, data = logged_in_client
-        # Create a problem the user has no submissions for
         with app.app_context():
             prob = Problem(platform='luogu', problem_id='P9999', title='Other')
             db.session.add(prob)
             db.session.commit()
             pid = prob.id
 
-        resp = client.post(f'/api/problem/{pid}/solution')
-        assert resp.status_code == 403
+        mock_result = MagicMock()
+        mock_result.result_json = json.dumps({"approach": "test"})
+        mock_result.analyzed_at = MagicMock()
+        mock_result.analyzed_at.strftime.return_value = "2026-02-15 12:00"
+        mock_result.ai_model = "test-model"
+
+        with patch('app.analysis.ai_analyzer.AIAnalyzer') as MockAnalyzer:
+            MockAnalyzer.return_value.analyze_problem_comprehensive.return_value = {
+                'classify': MagicMock(), 'solution': mock_result, 'full_solution': MagicMock(),
+            }
+            resp = client.post(f'/api/problem/{pid}/solution')
+
+        assert resp.status_code == 200
+        result = resp.get_json()
+        assert result['success'] is True
 
     def test_problem_full_solution_success(self, app, logged_in_client):
         client, data = logged_in_client

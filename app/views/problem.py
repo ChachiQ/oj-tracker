@@ -12,9 +12,22 @@ from app.models import (
     Student,
     AnalysisResult,
 )
-from app.scrapers import get_scraper_class
+from app.scrapers import get_scraper_class, get_all_scrapers
 
 problem_bp = Blueprint('problem', __name__, url_prefix='/problem')
+
+
+@problem_bp.route('/analyze')
+@login_required
+def analyze():
+    """Problem analysis page: input a URL to fetch and preview a problem."""
+    scrapers = get_all_scrapers()
+    platforms = [
+        {'name': cls.PLATFORM_NAME, 'display': cls.PLATFORM_DISPLAY,
+         'requires_login': cls.REQUIRES_LOGIN}
+        for cls in scrapers.values()
+    ]
+    return render_template('problem/analyze.html', platforms=platforms)
 
 
 def _is_valid_analysis(result):

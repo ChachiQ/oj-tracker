@@ -6,6 +6,9 @@
 {% block content %}
 {% call page_header("题库", "bi-journal-code") %}
     <span class="text-muted">共 {{ pagination.total or 0 }} 题</span>
+    <a href="{{ url_for('problem.analyze') }}" class="btn btn-sm btn-outline-primary ms-2">
+        <i class="bi bi-search"></i> 题目分析
+    </a>
 {% endcall %}
 
 <!-- Filters -->

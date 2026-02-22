@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% from "_macros.html" import page_header, difficulty_badge %}
+
+{% block title %}题目分析 - OJ Tracker{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+{% endblock %}
+
+{% block content %}
+{% call page_header("题目分析", "bi-search") %}
+    <a href="{{ url_for('problem.list_problems') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> 返回题库
+    </a>
+{% endcall %}
+
+<!-- URL Input Card -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col">
+                <label for="problem-url" class="form-label fw-bold">题目 URL</label>
+                <input type="url" class="form-control" id="problem-url"
+                       placeholder="粘贴 OJ 题目链接，例如 https://www.luogu.com.cn/problem/P1001"
+                       autofocus>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-primary" id="btn-parse" onclick="parseUrl()">
+                    <i class="bi bi-search"></i> 解析
+                </button>
+            </div>
+        </div>
+        <div class="mt-2">
+            <small class="text-muted">
+                支持的平台：
+                {% for p in platforms %}
+                <span class="badge bg-light text-dark border">{{ p.display }}{% if p.requires_login %} <i class="bi bi-lock-fill" title="需要登录"></i>{% endif %}</span>
+                {% endfor %}
+            </small>
+        </div>
+    </div>
+</div>
+
+<!-- Loading -->
+<div id="loading-card" class="text-center py-4 d-none">
+    <div class="spinner-border text-primary"></div>
+    <p class="text-muted mt-2" id="loading-text">正在解析题目...</p>
+</div>
+
+<!-- Error -->
+<div id="error-card" class="alert alert-warning d-none" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> <span id="error-text"></span>
+</div>
+
+<!-- Already Exists -->
+<div id="exists-card" class="card shadow-sm mb-4 d-none">
+    <div class="card-body text-center py-4">
+        <i class="bi bi-check-circle text-success" style="font-size: 2rem;"></i>
+        <h5 class="mt-2" id="exists-title"></h5>
+        <p class="text-muted">该题目已存在于题库中</p>
+        <a id="exists-link" href="#" class="btn btn-primary">
+            <i class="bi bi-eye"></i> 查看详情
+        </a>
+    </div>
+</div>
+
+<!-- Preview Card -->
+<div id="preview-card" class="card shadow-sm mb-4 d-none">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-bold"><i class="bi bi-eye"></i> 题目预览</span>
+        <button class="btn btn-success btn-sm" id="btn-save" onclick="saveProblem()">
+            <i class="bi bi-download"></i> 保存到题库
+        </button>
+    </div>
+    <div class="card-body">
+        <!-- Header -->
+        <h4 class="fw-bold" id="preview-title"></h4>
+        <div class="mb-3" id="preview-meta">
+            <span class="badge bg-dark" id="preview-platform"></span>
+        </div>
+
+        <!-- Description -->
+        <div id="preview-description-section">
+            <h6 class="fw-bold border-bottom pb-1">题目描述</h6>
+            <div id="preview-description" class="problem-content mb-3"></div>
+        </div>
+
+        <!-- Input -->
+        <div id="preview-input-section" class="d-none">
+            <h6 class="fw-bold border-bottom pb-1">输入格式</h6>
+            <div id="preview-input" class="problem-content mb-3"></div>
+        </div>
+
+        <!-- Output -->
+        <div id="preview-output-section" class="d-none">
+            <h6 class="fw-bold border-bottom pb-1">输出格式</h6>
+            <div id="preview-output" class="problem-content mb-3"></div>
+        </div>
+
+        <!-- Examples -->
+        <div id="preview-examples-section" class="d-none">
+            <h6 class="fw-bold border-bottom pb-1">样例</h6>
+            <div id="preview-examples" class="problem-content mb-3"></div>
+        </div>
+
+        <!-- Hint -->
+        <div id="preview-hint-section" class="d-none">
+            <h6 class="fw-bold border-bottom pb-1">提示</h6>
+            <div id="preview-hint" class="problem-content mb-3"></div>
+        </div>
+
+        <!-- Source -->
+        <div id="preview-source-section" class="d-none">
+            <h6 class="fw-bold border-bottom pb-1">来源</h6>
+            <div id="preview-source" class="problem-content mb-3"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Save Loading -->
+<div id="save-loading" class="text-center py-4 d-none">
+    <div class="spinner-border text-success"></div>
+    <p class="text-muted mt-2">正在保存题目...</p>
+</div>
+
+<script>
+(function() {
+    var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    var currentData = null;  // Store parsed data for save
+
+    // Enter key triggers parse
+    document.getElementById('problem-url').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            parseUrl();
+        }
+    });
+
+    function hideAll() {
+        ['loading-card', 'error-card', 'exists-card', 'preview-card', 'save-loading'].forEach(function(id) {
+            document.getElementById(id).classList.add('d-none');
+        });
+    }
+
+    function showError(msg) {
+        hideAll();
+        document.getElementById('error-text').textContent = msg;
+        document.getElementById('error-card').classList.remove('d-none');
+    }
+
+    function setContentSection(id, content) {
+        var section = document.getElementById(id + '-section');
+        var el = document.getElementById(id);
+        if (content) {
+            el.innerHTML = content;
+            section.classList.remove('d-none');
+        } else {
+            section.classList.add('d-none');
+        }
+    }
+
+    function renderKaTeX() {
+        if (typeof renderMathInElement === 'undefined') return;
+        document.querySelectorAll('.problem-content').forEach(function(el) {
+            renderMathInElement(el, {
+                delimiters: [
+                    {left: '$$', right: '$$', display: true},
+                    {left: '$', right: '$', display: false}
+                ],
+                throwOnError: false
+            });
+        });
+    }
+
+    window.parseUrl = function() {
+        var url = document.getElementById('problem-url').value.trim();
+        if (!url) {
+            showError('请输入题目 URL');
+            return;
+        }
+
+        hideAll();
+        document.getElementById('loading-card').classList.remove('d-none');
+        document.getElementById('loading-text').textContent = '正在解析题目...';
+        document.getElementById('btn-parse').disabled = true;
+
+        fetch('/api/problem-analyze/parse', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({url: url}),
+        })
+        .then(function(resp) { return resp.json().then(function(d) { return {ok: resp.ok, data: d}; }); })
+        .then(function(result) {
+            hideAll();
+            document.getElementById('btn-parse').disabled = false;
+
+            if (!result.ok) {
+                showError(result.data.error || '解析失败');
+                return;
+            }
+
+            var data = result.data;
+
+            if (data.status === 'exists') {
+                document.getElementById('exists-title').textContent = data.title;
+                document.getElementById('exists-link').href = data.url;
+                document.getElementById('exists-card').classList.remove('d-none');
+                return;
+            }
+
+            if (data.status === 'preview') {
+                currentData = data;
+                document.getElementById('preview-title').textContent = data.title || data.problem_id;
+                document.getElementById('preview-platform').textContent = data.platform_display || data.platform;
+
+                setContentSection('preview-description', data.description);
+                setContentSection('preview-input', data.input_desc);
+                setContentSection('preview-output', data.output_desc);
+                setContentSection('preview-examples', data.examples);
+                setContentSection('preview-hint', data.hint);
+                setContentSection('preview-source', data.source);
+
+                document.getElementById('preview-card').classList.remove('d-none');
+                renderKaTeX();
+            }
+        })
+        .catch(function(err) {
+            hideAll();
+            document.getElementById('btn-parse').disabled = false;
+            showError('网络错误: ' + err.message);
+        });
+    };
+
+    window.saveProblem = function() {
+        if (!currentData) return;
+
+        hideAll();
+        document.getElementById('save-loading').classList.remove('d-none');
+
+        fetch('/api/problem-analyze/save', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+            },
+            body: JSON.stringify({
+                platform: currentData.platform,
+                problem_id: currentData.problem_id,
+            }),
+        })
+        .then(function(resp) { return resp.json().then(function(d) { return {ok: resp.ok, data: d}; }); })
+        .then(function(result) {
+            if (!result.ok) {
+                showError(result.data.error || '保存失败');
+                return;
+            }
+
+            var data = result.data;
+            if (data.status === 'exists' || data.status === 'saved') {
+                window.location.href = data.url;
+            }
+        })
+        .catch(function(err) {
+            showError('网络错误: ' + err.message);
+        });
+    };
+})();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+{% endblock %}
