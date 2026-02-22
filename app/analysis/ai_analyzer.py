@@ -888,27 +888,63 @@ class AIAnalyzer:
 
         parsed = _parse_llm_json(response.content)
 
-        # Auto-retry when model returns text instead of JSON
-        if parsed is None and response.finish_reason not in ("max_tokens", "length"):
-            logger.warning(
-                f"Comprehensive JSON parse failed for {problem_id}, "
-                f"retrying with reformat instruction "
-                f"(content preview: {response.content[:300]!r})"
-            )
-            retry_messages = messages + [
-                {"role": "assistant", "content": response.content},
-                {"role": "user", "content": (
-                    "你的分析内容很好，但输出格式不正确。"
-                    "请将上述分析结果严格按照我之前要求的 JSON 格式重新输出。"
-                    "只输出 JSON，不要包含任何其他文字或 markdown 标记。"
-                )},
-            ]
+        # Auto-retry with dual strategy when JSON parsing fails
+        if parsed is None:
+            is_truncated = response.finish_reason in ("max_tokens", "length")
+
+            if is_truncated:
+                # Strategy A: reasoning exhausted tokens — resend original prompt
+                # with an extra instruction to skip lengthy reasoning
+                logger.warning(
+                    f"Comprehensive JSON parse failed for {problem_id} "
+                    f"(truncation: finish_reason={response.finish_reason}), "
+                    f"retrying with shortened-reasoning instruction"
+                )
+                # Inject a concise-output instruction into the system message
+                truncation_hint = (
+                    "\n\n【重要】上一次请求因输出过长被截断。"
+                    "请直接输出 JSON 结果，不要进行冗长的推理过程。"
+                    "确保输出完整的 JSON 对象。"
+                )
+                retry_messages = []
+                for msg in messages:
+                    if msg["role"] == "system":
+                        retry_messages.append({
+                            **msg,
+                            "content": msg["content"] + truncation_hint,
+                        })
+                    else:
+                        retry_messages.append(msg)
+                # If no system message was found, add instruction as a user suffix
+                if not any(m["role"] == "system" for m in messages):
+                    retry_messages.append({
+                        "role": "user",
+                        "content": truncation_hint.strip(),
+                    })
+            else:
+                # Strategy B: prose response (finish_reason=stop) — send the
+                # model's reply back and ask it to reformat as JSON
+                logger.warning(
+                    f"Comprehensive JSON parse failed for {problem_id}, "
+                    f"retrying with reformat instruction "
+                    f"(content preview: {response.content[:300]!r})"
+                )
+                retry_messages = messages + [
+                    {"role": "assistant", "content": response.content},
+                    {"role": "user", "content": (
+                        "你的分析内容很好，但输出格式不正确。"
+                        "请将上述分析结果严格按照我之前要求的 JSON 格式重新输出。"
+                        "只输出 JSON，不要包含任何其他文字或 markdown 标记。"
+                    )},
+                ]
+
             try:
                 response2 = provider.chat(retry_messages, model=model, max_tokens=16384)
                 parsed = _parse_llm_json(response2.content)
                 if parsed:
                     response = response2
-                    logger.info(f"Comprehensive retry succeeded for {problem_id}")
+                    retry_type = "truncation" if is_truncated else "reformat"
+                    logger.info(f"Comprehensive {retry_type} retry succeeded for {problem_id}")
                 else:
                     logger.warning(
                         f"Comprehensive retry also failed for {problem_id} "

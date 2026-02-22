@@ -118,8 +118,24 @@ class ZhipuProvider(BaseLLMProvider):
                 logger.info(f"Zhipu: swapping content/reasoning_content (reasoning has JSON, {len(reasoning)} chars)")
                 content = reasoning
         elif not content and reasoning:
-            logger.info(f"Zhipu: content empty, using reasoning_content ({len(reasoning)} chars)")
-            content = reasoning
+            r_stripped = reasoning.strip()
+            reasoning_looks_json = r_stripped.startswith('{') or r_stripped.startswith('```')
+            if reasoning_looks_json:
+                # reasoning contains JSON — promote it
+                logger.info(f"Zhipu: content empty, promoting reasoning_content as JSON ({len(reasoning)} chars)")
+                content = reasoning
+            elif choice.finish_reason in ("length", "max_tokens"):
+                # Reasoning exhausted all tokens, no usable content produced
+                logger.warning(
+                    f"Zhipu: NOT promoting reasoning to content — "
+                    f"reasoning is prose ({len(reasoning)} chars) and "
+                    f"finish_reason={choice.finish_reason} (token budget exhausted)"
+                )
+                content = ""
+            else:
+                # finish_reason=stop, non-JSON — promote as fallback (preserve existing behavior)
+                logger.info(f"Zhipu: content empty, using reasoning_content as fallback ({len(reasoning)} chars)")
+                content = reasoning
 
         logger.info(
             f"Zhipu LLM response: model={model}, "
