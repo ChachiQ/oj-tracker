@@ -34,6 +34,7 @@ class Problem(db.Model):
     ai_analyzed = db.Column(db.Boolean, nullable=False, default=False)
     ai_analysis_error = db.Column(db.String(500), nullable=True)
     ai_retry_count = db.Column(db.Integer, nullable=False, default=0)
+    ai_skip_backfill = db.Column(db.Boolean, nullable=False, default=False)
     last_scanned_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 

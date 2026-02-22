@@ -344,6 +344,12 @@ def problem_classify(problem_id):
         platform_tags=platform_tags,
     )
 
+    # Reset skip flags so manual retry works
+    problem.ai_skip_backfill = False
+    problem.ai_retry_count = 0
+    problem.ai_analysis_error = None
+    db.session.commit()
+
     # Execute classification with force=True
     classifier = ProblemClassifier(app=current_app._get_current_object())
     success = classifier.classify_problem(problem_id, user_id=current_user.id, force=True)
@@ -392,6 +398,12 @@ def problem_comprehensive(problem_id):
 
     from app.analysis.ai_analyzer import AIAnalyzer
     from app.extensions import db
+
+    # Reset skip flags so manual retry works
+    problem.ai_skip_backfill = False
+    problem.ai_retry_count = 0
+    problem.ai_analysis_error = None
+    db.session.commit()
 
     analyzer = AIAnalyzer()
     results = analyzer.analyze_problem_comprehensive(

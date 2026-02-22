@@ -335,6 +335,15 @@ main {
     color: #2e3a59;
 }
 
+.report-content img {
+    max-width: 100%;
+    height: auto;
+}
+
+.report-content pre.code-viewer {
+    margin: 0.5rem 0 1rem;
+}
+
 /* Code Viewer */
 .code-viewer {
     background: #2d2d2d;

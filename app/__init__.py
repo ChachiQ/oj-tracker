@@ -152,9 +152,37 @@ def create_app(config_name=None):
             return ''
         from markupsafe import Markup
         text = str(text)
+
+        # Extract fenced code blocks before any escaping/processing
+        code_blocks = []
+
+        def _replace_code_block(m):
+            lang = m.group(1) or ''
+            code = m.group(2)
+            # Always HTML-escape code block content independently
+            code = code.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            lang_class = f'language-{lang}' if lang.strip() else 'plaintext'
+            html = f'<pre class="code-viewer"><code class="{lang_class}">{code}</code></pre>'
+            idx = len(code_blocks)
+            code_blocks.append(html)
+            return f'\x00CODEBLOCK_{idx}\x00'
+
+        text = re.sub(
+            r'^```(\w*)\n(.*?)^```',
+            _replace_code_block,
+            text,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+
         if escape:
             text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         else:
+            # Convert Markdown images to <img> tags before escaping stray brackets
+            text = re.sub(
+                r'!\[([^\]]*)\]\(([^)]+)\)',
+                r'<img src="\2" alt="\1" class="img-fluid">',
+                text,
+            )
             text = _escape_stray_angle_brackets(text)
         # Headings: #### h6, ### h5, ## h4, # h3
         text = re.sub(r'^#### (.+)$', r'<h6>\1</h6>', text, flags=re.MULTILINE)
@@ -194,7 +222,24 @@ def create_app(config_name=None):
                 # Convert single newlines to <br> (without keeping \n)
                 part = part.replace('\n', '<br>')
                 result.append(f'<p>{part}</p>')
-        return Markup('\n'.join(result))
+        text = '\n'.join(result)
+
+        # Restore code block placeholders
+        if code_blocks:
+            # Unwrap <p> tags around placeholders
+            for idx in range(len(code_blocks)):
+                placeholder = f'\x00CODEBLOCK_{idx}\x00'
+                text = text.replace(f'<p>{placeholder}</p>', placeholder)
+                text = text.replace(placeholder, code_blocks[idx])
+
+        return Markup(text)
+
+    @app.template_test('has_markdown')
+    def has_markdown_test(text):
+        """Detect CTOJ-style Markdown in examples (fenced code blocks or ### headings)."""
+        if not text:
+            return False
+        return bool(re.search(r'```|^###\s', str(text), re.MULTILINE))
 
     # Inject version into all templates
     @app.context_processor

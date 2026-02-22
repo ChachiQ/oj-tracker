@@ -163,7 +163,12 @@
                         {% endif %}
                     </td>
                     <td class="{{ table_col_class('lg') }}">
-                        {% if problem.ai_problem_type %}
+                        {% if problem.ai_skip_backfill %}
+                            <span class="badge bg-dark" data-bs-toggle="tooltip"
+                                  data-bs-title="AI 分析多次失败，已跳过自动分析">
+                                <i class="bi bi-slash-circle"></i> 已跳过
+                            </span>
+                        {% elif problem.ai_problem_type %}
                             <span class="badge bg-info">{{ problem.ai_problem_type }}</span>
                         {% elif problem.ai_analysis_error %}
                             <span class="badge bg-danger" data-bs-toggle="tooltip" data-bs-title="{{ problem.ai_analysis_error[:100] }}">

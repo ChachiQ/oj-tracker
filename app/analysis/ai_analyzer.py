@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 
 from flask import current_app
@@ -228,6 +229,52 @@ class AIAnalyzer:
             if user_budget:
                 budget = float(user_budget)
         return total_cost < budget
+
+    @staticmethod
+    def _inject_images_for_provider(messages, provider_name):
+        """Extract ![](url) image URLs from message content and inject as multimodal blocks.
+
+        For Claude and OpenAI, images are sent as native multimodal content.
+        For other providers, a text note is appended indicating images are present.
+        """
+        _IMG_RE = re.compile(r'!\[([^\]]*)\]\(([^)]+)\)')
+
+        new_messages = []
+        for msg in messages:
+            content = msg.get('content', '')
+            if not isinstance(content, str):
+                new_messages.append(msg)
+                continue
+
+            urls = _IMG_RE.findall(content)
+            if not urls:
+                new_messages.append(msg)
+                continue
+
+            if provider_name == 'claude':
+                blocks = [{"type": "text", "text": content}]
+                for _alt, url in urls:
+                    blocks.append({
+                        "type": "image",
+                        "source": {"type": "url", "url": url},
+                    })
+                new_messages.append({**msg, "content": blocks})
+
+            elif provider_name == 'openai':
+                blocks = [{"type": "text", "text": content}]
+                for _alt, url in urls:
+                    blocks.append({
+                        "type": "image_url",
+                        "image_url": {"url": url},
+                    })
+                new_messages.append({**msg, "content": blocks})
+
+            else:
+                # Non-multimodal provider: append a text hint
+                hint = "\n\n注意：本题包含图片但当前 AI 无法查看，请根据文字描述分析。"
+                new_messages.append({**msg, "content": content + hint})
+
+        return new_messages
 
     def analyze_submission(self, submission_id: int) -> AnalysisResult | None:
         """Level 1: Analyze a single submission with AI.
@@ -666,9 +713,16 @@ class AIAnalyzer:
 
         try:
             provider, model = self._get_llm("basic", user_id=user_id)
+            messages = self._inject_images_for_provider(messages, provider.PROVIDER_NAME)
             response = provider.chat(messages, model=model, max_tokens=16384)
         except Exception as e:
             logger.error(f"Comprehensive analysis LLM call failed for {problem_id}: {e}")
+            problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
+            if problem.ai_retry_count >= 3:
+                problem.ai_skip_backfill = True
+                logger.warning(f"Problem {problem_id} flagged for skip after {problem.ai_retry_count} failures")
+            problem.ai_analysis_error = str(e)[:500]
+            db.session.commit()
             return None
 
         cleaned = _clean_llm_json(response.content)
@@ -679,6 +733,10 @@ class AIAnalyzer:
             problem.difficulty = 0
             problem.ai_analyzed = True
             problem.ai_analysis_error = f"comprehensive JSON parse failed: {response.content[:200]}"
+            problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
+            if problem.ai_retry_count >= 3:
+                problem.ai_skip_backfill = True
+                logger.warning(f"Problem {problem_id} flagged for skip after {problem.ai_retry_count} failures")
             db.session.commit()
             return None
 
@@ -761,6 +819,10 @@ class AIAnalyzer:
             problem.difficulty = 0
             problem.ai_analyzed = True
             problem.ai_analysis_error = "classify section missing from comprehensive response"
+            problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
+            if problem.ai_retry_count >= 3:
+                problem.ai_skip_backfill = True
+                logger.warning(f"Problem {problem_id} flagged for skip after {problem.ai_retry_count} failures")
 
         # --- solution ---
         if "problem_solution" in existing_types:
@@ -903,6 +965,7 @@ class AIAnalyzer:
                 user_id = student.parent_id
 
             provider, model = self._get_llm("basic", user_id=user_id)
+            messages = self._inject_images_for_provider(messages, provider.PROVIDER_NAME)
             response = provider.chat(messages, model=model)
 
             cleaned = _clean_llm_json(response.content)

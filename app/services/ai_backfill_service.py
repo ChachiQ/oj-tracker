@@ -186,6 +186,7 @@ class AIBackfillService:
 
         query = Problem.query.filter(
             Problem.description.isnot(None),
+            Problem.ai_skip_backfill == False,  # noqa: E712  skip flagged problems
             db.or_(
                 Problem.ai_analyzed == False,  # noqa: E712
                 Problem.difficulty == 0,       # classify 成功但 difficulty 无效，需重试
@@ -243,12 +244,17 @@ class AIBackfillService:
         query = Submission.query.join(
             PlatformAccount,
             Submission.platform_account_id == PlatformAccount.id,
+        ).join(
+            Problem, Submission.problem_id_ref == Problem.id,
         ).filter(
             PlatformAccount.is_active == True,  # noqa: E712
             Submission.problem_id_ref.isnot(None),
             Submission.source_code.isnot(None),
             Submission.source_code != '',
             ~Submission.id.in_(reviewed_ids),
+            Problem.ai_analyzed == True,        # noqa: E712  classification must have succeeded
+            Problem.difficulty > 0,             # difficulty must be valid
+            Problem.ai_skip_backfill == False,  # noqa: E712  not flagged for skip
         ).order_by(Submission.submitted_at.desc())
 
         if account_id:
@@ -256,9 +262,7 @@ class AIBackfillService:
                 Submission.platform_account_id == account_id
             )
         elif platform:
-            query = query.join(
-                Problem, Submission.problem_id_ref == Problem.id
-            ).filter(Problem.platform == platform)
+            query = query.filter(Problem.platform == platform)
 
         if limit:
             query = query.limit(limit)

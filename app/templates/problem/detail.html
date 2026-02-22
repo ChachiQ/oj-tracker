@@ -68,7 +68,19 @@
 
             <!-- AI 分析结果 -->
             <div id="classify-result" class="mt-2">
-                {% if problem.ai_analyzed %}
+                {% if problem.ai_skip_backfill %}
+                <div class="alert alert-dark mb-0 mt-2">
+                    <i class="bi bi-slash-circle"></i>
+                    AI 分析多次失败（已重试 {{ problem.ai_retry_count }} 次），已跳过自动分析。
+                    {% if problem.ai_analysis_error %}
+                    <br><small class="text-muted">最后错误：{{ problem.ai_analysis_error }}</small>
+                    {% endif %}
+                    <br>
+                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="triggerComprehensive()">
+                        <i class="bi bi-arrow-counterclockwise"></i> 重置并重试
+                    </button>
+                </div>
+                {% elif problem.ai_analyzed %}
                 <div class="row g-3 mb-2">
                     {% if problem.difficulty %}
                     <div class="col-auto">
@@ -172,7 +184,11 @@
         {% if problem.examples %}
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-clipboard"></i> 样例</div>
+            {% if problem.examples is has_markdown %}
+            <div class="report-content">{{ problem.examples|md2html(escape=False) }}</div>
+            {% else %}
             <pre class="code-viewer"><code>{{ problem.examples }}</code></pre>
+            {% endif %}
         </div>
         {% endif %}
 

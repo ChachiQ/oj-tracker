@@ -187,6 +187,9 @@ class ProblemClassifier:
         )
 
         try:
+            from .ai_analyzer import AIAnalyzer
+            messages = AIAnalyzer._inject_images_for_provider(messages, provider.PROVIDER_NAME)
+
             response = provider.chat(
                 messages,
                 model=model,
@@ -307,6 +310,9 @@ class ProblemClassifier:
             logger.error(f"Problem classification failed for {problem_id}: {e}")
             problem.ai_analysis_error = error_msg
             problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
+            if problem.ai_retry_count >= 3:
+                problem.ai_skip_backfill = True
+                logger.warning(f"Problem {problem_id} flagged for skip after {problem.ai_retry_count} failures")
             db.session.commit()
             return False
 
