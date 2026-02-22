@@ -162,7 +162,7 @@
         {% if problem.description %}
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-file-text"></i> 题目描述</div>
-            <div class="report-content">{{ problem.description|md2html(escape=False) }}</div>
+            <div class="report-content">{{ problem.description|md2html(escape=False, base_url=platform_base_url) }}</div>
         </div>
         {% endif %}
 
@@ -171,11 +171,11 @@
         <div class="chart-container">
             {% if problem.input_desc %}
             <div class="chart-title"><i class="bi bi-arrow-right-square"></i> 输入</div>
-            <div class="report-content mb-3">{{ problem.input_desc|md2html(escape=False) }}</div>
+            <div class="report-content mb-3">{{ problem.input_desc|md2html(escape=False, base_url=platform_base_url) }}</div>
             {% endif %}
             {% if problem.output_desc %}
             <div class="chart-title"><i class="bi bi-arrow-left-square"></i> 输出</div>
-            <div class="report-content">{{ problem.output_desc|md2html(escape=False) }}</div>
+            <div class="report-content">{{ problem.output_desc|md2html(escape=False, base_url=platform_base_url) }}</div>
             {% endif %}
         </div>
         {% endif %}
@@ -185,7 +185,7 @@
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-clipboard"></i> 样例</div>
             {% if problem.examples is has_markdown %}
-            <div class="report-content">{{ problem.examples|md2html(escape=False) }}</div>
+            <div class="report-content">{{ problem.examples|md2html(escape=False, base_url=platform_base_url) }}</div>
             {% else %}
             <pre class="code-viewer"><code>{{ problem.examples }}</code></pre>
             {% endif %}
@@ -196,7 +196,7 @@
         {% if problem.hint %}
         <div class="chart-container">
             <div class="chart-title"><i class="bi bi-lightbulb"></i> 提示</div>
-            <div class="report-content">{{ problem.hint|md2html(escape=False) }}</div>
+            <div class="report-content">{{ problem.hint|md2html(escape=False, base_url=platform_base_url) }}</div>
         </div>
         {% endif %}
     </div>
@@ -254,12 +254,7 @@
                         </button>
                         <button class="btn btn-sm btn-outline-primary" id="btn-review-{{ sub.id }}"
                                 onclick="toggleReview({{ sub.id }})">
-                            <i class="bi bi-robot"></i>
-                            {% if submission_reviews.get(sub.id) %}
-                            AI 解析 <i class="bi bi-chevron-down" id="btn-review-icon-{{ sub.id }}"></i>
-                            {% else %}
-                            AI 解析
-                            {% endif %}
+                            <i class="bi bi-robot"></i> AI 解析
                         </button>
                         {% endif %}
                     </div>
@@ -284,11 +279,6 @@
                         </div>
                         {% endif %}
                         <div id="review-{{ sub.id }}"></div>
-                    </div>
-                    <div id="review-loading-{{ sub.id }}" class="text-center py-2 d-none">
-                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-                        <span class="ms-2 text-muted">AI 正在分析代码...</span>
-                        <span class="ms-1 text-muted timer-text"></span>
                     </div>
                     {% endif %}
                 </div>
@@ -348,10 +338,16 @@ function showChevron(key) {
     if (chevron) chevron.classList.remove('d-none');
 }
 
-function renderMeta(aiModel, analyzedAt) {
-    return '<div class="border-top mt-3 pt-2">' +
+function renderMeta(aiModel, analyzedAt, refreshCallback) {
+    var html = '<div class="border-top mt-3 pt-2 d-flex justify-content-between align-items-center">' +
         '<small class="text-muted"><i class="bi bi-robot"></i> ' + (aiModel || '-') +
-        ' &middot; <i class="bi bi-clock"></i> ' + (analyzedAt || '-') + '</small></div>';
+        ' &middot; <i class="bi bi-clock"></i> ' + (analyzedAt || '-') + '</small>';
+    if (refreshCallback) {
+        html += ' <button class="btn btn-sm btn-outline-secondary" onclick="' + refreshCallback + '">' +
+            '<i class="bi bi-arrow-clockwise"></i> 重新生成</button>';
+    }
+    html += '</div>';
+    return html;
 }
 
 /* Render empty/error state with a prominent regenerate button */
@@ -417,7 +413,7 @@ function renderFullSolution(data, containerId, aiModel, analyzedAt) {
 
 function renderReview(data, containerId, aiModel, analyzedAt, subId) {
     var container = document.getElementById(containerId);
-    if (!data || !data.approach_analysis) {
+    if (!data) {
         container.innerHTML = '<div class="text-center py-3">' +
             '<p class="text-muted mb-2">解析结果为空</p>' +
             '<button class="btn btn-sm btn-primary" onclick="confirmRefreshReview(' + subId + ')">' +
@@ -456,6 +452,13 @@ function renderReview(data, containerId, aiModel, analyzedAt, subId) {
         html += '<p><strong>体现知识点：</strong> ';
         data.knowledge_demonstrated.forEach(function(k) { html += '<span class="badge bg-light text-dark border me-1">' + k + '</span>'; });
         html += '</p>';
+    }
+    if (!html) {
+        container.innerHTML = '<div class="text-center py-3">' +
+            '<p class="text-muted mb-2">解析结果为空</p>' +
+            '<button class="btn btn-sm btn-primary" onclick="confirmRefreshReview(' + subId + ')">' +
+            '<i class="bi bi-arrow-clockwise"></i> 重新生成</button></div>';
+        return false;
     }
     html += renderMeta(aiModel, analyzedAt, 'confirmRefreshReview(' + subId + ')');
     container.innerHTML = html;
@@ -687,18 +690,21 @@ function updateReviewBtn(subId, hasData) {
 }
 
 function triggerReview(subId, force) {
-    var loadingEl = document.getElementById('review-loading-' + subId);
     var resultEl = document.getElementById('review-' + subId);
     var panelEl = document.getElementById('ai-panel-' + subId);
 
-    loadingEl.classList.remove('d-none');
-    startTimer(loadingEl);
+    // Clear old content and show inline loading spinner
+    resultEl.innerHTML = '<div class="text-center py-2">' +
+        '<div class="spinner-border spinner-border-sm text-primary" role="status"></div>' +
+        '<span class="ms-2 text-muted">AI 正在分析代码...</span>' +
+        '<span class="ms-1 text-muted timer-text"></span></div>';
+    panelEl.classList.add('show');
+    startTimer(resultEl);
 
     var url = '/api/submission/' + subId + '/review' + (force ? '?force=1' : '');
     apiPost(url, 300000)
     .then(function(data) {
-        stopTimer(loadingEl);
-        loadingEl.classList.add('d-none');
+        stopTimer(resultEl);
         if (data.success) {
             var ok = renderReview(data.analysis, 'review-' + subId, data.ai_model, data.analyzed_at, subId);
             reviewLoaded[subId] = !!ok;
@@ -706,14 +712,11 @@ function triggerReview(subId, force) {
             updateReviewBtn(subId, !!ok);
         } else {
             resultEl.innerHTML = '<div class="alert alert-danger">' + (data.error || '分析失败') + '</div>';
-            panelEl.classList.add('show');
         }
     })
     .catch(function(err) {
-        stopTimer(loadingEl);
-        loadingEl.classList.add('d-none');
+        stopTimer(resultEl);
         resultEl.innerHTML = '<div class="alert alert-danger">请求失败: ' + err.message + '</div>';
-        panelEl.classList.add('show');
     });
 }
 
