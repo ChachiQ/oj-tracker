@@ -546,17 +546,22 @@ function resyncProblem() {
 
 
 function triggerComprehensive(overrideMaxTokens) {
+    var btnEl = document.getElementById('btn-comprehensive');
+    if (btnEl.disabled) return;
+    btnEl.disabled = true;
+
     var msg = overrideMaxTokens
         ? '将使用临时增加的 Token 上限 (' + overrideMaxTokens + ') 重试分析，确认？'
         : '一键分析将生成：评级 + 思路解析 + 完整题解。\n这将消耗较多 AI 额度，确认继续？';
-    if (!confirm(msg)) return;
+    if (!confirm(msg)) {
+        btnEl.disabled = false;
+        return;
+    }
 
     var loadingEl = document.getElementById('classify-loading');
     var resultEl = document.getElementById('classify-result');
-    var btnEl = document.getElementById('btn-comprehensive');
 
     loadingEl.querySelector('.ms-2').textContent = 'AI 正在全面分析...';
-    btnEl.disabled = true;
     loadingEl.classList.remove('d-none');
     startTimer(loadingEl);
 
