@@ -67,7 +67,7 @@ class SyncJob(db.Model):
         self.stats_json = json.dumps(value, ensure_ascii=False) if value else None
 
     @classmethod
-    def cleanup_stale_running(cls, max_age_hours=6):
+    def cleanup_stale_running(cls, max_age_hours=2):
         """Mark long-running jobs as failed.
 
         Jobs stuck in 'running' status longer than *max_age_hours* are

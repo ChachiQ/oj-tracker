@@ -218,13 +218,24 @@
             progressBar.style.width = pct + '%';
         }
 
+        var MAX_POLL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
         function startGlobalSyncPoll(jobId) {
             if (_pollTimer) clearInterval(_pollTimer);
             _currentJobId = jobId;
+            var pollStartTime = Date.now();
 
             showGlobalBanner('任务运行中...', jobId);
 
             _pollTimer = setInterval(function() {
+                if (Date.now() - pollStartTime > MAX_POLL_MS) {
+                    clearInterval(_pollTimer);
+                    _pollTimer = null;
+                    _currentJobId = null;
+                    hideGlobalBanner();
+                    showGlobalAlert('任务超时，请前往 <a href="/sync/log" class="alert-link">同步日志</a> 查看', 'warning');
+                    return;
+                }
                 fetch('/sync/job/' + jobId + '/status', {
                     headers: {'X-CSRFToken': csrfToken}
                 })
