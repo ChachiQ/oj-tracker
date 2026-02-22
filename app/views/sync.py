@@ -503,7 +503,7 @@ def job_detail(job_id):
                 total_cost += cost
                 item = {
                     'analysis_type': ar.analysis_type,
-                    'model': ar.model_name,
+                    'model': ar.ai_model,
                     'cost': round(cost, 6),
                     'analyzed_at': ar.analyzed_at.isoformat() if ar.analyzed_at else None,
                 }
