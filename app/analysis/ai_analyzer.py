@@ -788,6 +788,7 @@ class AIAnalyzer:
 
     def analyze_problem_comprehensive(
         self, problem_id: int, force: bool = False, user_id: int = None,
+        max_tokens: int = None,
     ) -> dict | None:
         """Perform classification + solution + full_solution in one LLM call.
 
@@ -868,10 +869,20 @@ class AIAnalyzer:
             platform_tags=platform_tags,
         )
 
+        # Resolve effective max_tokens: API param > UserSetting > default 16384
+        if max_tokens:
+            effective_max_tokens = max_tokens
+        elif user_id:
+            from app.models import UserSetting
+            user_mt = UserSetting.get(user_id, 'ai_max_tokens')
+            effective_max_tokens = int(user_mt) if user_mt else 16384
+        else:
+            effective_max_tokens = 16384
+
         try:
             provider, model = self._get_llm("basic", user_id=user_id)
             messages = self._inject_images_for_provider(messages, provider.PROVIDER_NAME)
-            response = provider.chat(messages, model=model, max_tokens=16384)
+            response = provider.chat(messages, model=model, max_tokens=effective_max_tokens)
         except Exception as e:
             logger.error(f"Comprehensive analysis LLM call failed for {problem_id}: {e}")
             problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
@@ -887,6 +898,12 @@ class AIAnalyzer:
                            f"finish_reason={response.finish_reason}, output_tokens={response.output_tokens}")
 
         parsed = _parse_llm_json(response.content)
+
+        # Fallback: try parsing JSON from reasoning_content
+        if parsed is None and response.reasoning_content:
+            parsed = _parse_llm_json(response.reasoning_content)
+            if parsed:
+                logger.info(f"Comprehensive: parsed JSON from reasoning_content for {problem_id}")
 
         # Auto-retry with dual strategy when JSON parsing fails
         if parsed is None:
@@ -939,7 +956,7 @@ class AIAnalyzer:
                 ]
 
             try:
-                response2 = provider.chat(retry_messages, model=model, max_tokens=16384)
+                response2 = provider.chat(retry_messages, model=model, max_tokens=effective_max_tokens)
                 parsed = _parse_llm_json(response2.content)
                 if parsed:
                     response = response2
@@ -958,11 +975,24 @@ class AIAnalyzer:
                 f"Comprehensive analysis JSON parse failed for {problem_id} "
                 f"(cleaned preview: {_clean_llm_json(response.content)[:300]!r})"
             )
-            truncated = (f" [TRUNCATED: {response.finish_reason}]"
-                         if response.finish_reason in ("max_tokens", "length") else "")
             problem.difficulty = 0
             problem.ai_analyzed = True
-            problem.ai_analysis_error = f"comprehensive JSON parse failed{truncated}: {response.content[:200]}"
+
+            # Detect reasoning exhaustion: content empty + finish_reason indicates token limit
+            content_empty = not response.content or not response.content.strip()
+            is_reasoning_exhausted = content_empty and response.finish_reason in ("max_tokens", "length")
+
+            if is_reasoning_exhausted:
+                problem.ai_analysis_error = (
+                    f"REASONING_TOKEN_EXHAUSTED: AI 模型的推理过程耗尽了全部输出额度 "
+                    f"({effective_max_tokens} tokens)，"
+                    "未能生成分析结果。可尝试临时增大输出上限后重试。"
+                )
+            else:
+                truncated = (f" [TRUNCATED: {response.finish_reason}]"
+                             if response.finish_reason in ("max_tokens", "length") else "")
+                problem.ai_analysis_error = f"comprehensive JSON parse failed{truncated}: {response.content[:200]}"
+
             problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
             if problem.ai_retry_count >= 3:
                 problem.ai_skip_backfill = True

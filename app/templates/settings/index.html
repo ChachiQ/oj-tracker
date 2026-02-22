@@ -238,6 +238,18 @@
                                value="{{ user_monthly_budget or '' }}">
                     </div>
 
+                    {# Max tokens #}
+                    <div class="mb-3">
+                        <label for="ai-max-tokens" class="form-label fw-bold">AI 输出 Token 上限</label>
+                        <input type="number" class="form-control form-control-sm" id="ai-max-tokens"
+                               name="ai_max_tokens" step="1024" min="4096" max="131072"
+                               placeholder="16384"
+                               value="{{ user_max_tokens or '' }}">
+                        <div class="form-text">
+                            单次 AI 分析最大输出 token 数。推理模型的内部推理也计入此限制。默认 16384。
+                        </div>
+                    </div>
+
                     <button type="submit" class="btn btn-primary btn-sm">
                         <i class="bi bi-save"></i> 保存 AI 配置
                     </button>

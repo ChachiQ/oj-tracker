@@ -109,6 +109,8 @@ def index():
     if user_monthly_budget:
         monthly_budget = float(user_monthly_budget)
 
+    user_max_tokens = UserSetting.get(current_user.id, 'ai_max_tokens')
+
     return render_template(
         'settings/index.html',
         students=students,
@@ -124,6 +126,7 @@ def index():
         user_ai_provider=user_ai_provider,
         user_has_key=user_has_key,
         user_monthly_budget=user_monthly_budget,
+        user_max_tokens=user_max_tokens,
         model_config=MODEL_CONFIG,
     )
 
@@ -229,6 +232,10 @@ def save_ai_config():
     budget = request.form.get('ai_monthly_budget', '').strip()
     if budget:
         UserSetting.set(current_user.id, 'ai_monthly_budget', budget)
+
+    max_tokens = request.form.get('ai_max_tokens', '').strip()
+    if max_tokens:
+        UserSetting.set(current_user.id, 'ai_max_tokens', max_tokens)
 
     db.session.commit()
     flash('AI 配置已保存', 'success')

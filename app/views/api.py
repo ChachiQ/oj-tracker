@@ -399,6 +399,12 @@ def problem_comprehensive(problem_id):
     from app.analysis.ai_analyzer import AIAnalyzer
     from app.extensions import db
 
+    # Read optional max_tokens override from request body
+    data = request.get_json(silent=True) or {}
+    override_max_tokens = data.get('max_tokens')
+    if override_max_tokens is not None:
+        override_max_tokens = int(override_max_tokens)
+
     # Reset skip flags so manual retry works
     problem.ai_skip_backfill = False
     problem.ai_retry_count = 0
@@ -408,10 +414,18 @@ def problem_comprehensive(problem_id):
     analyzer = AIAnalyzer()
     results = analyzer.analyze_problem_comprehensive(
         problem_id, force=True, user_id=current_user.id,
+        max_tokens=override_max_tokens,
     )
 
     if not results:
-        return jsonify({'success': False, 'error': 'AI 分析失败，请检查 AI 配置或预算'})
+        db.session.refresh(problem)
+        error_msg = problem.ai_analysis_error or 'AI 分析失败，请检查 AI 配置或预算'
+        resp = {'success': False, 'error': error_msg}
+        if 'REASONING_TOKEN_EXHAUSTED' in (problem.ai_analysis_error or ''):
+            resp['error_type'] = 'reasoning_exhausted'
+            resp['used_max_tokens'] = override_max_tokens or 16384
+            resp['error'] = error_msg.split(': ', 1)[-1]  # Remove prefix
+        return jsonify(resp)
 
     db.session.refresh(problem)
 

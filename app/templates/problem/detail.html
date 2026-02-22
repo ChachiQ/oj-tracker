@@ -105,7 +105,15 @@
                 {% elif problem.ai_analysis_error %}
                 <div class="alert alert-warning mb-0 mt-2">
                     <i class="bi bi-exclamation-triangle"></i>
+                    {% if 'REASONING_TOKEN_EXHAUSTED' in problem.ai_analysis_error %}
+                    {{ problem.ai_analysis_error.split(': ', 1)[-1] }}
+                    <br>
+                    <button class="btn btn-sm btn-outline-success mt-2" onclick="triggerComprehensive(32768)">
+                        <i class="bi bi-arrow-repeat"></i> 临时增加到 32768 tokens 重试
+                    </button>
+                    {% else %}
                     AI 分类失败（已重试 {{ problem.ai_retry_count }} 次）：{{ problem.ai_analysis_error }}
+                    {% endif %}
                 </div>
                 {% else %}
                 <p class="text-muted mb-0 mt-2">尚未进行 AI 分析，点击「一键分析」获取。</p>
@@ -478,15 +486,20 @@ function highlightCode(container) {
     });
 }
 
-function apiPost(url, timeoutMs) {
+function apiPost(url, timeoutMs, body) {
     var controller = new AbortController();
     var timeoutId = timeoutMs ? setTimeout(function() { controller.abort(); }, timeoutMs) : null;
+    var headers = {
+        'X-CSRFToken': CSRF_TOKEN,
+        'X-Requested-With': 'XMLHttpRequest'
+    };
+    if (body) {
+        headers['Content-Type'] = 'application/json';
+    }
     return fetch(url, {
         method: 'POST',
-        headers: {
-            'X-CSRFToken': CSRF_TOKEN,
-            'X-Requested-With': 'XMLHttpRequest'
-        },
+        headers: headers,
+        body: body || undefined,
         signal: controller.signal
     }).then(function(r) {
         if (timeoutId) clearTimeout(timeoutId);
@@ -530,8 +543,11 @@ function resyncProblem() {
 }
 
 
-function triggerComprehensive() {
-    if (!confirm('一键分析将生成：评级 + 思路解析 + 完整题解。\n这将消耗较多 AI 额度，确认继续？')) return;
+function triggerComprehensive(overrideMaxTokens) {
+    var msg = overrideMaxTokens
+        ? '将使用临时增加的 Token 上限 (' + overrideMaxTokens + ') 重试分析，确认？'
+        : '一键分析将生成：评级 + 思路解析 + 完整题解。\n这将消耗较多 AI 额度，确认继续？';
+    if (!confirm(msg)) return;
 
     var loadingEl = document.getElementById('classify-loading');
     var resultEl = document.getElementById('classify-result');
@@ -542,7 +558,8 @@ function triggerComprehensive() {
     loadingEl.classList.remove('d-none');
     startTimer(loadingEl);
 
-    apiPost('/api/problem/' + PROBLEM_ID + '/comprehensive', 660000)
+    var body = overrideMaxTokens ? JSON.stringify({max_tokens: overrideMaxTokens}) : null;
+    apiPost('/api/problem/' + PROBLEM_ID + '/comprehensive', 660000, body)
     .then(function(data) {
         stopTimer(loadingEl);
         loadingEl.classList.add('d-none');
@@ -550,7 +567,19 @@ function triggerComprehensive() {
         btnEl.disabled = false;
 
         if (!data.success) {
-            resultEl.innerHTML = '<div class="alert alert-danger mt-2">' + escapeHtml(data.error || '分析失败') + '</div>';
+            if (data.error_type === 'reasoning_exhausted') {
+                var nextTokens = (data.used_max_tokens || 16384) * 2;
+                resultEl.innerHTML = '<div class="alert alert-warning mt-2">'
+                    + '<i class="bi bi-exclamation-triangle"></i> '
+                    + escapeHtml(data.error)
+                    + '<br><button class="btn btn-sm btn-outline-success mt-2" '
+                    + 'onclick="triggerComprehensive(' + nextTokens + ')">'
+                    + '<i class="bi bi-arrow-repeat"></i> 临时增加到 ' + nextTokens + ' tokens 重试'
+                    + '</button></div>';
+            } else {
+                resultEl.innerHTML = '<div class="alert alert-danger mt-2">'
+                    + escapeHtml(data.error || '分析失败') + '</div>';
+            }
             return;
         }
 

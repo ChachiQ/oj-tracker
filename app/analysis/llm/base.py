@@ -19,6 +19,7 @@ class LLMResponse:
     cost: float = 0.0
     latency_ms: int = 0
     finish_reason: str = ""
+    reasoning_content: str = ""
 
 
 class BaseLLMProvider(ABC):

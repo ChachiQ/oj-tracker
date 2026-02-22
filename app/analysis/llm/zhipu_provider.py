@@ -125,13 +125,28 @@ class ZhipuProvider(BaseLLMProvider):
                 logger.info(f"Zhipu: content empty, promoting reasoning_content as JSON ({len(reasoning)} chars)")
                 content = reasoning
             elif choice.finish_reason in ("length", "max_tokens"):
-                # Reasoning exhausted all tokens, no usable content produced
-                logger.warning(
-                    f"Zhipu: NOT promoting reasoning to content — "
-                    f"reasoning is prose ({len(reasoning)} chars) and "
-                    f"finish_reason={choice.finish_reason} (token budget exhausted)"
-                )
-                content = ""
+                # Try to extract embedded JSON from reasoning prose
+                json_start = reasoning.find('{')
+                json_end = reasoning.rfind('}')
+                if json_start != -1 and json_end > json_start:
+                    candidate = reasoning[json_start:json_end + 1]
+                    if len(candidate) > 100:  # Plausible JSON object
+                        logger.info(
+                            f"Zhipu: extracting embedded JSON from reasoning "
+                            f"({len(candidate)} chars at pos {json_start}-{json_end})"
+                        )
+                        content = candidate
+                    else:
+                        content = ""
+                else:
+                    content = ""
+                if not content:
+                    # Reasoning exhausted all tokens, no usable content produced
+                    logger.warning(
+                        f"Zhipu: NOT promoting reasoning to content — "
+                        f"reasoning is prose ({len(reasoning)} chars) and "
+                        f"finish_reason={choice.finish_reason} (token budget exhausted)"
+                    )
             else:
                 # finish_reason=stop, non-JSON — promote as fallback (preserve existing behavior)
                 logger.info(f"Zhipu: content empty, using reasoning_content as fallback ({len(reasoning)} chars)")
@@ -163,6 +178,7 @@ class ZhipuProvider(BaseLLMProvider):
             cost=cost,
             latency_ms=latency_ms,
             finish_reason=choice.finish_reason or "",
+            reasoning_content=reasoning,
         )
 
     def list_models(self) -> list[str]:
