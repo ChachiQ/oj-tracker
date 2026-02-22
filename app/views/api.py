@@ -547,11 +547,15 @@ def submission_review(submission_id):
 
     force = request.args.get('force', '0') == '1'
 
-    from app.analysis.ai_analyzer import AIAnalyzer
-    analyzer = AIAnalyzer()
-    result = analyzer.review_submission(
-        submission_id, force=force, user_id=current_user.id,
-    )
+    try:
+        from app.analysis.ai_analyzer import AIAnalyzer
+        analyzer = AIAnalyzer()
+        result = analyzer.review_submission(
+            submission_id, force=force, user_id=current_user.id,
+        )
+    except Exception as e:
+        logger.error(f"submission_review route error for {submission_id}: {e}")
+        return jsonify({'error': f'AI 分析异常: {e}'}), 500
 
     if not result:
         return jsonify({'error': 'AI 分析失败，请检查 AI 配置或预算'}), 500

@@ -1209,13 +1209,13 @@ class AIAnalyzer:
             submission_id=submission_id, analysis_type=analysis_type,
         ).first()
         if existing and not force:
-            if existing.result_json:
+            if existing.result_json and existing.ai_model != "error":
                 try:
                     json.loads(existing.result_json)
                     return existing
                 except (json.JSONDecodeError, TypeError):
                     pass
-            # Empty or invalid result_json → delete and re-analyze
+            # Empty, invalid, or error result_json → delete and re-analyze
             db.session.delete(existing)
             db.session.commit()
         if existing and force:
@@ -1254,7 +1254,7 @@ class AIAnalyzer:
 
             provider, model = self._get_llm("basic", user_id=user_id)
             messages = self._inject_images_for_provider(messages, provider.PROVIDER_NAME)
-            response = provider.chat(messages, model=model)
+            response = provider.chat(messages, model=model, max_tokens=16384)
 
             parsed = _parse_llm_json(response.content)
 
@@ -1293,19 +1293,24 @@ class AIAnalyzer:
 
         except Exception as e:
             logger.error(f"Submission review failed for {submission_id}: {e}")
-            error_result = AnalysisResult(
-                submission_id=submission_id,
-                analysis_type=analysis_type,
-                result_json=json.dumps(
-                    {"error": str(e)[:500]}, ensure_ascii=False,
-                ),
-                ai_model="error",
-                token_cost=0,
-                cost_usd=0,
-                analyzed_at=datetime.utcnow(),
-            )
-            db.session.add(error_result)
-            db.session.commit()
+            db.session.rollback()
+            try:
+                error_result = AnalysisResult(
+                    submission_id=submission_id,
+                    analysis_type=analysis_type,
+                    result_json=json.dumps(
+                        {"error": str(e)[:500]}, ensure_ascii=False,
+                    ),
+                    ai_model="error",
+                    token_cost=0,
+                    cost_usd=0,
+                    analyzed_at=datetime.utcnow(),
+                )
+                db.session.add(error_result)
+                db.session.commit()
+            except Exception as e2:
+                logger.error(f"Failed to save error result for submission {submission_id}: {e2}")
+                db.session.rollback()
             return None
 
     def get_monthly_cost(self) -> float:
