@@ -118,7 +118,9 @@ def create_app(config_name=None):
         dt_date = display_dt.date()
         delta_days = (today - dt_date).days
 
-        if delta_days == 0:
+        if delta_days < 0:
+            return display_dt.strftime('%H:%M')
+        elif delta_days == 0:
             return display_dt.strftime('%H:%M')
         elif delta_days == 1:
             return '昨天'

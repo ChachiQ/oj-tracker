@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import html
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Generator
 
 from bs4 import BeautifulSoup
@@ -43,6 +43,7 @@ _RESULT_STATUS_MAP = {
     # Chinese status texts from YBT
     '完全正确': SubmissionStatus.AC,
     '不完全正确': SubmissionStatus.WA,
+    '未通过': SubmissionStatus.WA,
     '编译错误': SubmissionStatus.CE,
 }
 
@@ -245,13 +246,14 @@ class YBTScraper(BaseScraper):
                 language = lang_code_str if lang_code_str else None
 
             # Parse submission time
+            # YBT returns times in UTC+8; convert to UTC for storage.
             submitted_at = datetime.utcnow()
             if submit_time_str:
                 try:
-                    submitted_at = datetime.strptime(submit_time_str, '%Y-%m-%d %H:%M:%S')
+                    submitted_at = datetime.strptime(submit_time_str, '%Y-%m-%d %H:%M:%S') - timedelta(hours=8)
                 except ValueError:
                     try:
-                        submitted_at = datetime.strptime(submit_time_str, '%Y-%m-%d %H:%M')
+                        submitted_at = datetime.strptime(submit_time_str, '%Y-%m-%d %H:%M') - timedelta(hours=8)
                     except ValueError:
                         self.logger.debug(f"Could not parse submit time: {submit_time_str}")
 
