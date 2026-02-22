@@ -681,7 +681,19 @@ class AIAnalyzer:
             provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model)
 
-            cleaned = _clean_llm_json(response.content)
+            parsed = _parse_llm_json(response.content)
+
+            # Fallback: try reasoning_content (GLM-5 sometimes puts JSON there)
+            if parsed is None and response.reasoning_content:
+                parsed = _parse_llm_json(response.reasoning_content)
+                if parsed:
+                    logger.info(f"analyze_problem_solution: parsed JSON from reasoning_content for {problem_id}")
+
+            if parsed is not None:
+                cleaned = json.dumps(parsed, ensure_ascii=False)
+            else:
+                cleaned = _clean_llm_json(response.content)
+
             result = AnalysisResult(
                 problem_id_ref=problem_id,
                 analysis_type=analysis_type,
@@ -692,10 +704,9 @@ class AIAnalyzer:
                 analyzed_at=datetime.utcnow(),
             )
 
-            try:
-                parsed = json.loads(cleaned)
+            if parsed:
                 result.summary = parsed.get("approach", "")
-            except json.JSONDecodeError:
+            else:
                 result.summary = (response.content or "")[:500]
 
             db.session.add(result)
@@ -761,7 +772,19 @@ class AIAnalyzer:
             provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model, max_tokens=8192)
 
-            cleaned = _clean_llm_json(response.content)
+            parsed = _parse_llm_json(response.content)
+
+            # Fallback: try reasoning_content (GLM-5 sometimes puts JSON there)
+            if parsed is None and response.reasoning_content:
+                parsed = _parse_llm_json(response.reasoning_content)
+                if parsed:
+                    logger.info(f"analyze_problem_full_solution: parsed JSON from reasoning_content for {problem_id}")
+
+            if parsed is not None:
+                cleaned = json.dumps(parsed, ensure_ascii=False)
+            else:
+                cleaned = _clean_llm_json(response.content)
+
             result = AnalysisResult(
                 problem_id_ref=problem_id,
                 analysis_type=analysis_type,
@@ -772,10 +795,9 @@ class AIAnalyzer:
                 analyzed_at=datetime.utcnow(),
             )
 
-            try:
-                parsed = json.loads(cleaned)
+            if parsed:
                 result.summary = parsed.get("approach", "")
-            except json.JSONDecodeError:
+            else:
                 result.summary = (response.content or "")[:500]
 
             db.session.add(result)
@@ -1234,7 +1256,19 @@ class AIAnalyzer:
             messages = self._inject_images_for_provider(messages, provider.PROVIDER_NAME)
             response = provider.chat(messages, model=model)
 
-            cleaned = _clean_llm_json(response.content)
+            parsed = _parse_llm_json(response.content)
+
+            # Fallback: try reasoning_content (GLM-5 sometimes puts JSON there)
+            if parsed is None and response.reasoning_content:
+                parsed = _parse_llm_json(response.reasoning_content)
+                if parsed:
+                    logger.info(f"review_submission: parsed JSON from reasoning_content for {submission_id}")
+
+            if parsed is not None:
+                cleaned = json.dumps(parsed, ensure_ascii=False)
+            else:
+                cleaned = _clean_llm_json(response.content)
+
             result = AnalysisResult(
                 submission_id=submission_id,
                 analysis_type=analysis_type,
@@ -1245,13 +1279,12 @@ class AIAnalyzer:
                 analyzed_at=datetime.utcnow(),
             )
 
-            try:
-                parsed = json.loads(cleaned)
+            if parsed:
                 result.summary = parsed.get("approach_analysis", "")
                 result.suggestions = json.dumps(
                     parsed.get("suggestions", []), ensure_ascii=False,
                 )
-            except json.JSONDecodeError:
+            else:
                 result.summary = (response.content or "")[:500]
 
             db.session.add(result)

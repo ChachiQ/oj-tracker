@@ -464,11 +464,16 @@ function renderReview(data, containerId, aiModel, analyzedAt, subId) {
         html += '</p>';
     }
     if (!html) {
-        container.innerHTML = '<div class="text-center py-3">' +
-            '<p class="text-muted mb-2">解析结果为空</p>' +
-            '<button class="btn btn-sm btn-primary" onclick="confirmRefreshReview(' + subId + ')">' +
-            '<i class="bi bi-arrow-clockwise"></i> 重新生成</button></div>';
-        return false;
+        if (data.raw) {
+            html = '<div class="alert alert-warning"><strong>AI 返回格式异常，原始内容：</strong>' +
+                '<pre class="mt-2" style="white-space:pre-wrap">' + escapeHtml(data.raw) + '</pre></div>';
+        } else {
+            container.innerHTML = '<div class="text-center py-3">' +
+                '<p class="text-muted mb-2">解析结果为空</p>' +
+                '<button class="btn btn-sm btn-primary" onclick="confirmRefreshReview(' + subId + ')">' +
+                '<i class="bi bi-arrow-clockwise"></i> 重新生成</button></div>';
+            return false;
+        }
     }
     html += renderMeta(aiModel, analyzedAt, 'confirmRefreshReview(' + subId + ')');
     container.innerHTML = html;
