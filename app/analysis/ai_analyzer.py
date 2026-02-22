@@ -1266,6 +1266,17 @@ class AIAnalyzer:
 
             if parsed is not None:
                 cleaned = json.dumps(parsed, ensure_ascii=False)
+            elif getattr(response, 'finish_reason', '') in ('length', 'max_tokens'):
+                # Reasoning model exhausted tokens without producing JSON
+                logger.warning(
+                    f"review_submission: finish_reason={response.finish_reason}, "
+                    f"no JSON extracted for submission {submission_id} "
+                    f"(output_tokens={response.output_tokens})"
+                )
+                raise RuntimeError(
+                    f"AI 模型推理耗尽 token 限额 ({response.output_tokens} tokens)，"
+                    f"未生成有效评审结果。请尝试更换 AI 模型或稍后重试。"
+                )
             else:
                 cleaned = _clean_llm_json(response.content)
 
