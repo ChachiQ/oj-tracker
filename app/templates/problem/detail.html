@@ -33,7 +33,9 @@
                     {% else %}
                     <span class="badge bg-dark">{{ problem.platform }}</span>
                     {% endif %}
+                    {% if problem.difficulty %}
                     <span id="header-difficulty-badge">{{ difficulty_badge(problem.difficulty) }}</span>
+                    {% endif %}
                 </div>
             </div>
             <div class="col-12 col-md-4 text-md-end mt-2 mt-md-0">

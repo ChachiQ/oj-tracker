@@ -7,8 +7,31 @@ from flask_login import login_required, current_user
 from app.models import Student, Problem, Submission, PlatformAccount, Tag, AnalysisResult
 from app.services.stats_service import StatsService
 from app.analysis.engine import AnalysisEngine
+from app.scrapers import get_scraper_class, get_scraper_instance
 
 logger = logging.getLogger(__name__)
+
+
+def _find_user_scraper_kwargs(platform):
+    """Find scraper credentials from current user's platform accounts.
+
+    Returns dict with auth_password/auth_cookie/platform_uid if found.
+    """
+    kwargs = {}
+    students = Student.query.filter_by(parent_id=current_user.id).all()
+    for s in students:
+        for acct in s.platform_accounts:
+            if acct.platform == platform:
+                if acct.auth_cookie:
+                    kwargs['auth_cookie'] = acct.auth_cookie
+                if acct.auth_password:
+                    kwargs['auth_password'] = acct.auth_password
+                if acct.platform_uid:
+                    kwargs['platform_uid'] = acct.platform_uid
+                break
+        if kwargs:
+            break
+    return kwargs
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -266,27 +289,9 @@ def problem_list():
     })
 
 
-def _user_owns_problem(problem_id):
-    """Check that the current user has at least one submission for this problem."""
-    problem = Problem.query.get(problem_id)
-    if not problem:
-        return None
-
-    students = Student.query.filter_by(parent_id=current_user.id).all()
-    account_ids = []
-    for s in students:
-        for a in s.platform_accounts:
-            account_ids.append(a.id)
-
-    if not account_ids:
-        return None
-
-    has_sub = Submission.query.filter(
-        Submission.platform_account_id.in_(account_ids),
-        Submission.problem_id_ref == problem.id,
-    ).first()
-
-    return problem if has_sub else None
+def _get_problem_or_none(problem_id):
+    """Return the Problem if it exists, else None."""
+    return Problem.query.get(problem_id)
 
 
 def _safe_parse_result(result, comprehensive_done=False):
@@ -316,7 +321,7 @@ def _safe_parse_result(result, comprehensive_done=False):
 @login_required
 def problem_classify(problem_id):
     """Trigger AI classification for a problem and return interaction details."""
-    problem = _user_owns_problem(problem_id)
+    problem = _get_problem_or_none(problem_id)
     if not problem:
         return jsonify({'error': 'Unauthorized'}), 403
 
@@ -392,7 +397,7 @@ def problem_classify(problem_id):
 @login_required
 def problem_comprehensive(problem_id):
     """Trigger comprehensive AI analysis: classify + solution + full solution."""
-    problem = _user_owns_problem(problem_id)
+    problem = _get_problem_or_none(problem_id)
     if not problem:
         return jsonify({'error': 'Unauthorized'}), 403
 
@@ -456,7 +461,7 @@ def problem_comprehensive(problem_id):
 @login_required
 def problem_solution(problem_id):
     """Trigger AI solution approach analysis for a problem."""
-    problem = _user_owns_problem(problem_id)
+    problem = _get_problem_or_none(problem_id)
     if not problem:
         return jsonify({'error': 'Unauthorized'}), 403
 
@@ -491,7 +496,7 @@ def problem_solution(problem_id):
 @login_required
 def problem_full_solution(problem_id):
     """Trigger AI full solution generation for a problem."""
-    problem = _user_owns_problem(problem_id)
+    problem = _get_problem_or_none(problem_id)
     if not problem:
         return jsonify({'error': 'Unauthorized'}), 403
 
@@ -558,29 +563,14 @@ def submission_review(submission_id):
 @login_required
 def problem_resync(problem_id):
     """Re-fetch problem content from the OJ platform."""
-    problem = _user_owns_problem(problem_id)
+    problem = _get_problem_or_none(problem_id)
     if not problem:
         return jsonify({'error': 'Unauthorized'}), 403
 
-    from app.scrapers import get_scraper_instance
     from app.services.tag_mapper import TagMapper
     from app.extensions import db
 
-    # Build scraper kwargs — find credentials from user's accounts on same platform
-    scraper_kwargs = {}
-    students = Student.query.filter_by(parent_id=current_user.id).all()
-    for s in students:
-        for acct in s.platform_accounts:
-            if acct.platform == problem.platform:
-                if acct.auth_cookie:
-                    scraper_kwargs['auth_cookie'] = acct.auth_cookie
-                if acct.auth_password:
-                    scraper_kwargs['auth_password'] = acct.auth_password
-                if acct.platform_uid:
-                    scraper_kwargs['platform_uid'] = acct.platform_uid
-                break
-        if scraper_kwargs:
-            break
+    scraper_kwargs = _find_user_scraper_kwargs(problem.platform)
 
     try:
         scraper = get_scraper_instance(problem.platform, **scraper_kwargs)
@@ -607,8 +597,6 @@ def problem_resync(problem_id):
         problem.url = scraped.url or scraper.get_problem_url(problem.problem_id)
         problem.source = scraped.source
         problem.difficulty_raw = scraped.difficulty_raw
-        if scraped.difficulty_raw:
-            problem.difficulty = scraper.map_difficulty(scraped.difficulty_raw)
         if scraped.tags:
             problem.platform_tags = json.dumps(scraped.tags, ensure_ascii=False)
             mapper = TagMapper(problem.platform)
@@ -628,3 +616,156 @@ def problem_resync(problem_id):
         return jsonify({'success': False, 'error': f'更新题目数据失败: {e}'}), 500
 
     return jsonify({'success': True, 'message': '题目内容已更新'})
+
+
+@api_bp.route('/problem-analyze/parse', methods=['POST'])
+@login_required
+def problem_analyze_parse():
+    """Parse a problem URL, fetch preview data from the OJ platform."""
+    from app.scrapers.url_parser import parse_problem_url
+
+    data = request.get_json(silent=True) or {}
+    url = (data.get('url') or '').strip()
+    if not url:
+        return jsonify({'error': '请输入题目 URL'}), 400
+
+    parsed = parse_problem_url(url)
+    if not parsed:
+        scrapers = get_scraper_class.__self__ if hasattr(get_scraper_class, '__self__') else None
+        from app.scrapers import get_all_scrapers
+        supported = ', '.join(
+            cls.PLATFORM_DISPLAY for cls in get_all_scrapers().values()
+        )
+        return jsonify({
+            'error': f'无法识别该 URL，支持的平台: {supported}',
+        }), 400
+
+    platform, problem_id = parsed
+
+    scraper_cls = get_scraper_class(platform)
+    if not scraper_cls:
+        from app.scrapers import get_all_scrapers
+        supported = ', '.join(
+            cls.PLATFORM_DISPLAY for cls in get_all_scrapers().values()
+        )
+        return jsonify({
+            'error': f'暂不支持该 OJ 平台，支持的平台: {supported}',
+        }), 400
+
+    # Check if problem already exists in DB
+    existing = Problem.query.filter_by(
+        platform=platform, problem_id=problem_id
+    ).first()
+    if existing:
+        return jsonify({
+            'status': 'exists',
+            'problem_id': existing.id,
+            'title': existing.title or existing.problem_id,
+            'url': f'/problem/{existing.id}',
+        })
+
+    # Build scraper kwargs
+    scraper_kwargs = {}
+    if scraper_cls.REQUIRES_LOGIN:
+        scraper_kwargs = _find_user_scraper_kwargs(platform)
+        if not scraper_kwargs:
+            return jsonify({
+                'error': f'该平台（{scraper_cls.PLATFORM_DISPLAY}）需要登录，请先在学生管理中添加该平台账号',
+            }), 400
+
+    try:
+        scraper = get_scraper_instance(platform, **scraper_kwargs)
+    except Exception as e:
+        logger.error(f"Failed to create scraper for {platform}: {e}")
+        return jsonify({'error': f'创建爬虫失败: {e}'}), 500
+
+    try:
+        scraped = scraper.fetch_problem(problem_id)
+    except Exception as e:
+        logger.error(f"Fetch problem failed for {platform}:{problem_id}: {e}")
+        return jsonify({'error': f'抓取题目失败: {e}'}), 500
+
+    if not scraped:
+        return jsonify({'error': '平台未返回题目数据，请检查 URL 是否正确'}), 502
+
+    # Pre-render markdown/HTML content via md2html filter
+    md2html = current_app.jinja_env.filters['md2html']
+    base_url = scraper_cls.BASE_URL
+
+    return jsonify({
+        'status': 'preview',
+        'platform': platform,
+        'platform_display': scraper_cls.PLATFORM_DISPLAY,
+        'problem_id': problem_id,
+        'title': scraped.title,
+        'difficulty_raw': scraped.difficulty_raw,
+        'difficulty': scraper.map_difficulty(scraped.difficulty_raw) if scraped.difficulty_raw else 0,
+        'tags': scraped.tags or [],
+        'description': md2html(scraped.description, escape=False, base_url=base_url) if scraped.description else '',
+        'input_desc': md2html(scraped.input_desc, escape=False, base_url=base_url) if scraped.input_desc else '',
+        'output_desc': md2html(scraped.output_desc, escape=False, base_url=base_url) if scraped.output_desc else '',
+        'examples': md2html(scraped.examples, escape=False, base_url=base_url) if scraped.examples else '',
+        'hint': md2html(scraped.hint, escape=False, base_url=base_url) if scraped.hint else '',
+        'source': scraped.source,
+        'url': scraped.url or scraper.get_problem_url(problem_id),
+    })
+
+
+@api_bp.route('/problem-analyze/save', methods=['POST'])
+@login_required
+def problem_analyze_save():
+    """Save a previewed problem to the database."""
+    from app.extensions import db
+    from app.services.sync_service import SyncService
+
+    data = request.get_json(silent=True) or {}
+    platform = data.get('platform')
+    problem_id = data.get('problem_id')
+
+    if not platform or not problem_id:
+        return jsonify({'error': '缺少参数'}), 400
+
+    # Check for duplicate (race condition guard)
+    existing = Problem.query.filter_by(
+        platform=platform, problem_id=problem_id
+    ).first()
+    if existing:
+        return jsonify({
+            'status': 'exists',
+            'problem_id': existing.id,
+            'url': f'/problem/{existing.id}',
+        })
+
+    scraper_cls = get_scraper_class(platform)
+    if not scraper_cls:
+        return jsonify({'error': '不支持的平台'}), 400
+
+    scraper_kwargs = {}
+    if scraper_cls.REQUIRES_LOGIN:
+        scraper_kwargs = _find_user_scraper_kwargs(platform)
+        if not scraper_kwargs:
+            return jsonify({'error': '缺少平台账号凭据'}), 400
+
+    try:
+        scraper = get_scraper_instance(platform, **scraper_kwargs)
+    except Exception as e:
+        return jsonify({'error': f'创建爬虫失败: {e}'}), 500
+
+    # Use SyncService._ensure_problem to create the problem (includes TagMapper)
+    sync_svc = SyncService()
+    try:
+        problem = sync_svc._ensure_problem(platform, problem_id, scraper)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Save problem failed for {platform}:{problem_id}: {e}")
+        return jsonify({'error': f'保存题目失败: {e}'}), 500
+
+    if not problem:
+        return jsonify({'error': '无法获取题目数据'}), 500
+
+    return jsonify({
+        'status': 'saved',
+        'problem_id': problem.id,
+        'url': f'/problem/{problem.id}',
+    })

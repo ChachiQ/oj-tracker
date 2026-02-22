@@ -173,11 +173,6 @@ class SyncService:
         try:
             scraped = scraper.fetch_problem(problem_id)
             if scraped:
-                difficulty = (
-                    scraper.map_difficulty(scraped.difficulty_raw)
-                    if scraped.difficulty_raw
-                    else 0
-                )
                 problem = Problem(
                     platform=platform,
                     problem_id=problem_id,
@@ -187,7 +182,7 @@ class SyncService:
                     output_desc=scraped.output_desc,
                     examples=scraped.examples,
                     hint=scraped.hint,
-                    difficulty=difficulty,
+                    difficulty=0,
                     difficulty_raw=scraped.difficulty_raw,
                     url=scraped.url or scraper.get_problem_url(problem_id),
                     source=scraped.source,
