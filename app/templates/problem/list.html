@@ -184,7 +184,7 @@
                     {% set sub_info = latest_submissions.get(problem.id) %}
                     <td class="{{ table_col_class('md') }}">
                         {% if sub_info %}
-                        <small data-bs-toggle="tooltip" data-bs-title="{{ sub_info.submitted_at.strftime('%Y-%m-%d %H:%M:%S') }}">{{ sub_info.submitted_at|smarttime }}</small>
+                        <small data-bs-toggle="tooltip" data-bs-title="{{ sub_info.submitted_at|datefmt('%Y-%m-%d %H:%M:%S') }}">{{ sub_info.submitted_at|smarttime }}</small>
                         {% else %}
                         <span class="text-muted">-</span>
                         {% endif %}

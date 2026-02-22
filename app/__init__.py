@@ -280,6 +280,7 @@ def create_app(config_name=None):
     with app.app_context():
         db.create_all()
         _fix_difficulty_data(app)
+        _fix_ybt_timestamps(app)
         _cleanup_stale_jobs(app)
 
     return app
@@ -334,6 +335,33 @@ def _fix_difficulty_data(app):
             app.logger.info(f'Fixed {count} problems with difficulty > 7')
     except Exception:
         db.session.rollback()
+
+
+def _fix_ybt_timestamps(app):
+    """One-time fix: convert existing YBT submitted_at from UTC+8 to UTC."""
+    marker = os.path.join(app.instance_path, '.ybt_tz_fixed')
+    if os.path.exists(marker):
+        return
+    from sqlalchemy import text
+    try:
+        result = db.session.execute(text("""
+            UPDATE submission
+            SET submitted_at = datetime(submitted_at, '-8 hours')
+            WHERE platform_account_id IN (
+                SELECT id FROM platform_account WHERE platform = 'ybt'
+            )
+        """))
+        count = result.rowcount
+        if count:
+            db.session.commit()
+            app.logger.info(f'Fixed {count} YBT submission timestamps (UTC+8 → UTC)')
+        else:
+            db.session.rollback()
+        os.makedirs(app.instance_path, exist_ok=True)
+        open(marker, 'w').close()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'Failed to fix YBT timestamps: {e}')
 
 
 def _register_blueprints(app):
