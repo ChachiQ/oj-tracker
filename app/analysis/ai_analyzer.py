@@ -84,6 +84,11 @@ def _fix_json_escape_sequences(text: str) -> str:
     return ''.join(result)
 
 
+def _fix_trailing_commas(text: str) -> str:
+    """Remove trailing commas before } and ] in JSON."""
+    return re.sub(r',\s*([\]}])', r'\1', text)
+
+
 def _repair_truncated_json(text: str) -> str:
     """Attempt to close a truncated JSON string by tracking bracket/quote nesting.
 
@@ -172,6 +177,15 @@ def _parse_llm_json(text: str) -> dict | None:
     try:
         fixed = _fix_json_escape_sequences(cleaned)
         result = json.loads(fixed)
+        if isinstance(result, dict):
+            return result
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Level 2.5: fix trailing commas (common LLM mistake: {"key": "value",})
+    try:
+        no_trailing = _fix_trailing_commas(cleaned)
+        result = json.loads(no_trailing)
         if isinstance(result, dict):
             return result
     except (json.JSONDecodeError, TypeError):
@@ -873,8 +887,41 @@ class AIAnalyzer:
                            f"finish_reason={response.finish_reason}, output_tokens={response.output_tokens}")
 
         parsed = _parse_llm_json(response.content)
+
+        # Auto-retry when model returns text instead of JSON
+        if parsed is None and response.finish_reason not in ("max_tokens", "length"):
+            logger.warning(
+                f"Comprehensive JSON parse failed for {problem_id}, "
+                f"retrying with reformat instruction "
+                f"(content preview: {response.content[:300]!r})"
+            )
+            retry_messages = messages + [
+                {"role": "assistant", "content": response.content},
+                {"role": "user", "content": (
+                    "你的分析内容很好，但输出格式不正确。"
+                    "请将上述分析结果严格按照我之前要求的 JSON 格式重新输出。"
+                    "只输出 JSON，不要包含任何其他文字或 markdown 标记。"
+                )},
+            ]
+            try:
+                response2 = provider.chat(retry_messages, model=model, max_tokens=16384)
+                parsed = _parse_llm_json(response2.content)
+                if parsed:
+                    response = response2
+                    logger.info(f"Comprehensive retry succeeded for {problem_id}")
+                else:
+                    logger.warning(
+                        f"Comprehensive retry also failed for {problem_id} "
+                        f"(content preview: {response2.content[:300]!r})"
+                    )
+            except Exception as e:
+                logger.warning(f"Comprehensive retry LLM call failed for {problem_id}: {e}")
+
         if parsed is None:
-            logger.error(f"Comprehensive analysis JSON parse failed for {problem_id}")
+            logger.error(
+                f"Comprehensive analysis JSON parse failed for {problem_id} "
+                f"(cleaned preview: {_clean_llm_json(response.content)[:300]!r})"
+            )
             truncated = (f" [TRUNCATED: {response.finish_reason}]"
                          if response.finish_reason in ("max_tokens", "length") else "")
             problem.difficulty = 0
