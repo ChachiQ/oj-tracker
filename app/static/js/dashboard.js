@@ -288,6 +288,7 @@ function initDifficultyChart(diffDist) {
 
     // Sort keys numerically
     keys.sort(function (a, b) { return parseInt(a) - parseInt(b); });
+    keys = keys.filter(function (d) { return parseInt(d) > 0; });
     var labels = keys.map(function (d) { return '难度' + d; });
     var values = keys.map(function (d) { return diffDist[d]; });
 

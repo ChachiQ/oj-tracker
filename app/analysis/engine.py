@@ -182,7 +182,7 @@ class AnalysisEngine:
             return {}
 
         problems = Problem.query.filter(Problem.id.in_(ac_problem_ids)).all()
-        counter = Counter(p.difficulty for p in problems)
+        counter = Counter(p.difficulty for p in problems if p.difficulty > 0)
         return dict(sorted(counter.items()))
 
     def get_daily_submissions(self, days: int = 365) -> list:
@@ -306,8 +306,14 @@ class AnalysisEngine:
             tag = Tag.query.filter_by(name=tag_name).first()
             if not tag:
                 continue
-            if max_stage and tag.stage and tag.stage > max_stage:
-                continue
+            if max_stage and tag.stage:
+                if tag.stage > max_stage:
+                    continue
+                # 排除对当前目标阶段过于基础的知识点
+                if max_stage >= 5 and tag.stage <= 2:
+                    continue
+                if max_stage >= 3 and tag.stage <= 1:
+                    continue
 
             attempted = stats["attempted"]
             solved = stats["solved"]

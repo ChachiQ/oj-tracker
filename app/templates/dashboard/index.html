@@ -52,6 +52,12 @@
         </div>
     </div>
 
+    <!-- Weakness Alerts (after radar/heatmap, before charts) -->
+    <div class="chart-container mb-4" id="weakness-section" style="display: none;">
+        <div class="chart-title"><i class="bi bi-exclamation-triangle text-danger"></i> 薄弱环节提醒</div>
+        <div class="row g-3" id="weakness-cards"></div>
+    </div>
+
     <!-- Row 2: Difficulty Distribution + Status Distribution -->
     <div class="row g-3 mb-4">
         <div class="col-12 col-lg-5">
@@ -101,12 +107,6 @@
                 </div>
             </div>
         </div>
-    </div>
-
-    <!-- Row 5: Weakness Alerts -->
-    <div class="chart-container" id="weakness-section" style="display: none;">
-        <div class="chart-title"><i class="bi bi-exclamation-triangle text-danger"></i> 薄弱环节提醒</div>
-        <div class="row g-3" id="weakness-cards"></div>
     </div>
 
     <!-- Empty Data State (hidden by default, shown by JS if no data) -->
