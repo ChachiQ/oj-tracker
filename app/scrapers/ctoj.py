@@ -309,13 +309,16 @@ class CTOJScraper(BaseScraper):
         if not content:
             return None, None, None, None, None
 
-        # Split by ## headings
+        # Normalize line endings
+        content = content.replace('\r\n', '\n').replace('\r', '\n')
+
+        # Split by ## (or deeper) headings
         sections: dict[str, str] = {}
         current_key = '__description__'
         current_lines: list[str] = []
 
         for line in content.split('\n'):
-            heading_match = re.match(r'^##\s+(.+)', line)
+            heading_match = re.match(r'^#{2,}\s+(.+)', line)
             if heading_match:
                 sections[current_key] = '\n'.join(current_lines).strip()
                 current_key = heading_match.group(1).strip()

@@ -12,6 +12,7 @@ from app.models import (
     Student,
     AnalysisResult,
 )
+from app.scrapers import get_scraper_class
 
 problem_bp = Blueprint('problem', __name__, url_prefix='/problem')
 
@@ -199,6 +200,10 @@ def detail(problem_id):
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # Look up the platform's base URL for rewriting relative image URLs
+    scraper_cls = get_scraper_class(problem.platform)
+    platform_base_url = scraper_cls.BASE_URL if scraper_cls else ''
+
     return render_template(
         'problem/detail.html',
         problem=problem,
@@ -208,4 +213,5 @@ def detail(problem_id):
         full_solution=full_solution,
         submission_reviews=submission_reviews,
         ai_tags=ai_tags,
+        platform_base_url=platform_base_url,
     )

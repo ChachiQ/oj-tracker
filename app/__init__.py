@@ -139,7 +139,7 @@ def create_app(config_name=None):
         return to_display_tz(dt).strftime(fmt)
 
     @app.template_filter('md2html')
-    def md2html_filter(text, escape=True):
+    def md2html_filter(text, escape=True, base_url=None):
         """Convert basic Markdown to HTML without external dependencies.
 
         Args:
@@ -147,11 +147,15 @@ def create_app(config_name=None):
                     AI-generated pure-Markdown content. If False, preserve
                     existing HTML tags — suitable for OJ problem content that
                     mixes Markdown and HTML.
+            base_url: If set, prepend to relative image URLs (starting with /).
         """
         if not text:
             return ''
         from markupsafe import Markup
         text = str(text)
+
+        # Normalize line endings so regex patterns match consistently
+        text = text.replace('\r\n', '\n').replace('\r', '\n')
 
         # Extract fenced code blocks before any escaping/processing
         code_blocks = []
@@ -178,17 +182,32 @@ def create_app(config_name=None):
             text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         else:
             # Convert Markdown images to <img> tags before escaping stray brackets
-            text = re.sub(
-                r'!\[([^\]]*)\]\(([^)]+)\)',
-                r'<img src="\2" alt="\1" class="img-fluid">',
-                text,
-            )
+            def _img_replace(m):
+                alt, src = m.group(1), m.group(2)
+                if base_url and src.startswith('/'):
+                    src = base_url.rstrip('/') + src
+                return f'<img src="{src}" alt="{alt}" class="img-fluid">'
+
+            text = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _img_replace, text)
+            # Rewrite relative URLs in existing HTML <img> tags
+            if base_url:
+                def _html_img_replace(m):
+                    prefix, src, suffix = m.group(1), m.group(2), m.group(3)
+                    if src.startswith('/'):
+                        src = base_url.rstrip('/') + src
+                    return f'{prefix}{src}{suffix}'
+                text = re.sub(
+                    r'(<img\s[^>]*src=["\'])(/[^"\']+)(["\'])',
+                    _html_img_replace, text, flags=re.IGNORECASE,
+                )
             text = _escape_stray_angle_brackets(text)
         # Headings: #### h6, ### h5, ## h4, # h3
         text = re.sub(r'^#### (.+)$', r'<h6>\1</h6>', text, flags=re.MULTILINE)
         text = re.sub(r'^### (.+)$', r'<h5>\1</h5>', text, flags=re.MULTILINE)
         text = re.sub(r'^## (.+)$', r'<h4>\1</h4>', text, flags=re.MULTILINE)
         text = re.sub(r'^# (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
+        # Horizontal rules: --- or more dashes on their own line
+        text = re.sub(r'^-{3,}\s*$', '<hr>', text, flags=re.MULTILINE)
         # Bold **text**
         text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
         # Italic *text* (but not inside strong tags)
@@ -216,7 +235,7 @@ def create_app(config_name=None):
             part = part.strip()
             if not part:
                 continue
-            if part.startswith(('<h', '<ul', '<ol')):
+            if part.startswith(('<h', '<ul', '<ol', '<hr')):
                 result.append(part)
             else:
                 # Convert single newlines to <br> (without keeping \n)
