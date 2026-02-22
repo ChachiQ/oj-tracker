@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 
 sync_bp = Blueprint('sync', __name__, url_prefix='/sync')
 
+# Registry of active AIBackfillService instances, keyed by job_id.
+# Used by cancel_job() to signal the background thread via _cancel_event.
+_active_ai_services = {}
+_active_ai_services_lock = threading.Lock()
+
 
 def _get_user_student_ids():
     """Return list of student IDs belonging to current user."""
@@ -54,9 +59,9 @@ def _check_running_job():
     ).first()
     if not job:
         return None
-    # Running job stuck > 6 hours
+    # Running job stuck > 2 hours
     if job.status == 'running' and job.started_at:
-        cutoff = datetime.utcnow() - timedelta(hours=6)
+        cutoff = datetime.utcnow() - timedelta(hours=2)
         if job.started_at < cutoff:
             job.status = 'failed'
             job.error_message = '任务超时，已自动标记为失败（进程可能被终止）'
@@ -103,12 +108,18 @@ def _start_ai_thread(job_id, user_id, platform=None, account_id=None):
     from app.services.ai_backfill_service import AIBackfillService
     app = current_app._get_current_object()
     service = AIBackfillService(app)
-    t = threading.Thread(
-        target=service.run,
-        args=(job_id, user_id),
-        kwargs={'platform': platform, 'account_id': account_id},
-        daemon=True,
-    )
+
+    with _active_ai_services_lock:
+        _active_ai_services[job_id] = service
+
+    def _run_and_cleanup():
+        try:
+            service.run(job_id, user_id, platform=platform, account_id=account_id)
+        finally:
+            with _active_ai_services_lock:
+                _active_ai_services.pop(job_id, None)
+
+    t = threading.Thread(target=_run_and_cleanup, daemon=True)
     t.start()
 
 
@@ -431,6 +442,12 @@ def cancel_job(job_id):
         return jsonify({'success': False, 'message': '未找到任务'}), 404
     if job.status not in ('pending', 'running'):
         return jsonify({'success': False, 'message': '任务已结束，无法取消'})
+    # Signal the background thread to stop (if still running)
+    with _active_ai_services_lock:
+        service = _active_ai_services.get(job_id)
+        if service:
+            service.request_cancel()
+
     job.status = 'failed'
     job.error_message = '用户手动取消'
     job.finished_at = datetime.utcnow()

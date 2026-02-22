@@ -1293,6 +1293,19 @@ class AIAnalyzer:
 
         except Exception as e:
             logger.error(f"Submission review failed for {submission_id}: {e}")
+            error_result = AnalysisResult(
+                submission_id=submission_id,
+                analysis_type=analysis_type,
+                result_json=json.dumps(
+                    {"error": str(e)[:500]}, ensure_ascii=False,
+                ),
+                ai_model="error",
+                token_cost=0,
+                cost_usd=0,
+                analyzed_at=datetime.utcnow(),
+            )
+            db.session.add(error_result)
+            db.session.commit()
             return None
 
     def get_monthly_cost(self) -> float:

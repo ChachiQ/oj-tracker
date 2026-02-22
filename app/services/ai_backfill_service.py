@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ThreadPoolExecutor, as_completed,
+    TimeoutError as FuturesTimeoutError,
+)
 from datetime import datetime
 from itertools import groupby
 
@@ -28,9 +31,16 @@ logger = logging.getLogger(__name__)
 
 
 class AIBackfillService:
+    PHASE_TIMEOUT_SECONDS = 3600  # 1 hour per phase
+
     def __init__(self, app):
         self.app = app
         self._progress_lock = threading.Lock()
+        self._cancel_event = threading.Event()
+
+    def request_cancel(self):
+        """Signal the background thread to stop at the next safe point."""
+        self._cancel_event.set()
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -61,14 +71,27 @@ class AIBackfillService:
                 self._run_phase_comprehensive(
                     job, analyzer, stats, user_id, platform, limit,
                 )
-                self._run_phase_review(
-                    job, analyzer, stats, user_id, platform, account_id, limit,
-                )
 
-                job.status = 'completed'
+                if self._cancel_event.is_set():
+                    logger.info("AI backfill job %d cancelled between phases", job_id)
+                    job.status = 'failed'
+                    job.error_message = '用户取消'
+                else:
+                    self._run_phase_review(
+                        job, analyzer, stats, user_id, platform, account_id, limit,
+                    )
+
+                    if self._cancel_event.is_set():
+                        logger.info("AI backfill job %d cancelled after review phase", job_id)
+                        job.status = 'failed'
+                        job.error_message = '用户取消'
+                    else:
+                        job.status = 'completed'
+                        logger.info("AI backfill job %d finished with status=completed, stats=%s",
+                                    job_id, stats)
 
             except Exception as e:
-                logger.error(f"AI backfill job {job_id} failed: {e}")
+                logger.error("AI backfill job %d failed: %s", job_id, e)
                 job.status = 'failed'
                 job.error_message = str(e)
 
@@ -76,7 +99,20 @@ class AIBackfillService:
                 job.stats = stats
                 job.finished_at = datetime.utcnow()
                 job.current_phase = None
-                db.session.commit()
+                try:
+                    db.session.commit()
+                except Exception as exc:
+                    logger.error("Failed to commit final status for job %d: %s", job_id, exc)
+                    try:
+                        db.session.rollback()
+                        job_fresh = db.session.get(SyncJob, job_id)
+                        if job_fresh:
+                            job_fresh.status = 'failed'
+                            job_fresh.error_message = f'最终提交失败: {exc}'
+                            job_fresh.finished_at = datetime.utcnow()
+                            db.session.commit()
+                    except Exception:
+                        logger.error("Recovery commit also failed for job %d", job_id)
 
     # ------------------------------------------------------------------
     # Concurrency helpers
@@ -131,29 +167,46 @@ class AIBackfillService:
                 for item in item_list
             }
 
-            for future in as_completed(futures):
-                completed += 1
-                try:
-                    if future.result():
-                        ok_count += 1
-                        consecutive_errors = 0
-                    else:
+            try:
+                for future in as_completed(futures, timeout=self.PHASE_TIMEOUT_SECONDS):
+                    if self._cancel_event.is_set():
+                        logger.info("AI backfill cancelled during %s phase", job.current_phase)
+                        for f in futures:
+                            f.cancel()
+                        break
+
+                    completed += 1
+                    try:
+                        if future.result():
+                            ok_count += 1
+                            consecutive_errors = 0
+                        else:
+                            consecutive_errors += 1
+                    except Exception as e:
+                        logger.warning("AI backfill worker failed for item %s: %s",
+                                       futures[future], e)
                         consecutive_errors += 1
-                except Exception:
-                    consecutive_errors += 1
 
-                with self._progress_lock:
-                    job.progress_current = completed
-                    db.session.commit()
+                    with self._progress_lock:
+                        job.progress_current = completed
+                        db.session.commit()
 
-                if consecutive_errors >= 10:
-                    logger.warning(
-                        "AI backfill: 10+ consecutive errors in %s phase, stopping",
-                        job.current_phase,
-                    )
-                    for f in futures:
-                        f.cancel()
-                    break
+                    if consecutive_errors >= 10:
+                        logger.warning(
+                            "AI backfill: 10+ consecutive errors in %s phase, stopping",
+                            job.current_phase,
+                        )
+                        for f in futures:
+                            f.cancel()
+                        break
+            except FuturesTimeoutError:
+                logger.error(
+                    "Phase %s timed out after %ds (%d/%d done)",
+                    job.current_phase, self.PHASE_TIMEOUT_SECONDS,
+                    completed, len(item_list),
+                )
+                for f in futures:
+                    f.cancel()
 
         stats[stat_ok_key] = ok_count
 
