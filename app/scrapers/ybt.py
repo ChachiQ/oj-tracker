@@ -42,7 +42,9 @@ _RESULT_STATUS_MAP = {
     'Running': SubmissionStatus.JUDGING,
     # Chinese status texts from YBT
     '完全正确': SubmissionStatus.AC,
+    '答案正确': SubmissionStatus.AC,
     '不完全正确': SubmissionStatus.WA,
+    '部分正确': SubmissionStatus.WA,
     '未通过': SubmissionStatus.WA,
     '编译错误': SubmissionStatus.CE,
 }
