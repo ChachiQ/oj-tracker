@@ -1,12 +1,12 @@
-"""2-phase AI backfill service with concurrent execution.
+"""AI backfill service with concurrent execution.
 
-Phase 1 (comprehensive): Merges classification + solution approach + full
-solution into a single LLM call per problem via ``analyze_problem_comprehensive``.
-
-Phase 2 (review): Code review of individual submissions (unchanged logic).
-
-Both phases use ``ThreadPoolExecutor`` for concurrent processing, with the
+Runs comprehensive analysis (classification + solution approach + full solution)
+via ``analyze_problem_comprehensive`` using ``ThreadPoolExecutor``, with the
 concurrency limit read from the LLM provider config.
+
+Submission-level code review (``_run_phase_review``) is retained but not
+triggered automatically — it can be invoked on-demand from the problem detail
+page.
 """
 from __future__ import annotations
 
@@ -61,7 +61,6 @@ class AIBackfillService:
 
             stats = {
                 'comprehensive_ok': 0, 'comprehensive_total': 0,
-                'review_ok': 0, 'review_total': 0,
             }
 
             try:
@@ -73,22 +72,13 @@ class AIBackfillService:
                 )
 
                 if self._cancel_event.is_set():
-                    logger.info("AI backfill job %d cancelled between phases", job_id)
+                    logger.info("AI backfill job %d cancelled after comprehensive phase", job_id)
                     job.status = 'failed'
                     job.error_message = '用户取消'
                 else:
-                    self._run_phase_review(
-                        job, analyzer, stats, user_id, platform, account_id, limit,
-                    )
-
-                    if self._cancel_event.is_set():
-                        logger.info("AI backfill job %d cancelled after review phase", job_id)
-                        job.status = 'failed'
-                        job.error_message = '用户取消'
-                    else:
-                        job.status = 'completed'
-                        logger.info("AI backfill job %d finished with status=completed, stats=%s",
-                                    job_id, stats)
+                    job.status = 'completed'
+                    logger.info("AI backfill job %d finished with status=completed, stats=%s",
+                                job_id, stats)
 
             except Exception as e:
                 logger.error("AI backfill job %d failed: %s", job_id, e)

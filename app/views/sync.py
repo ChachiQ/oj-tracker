@@ -465,7 +465,6 @@ def job_status(job_id):
 
     phase_labels = {
         'comprehensive': 'AI 综合分析',
-        'review': '代码审查',
     }
 
     return jsonify({
@@ -555,7 +554,6 @@ def running_job():
 
     phase_labels = {
         'comprehensive': 'AI 综合分析',
-        'review': '代码审查',
     }
 
     return jsonify({
