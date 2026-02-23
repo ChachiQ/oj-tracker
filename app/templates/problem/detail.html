@@ -369,6 +369,8 @@ function renderEmpty(containerId, message) {
         '<i class="bi bi-stars"></i> 一键分析</button></div>';
 }
 
+function wrapMath(s) { return s && s !== '-' ? '$' + s + '$' : (s || '-'); }
+
 function renderSolution(data, containerId, aiModel, analyzedAt) {
     var container = document.getElementById(containerId);
     if (!data || !data.approach) {
@@ -378,7 +380,7 @@ function renderSolution(data, containerId, aiModel, analyzedAt) {
     var html = '';
     if (data.approach) html += '<p><strong>解题思路：</strong>' + data.approach + '</p>';
     if (data.algorithm) html += '<p><strong>核心算法：</strong><span class="badge bg-info">' + data.algorithm + '</span></p>';
-    if (data.complexity) html += '<p><strong>复杂度：</strong>时间 ' + (data.complexity.time || '-') + '，空间 ' + (data.complexity.space || '-') + '</p>';
+    if (data.complexity) html += '<p><strong>复杂度：</strong>时间 ' + wrapMath(data.complexity.time) + '，空间 ' + wrapMath(data.complexity.space) + '</p>';
     if (data.thinking_steps && data.thinking_steps.length) {
         html += '<p><strong>思考步骤：</strong></p><ol>';
         data.thinking_steps.forEach(function(s) { html += '<li>' + s + '</li>'; });
@@ -410,7 +412,7 @@ function renderFullSolution(data, containerId, aiModel, analyzedAt) {
     if (data.approach) html += '<p><strong>解题思路：</strong>' + data.approach + '</p>';
     if (data.code) html += '<p><strong>代码：</strong></p><pre class="code-viewer"><code class="language-cpp">' + escapeHtml(data.code) + '</code></pre>';
     if (data.explanation) html += '<p><strong>代码解释：</strong></p><div class="report-content">' + data.explanation + '</div>';
-    if (data.complexity) html += '<p><strong>复杂度：</strong>时间 ' + (data.complexity.time || '-') + '，空间 ' + (data.complexity.space || '-') + '</p>';
+    if (data.complexity) html += '<p><strong>复杂度：</strong>时间 ' + wrapMath(data.complexity.time) + '，空间 ' + wrapMath(data.complexity.space) + '</p>';
     if (data.alternative_approaches && data.alternative_approaches.length) {
         html += '<p><strong>替代方法：</strong></p><ul>';
         data.alternative_approaches.forEach(function(a) { html += '<li><strong>' + a.name + '：</strong>' + a.brief + '</li>'; });
