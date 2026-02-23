@@ -396,6 +396,7 @@ function renderSolution(data, containerId, aiModel, analyzedAt) {
     }
     html += renderMeta(aiModel, analyzedAt);
     container.innerHTML = html;
+    renderMath(container);
     return true;
 }
 
@@ -418,6 +419,7 @@ function renderFullSolution(data, containerId, aiModel, analyzedAt) {
     html += renderMeta(aiModel, analyzedAt);
     container.innerHTML = html;
     highlightCode(container);
+    renderMath(container);
     return true;
 }
 
@@ -477,6 +479,7 @@ function renderReview(data, containerId, aiModel, analyzedAt, subId) {
     }
     html += renderMeta(aiModel, analyzedAt, 'confirmRefreshReview(' + subId + ')');
     container.innerHTML = html;
+    renderMath(container);
     return true;
 }
 
@@ -484,6 +487,18 @@ function escapeHtml(text) {
     var div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+function renderMath(container) {
+    if (typeof renderMathInElement !== 'undefined') {
+        renderMathInElement(container, {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false}
+            ],
+            throwOnError: false
+        });
+    }
 }
 
 function highlightCode(container) {
