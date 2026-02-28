@@ -16,6 +16,7 @@ class BaseScraper(ABC):
     BASE_URL: str = ""
     SUPPORT_CODE_FETCH: bool = False
     REQUIRES_LOGIN: bool = False
+    AUTH_METHOD: str = 'password'  # 'password' or 'cookie'
 
     def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0, platform_uid: str = None):
         self.auth_cookie = auth_cookie

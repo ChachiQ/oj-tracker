@@ -42,6 +42,7 @@ def index():
             'display': getattr(cls, 'PLATFORM_DISPLAY', name),
             'instructions': cls().get_auth_instructions(),
             'requires_login': getattr(cls, 'REQUIRES_LOGIN', False),
+            'auth_method': getattr(cls, 'AUTH_METHOD', 'password'),
         })
 
     requires_login_platforms = [

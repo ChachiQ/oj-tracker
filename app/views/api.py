@@ -563,6 +563,109 @@ def submission_review(submission_id):
     return jsonify(_safe_parse_result(result))
 
 
+@api_bp.route('/problem/<int:problem_id>/resync-submissions', methods=['POST'])
+@login_required
+def problem_resync_submissions(problem_id):
+    """Manually re-sync all submissions for a specific problem."""
+    problem = _get_problem_or_none(problem_id)
+    if not problem:
+        return jsonify({'error': '题目不存在'}), 404
+
+    if problem.platform != 'coderlands':
+        return jsonify({'error': '该平台暂不支持单题同步提交记录'}), 400
+
+    from app.extensions import db
+    from app.scrapers.common import SubmissionStatus
+
+    # Find the user's platform account for coderlands
+    scraper_kwargs = _find_user_scraper_kwargs(problem.platform)
+    if not scraper_kwargs:
+        return jsonify({'error': '未找到该平台的账号，请先在设置中添加'}), 400
+
+    try:
+        scraper = get_scraper_instance(problem.platform, **scraper_kwargs)
+    except ValueError as e:
+        return jsonify({'error': f'创建爬虫失败: {e}'}), 500
+
+    # Resolve the problem UUID from problem_id (P{no})
+    uuid_param = scraper._problem_id_to_uuid_param(problem.problem_id)
+
+    try:
+        # Fetch problem details to get the real UUID
+        api_result = scraper._api_get(
+            f'/server/student/stady/getClassWorkOne'
+            f'?uuid={uuid_param}&lessonUuid=personalCenter'
+        )
+        data = api_result.get('data', api_result) if isinstance(api_result, dict) else api_result
+        if not data or not isinstance(data, dict) or not data.get('uuid'):
+            return jsonify({'error': '无法获取题目 UUID'}), 500
+        problem_uuid = data['uuid']
+    except Exception as e:
+        return jsonify({'error': f'获取题目信息失败: {e}'}), 500
+
+    try:
+        submissions = scraper.fetch_problem_submissions_by_uuid(problem_uuid)
+    except Exception as e:
+        return jsonify({'error': f'获取提交记录失败: {e}'}), 500
+
+    # Find the user's account for dedup
+    account = None
+    students = Student.query.filter_by(parent_id=current_user.id).all()
+    for s in students:
+        for acct in s.platform_accounts:
+            if acct.platform == problem.platform:
+                account = acct
+                break
+        if account:
+            break
+
+    if not account:
+        return jsonify({'error': '未找到该平台的账号'}), 400
+
+    new_count = 0
+    for scraped_sub in submissions:
+        # Skip CE
+        if scraped_sub.status == SubmissionStatus.CE.value:
+            continue
+        # Dedup
+        existing = Submission.query.filter_by(
+            platform_account_id=account.id,
+            platform_record_id=scraped_sub.platform_record_id,
+        ).first()
+        if existing:
+            continue
+
+        submission = Submission(
+            platform_account_id=account.id,
+            problem_id_ref=problem.id,
+            platform_record_id=scraped_sub.platform_record_id,
+            status=scraped_sub.status,
+            score=scraped_sub.score,
+            language=scraped_sub.language,
+            time_ms=scraped_sub.time_ms,
+            memory_kb=scraped_sub.memory_kb,
+            submitted_at=scraped_sub.submitted_at,
+        )
+        db.session.add(submission)
+        new_count += 1
+
+        # Fetch source code if supported
+        if scraper.SUPPORT_CODE_FETCH:
+            try:
+                code = scraper.fetch_submission_code(scraped_sub.platform_record_id)
+                if code:
+                    submission.source_code = code
+            except Exception:
+                pass
+
+    db.session.commit()
+    return jsonify({
+        'success': True,
+        'new_count': new_count,
+        'message': f'同步完成，新增 {new_count} 条提交记录',
+    })
+
+
 @api_bp.route('/problem/<int:problem_id>/resync', methods=['POST'])
 @login_required
 def problem_resync(problem_id):
@@ -656,7 +759,7 @@ def problem_analyze_parse():
             'error': f'暂不支持该 OJ 平台，支持的平台: {supported}',
         }), 400
 
-    # Check if problem already exists in DB
+    # Check if problem already exists in DB (using raw URL-parsed ID)
     existing = Problem.query.filter_by(
         platform=platform, problem_id=problem_id
     ).first()
@@ -692,6 +795,22 @@ def problem_analyze_parse():
     if not scraped:
         return jsonify({'error': '平台未返回题目数据，请检查 URL 是否正确'}), 502
 
+    # Use canonical problem_id from scraped data (e.g. Coderlands UUID → P{no})
+    canonical_id = scraped.problem_id or problem_id
+
+    # Check again with canonical ID (URL parse may have returned UUID)
+    if canonical_id != problem_id:
+        existing = Problem.query.filter_by(
+            platform=platform, problem_id=canonical_id
+        ).first()
+        if existing:
+            return jsonify({
+                'status': 'exists',
+                'problem_id': existing.id,
+                'title': existing.title or existing.problem_id,
+                'url': f'/problem/{existing.id}',
+            })
+
     # Pre-render markdown/HTML content via md2html filter
     md2html = current_app.jinja_env.filters['md2html']
     base_url = scraper_cls.BASE_URL
@@ -700,7 +819,7 @@ def problem_analyze_parse():
         'status': 'preview',
         'platform': platform,
         'platform_display': scraper_cls.PLATFORM_DISPLAY,
-        'problem_id': problem_id,
+        'problem_id': canonical_id,
         'title': scraped.title,
         'difficulty_raw': scraped.difficulty_raw,
         'difficulty': scraper.map_difficulty(scraped.difficulty_raw) if scraped.difficulty_raw else 0,
@@ -711,7 +830,7 @@ def problem_analyze_parse():
         'examples': md2html(scraped.examples, escape=False, base_url=base_url) if scraped.examples else '',
         'hint': md2html(scraped.hint, escape=False, base_url=base_url) if scraped.hint else '',
         'source': scraped.source,
-        'url': scraped.url or scraper.get_problem_url(problem_id),
+        'url': scraped.url or scraper.get_problem_url(canonical_id),
     })
 
 

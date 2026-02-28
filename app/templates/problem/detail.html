@@ -42,6 +42,11 @@
                 <button class="btn btn-sm btn-outline-secondary" id="btn-resync" onclick="resyncProblem()">
                     <i class="bi bi-arrow-repeat"></i> 同步题目内容
                 </button>
+                {% if problem.platform == 'coderlands' %}
+                <button class="btn btn-sm btn-outline-primary" id="btn-resync-subs" onclick="resyncSubmissions()">
+                    <i class="bi bi-cloud-download"></i> 同步提交记录
+                </button>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -568,6 +573,42 @@ function resyncProblem() {
     });
 }
 
+
+/* Resync submissions for this problem from the OJ platform */
+function resyncSubmissions() {
+    ojConfirm('确定要重新同步该题目的提交记录吗？将从平台获取最新提交。').then(function(ok) {
+        if (!ok) return;
+        var btn = document.getElementById('btn-resync-subs');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> 同步中...';
+
+        apiPost('/api/problem/' + PROBLEM_ID + '/resync-submissions')
+        .then(function(data) {
+            if (data.success) {
+                btn.className = 'btn btn-sm btn-success';
+                btn.innerHTML = '<i class="bi bi-check-lg"></i> ' + data.message;
+                if (data.new_count > 0) {
+                    setTimeout(function() { location.reload(); }, 1500);
+                } else {
+                    setTimeout(function() {
+                        btn.className = 'btn btn-sm btn-outline-primary';
+                        btn.innerHTML = '<i class="bi bi-cloud-download"></i> 同步提交记录';
+                        btn.disabled = false;
+                    }, 3000);
+                }
+            } else {
+                ojToast(data.error || '同步失败');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-cloud-download"></i> 同步提交记录';
+            }
+        })
+        .catch(function(err) {
+            ojToast('请求失败: ' + err.message);
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-cloud-download"></i> 同步提交记录';
+        });
+    });
+}
 
 function triggerComprehensive(overrideMaxTokens) {
     var btnEl = document.getElementById('btn-comprehensive');

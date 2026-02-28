@@ -59,6 +59,8 @@
                                 'luogu': 'bi-trophy',
                                 'bbcoj': 'bi-pc-display',
                                 'ybt': 'bi-book',
+                                'ctoj': 'bi-cpu',
+                                'coderlands': 'bi-mortarboard',
                                 'codeforces': 'bi-globe',
                                 'atcoder': 'bi-flag',
                                 'leetcode': 'bi-code-square',
@@ -397,7 +399,12 @@
                              data-bs-parent="#platformInstructions">
                             <div class="accordion-body">
                                 {{ p.instructions }}
-                                {% if p.requires_login %}
+                                {% if p.requires_login and p.auth_method == 'cookie' %}
+                                <div class="alert alert-info mt-2 mb-0 py-2 small">
+                                    <i class="bi bi-info-circle"></i>
+                                    此平台使用 Cookie 认证，Cookie 会过期，需要定期更新。不会影响你在该网站上的活跃会话。
+                                </div>
+                                {% elif p.requires_login %}
                                 <div class="alert alert-warning mt-2 mb-0 py-2 small">
                                     <i class="bi bi-exclamation-triangle"></i>
                                     此平台需要密码登录同步数据，登录后会踢掉你在该OJ网站上的活跃会话。建议在不使用该OJ时进行同步。
@@ -451,7 +458,9 @@
                         <select class="form-select" id="add-platform" name="platform" required>
                             <option value="">-- 请选择平台 --</option>
                             {% for p in platform_info %}
-                            <option value="{{ p.name }}" data-requires-login="{{ 'true' if p.requires_login else 'false' }}">
+                            <option value="{{ p.name }}"
+                                    data-requires-login="{{ 'true' if p.requires_login else 'false' }}"
+                                    data-auth-method="{{ p.auth_method }}">
                                 {{ p.display }}{% if p.requires_login %} (需登录){% endif %}
                             </option>
                             {% endfor %}
@@ -513,14 +522,32 @@
         platformSelect.addEventListener('change', function() {
             var selected = this.options[this.selectedIndex];
             var requiresLogin = selected.getAttribute('data-requires-login') === 'true';
-            if (requiresLogin) {
-                passwordField.style.display = '';
-                cookieField.style.display = 'none';
-                passwordInput.setAttribute('required', 'required');
-            } else {
+            var authMethod = selected.getAttribute('data-auth-method') || 'password';
+            var loginWarning = document.getElementById('login-warning');
+
+            if (requiresLogin && authMethod === 'cookie') {
+                // Cookie-based auth (e.g. Coderlands)
                 passwordField.style.display = 'none';
                 cookieField.style.display = '';
                 passwordInput.removeAttribute('required');
+                document.getElementById('add-cookie').setAttribute('required', 'required');
+                document.querySelector('#cookie-field .form-text').textContent =
+                    '此平台使用 Cookie 认证，Cookie 会过期，需要定期更新。';
+            } else if (requiresLogin) {
+                // Password-based auth
+                passwordField.style.display = '';
+                cookieField.style.display = 'none';
+                passwordInput.setAttribute('required', 'required');
+                document.getElementById('add-cookie').removeAttribute('required');
+                if (loginWarning) loginWarning.style.display = '';
+            } else {
+                // No auth needed
+                passwordField.style.display = 'none';
+                cookieField.style.display = '';
+                passwordInput.removeAttribute('required');
+                document.getElementById('add-cookie').removeAttribute('required');
+                document.querySelector('#cookie-field .form-text').textContent =
+                    '仅在需要时填写，Cookie 将加密存储。';
             }
         });
     }

@@ -13,6 +13,8 @@ _PATTERNS = [
     (re.compile(r'ybt\.ssoier\.cn(?::\d+)?/problem_show\.php\?pid=(\d+)'), 'ybt'),
     # CTOJ: ctoj.ac/d/{domain}/p/{pid}
     (re.compile(r'ctoj\.ac/d/([^/]+)/p/([^/?\s]+)'), 'ctoj'),
+    # Coderlands: course.coderlands.com/web/#/newAnswer#UUID,personalCenter
+    (re.compile(r'coderlands\.com/web/#/newAnswer#([0-9a-fA-F]+)'), 'coderlands'),
 ]
 
 

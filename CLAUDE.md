@@ -110,6 +110,7 @@ User 1-N SyncJob
 - BBC OJ (bbcoj) - HOJ系统 REST API（需密码登录，会影响活跃会话）
 - 一本通 (ybt) - PHP系统 HTML解析（需密码登录，会影响活跃会话）
 - CTOJ 酷思未来 (ctoj) - Hydro系统 REST API（需密码登录，会影响活跃会话）
+- 代码部落 (coderlands) - 自研系统 REST API（需Cookie认证，不影响活跃会话）
 
 ## 当前进度
 见 CHANGELOG.md

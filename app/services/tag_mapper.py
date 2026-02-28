@@ -254,11 +254,53 @@ CTOJ_TAG_MAP: dict[str, list[str]] = {
     # CTOJ 标签暂为空，后续按需补充
 }
 
+CODERLANDS_TAG_MAP: dict[str, list[str]] = {
+    # 代码部落标签 (tagNameString) → 内部标签映射
+    # 与洛谷标签体系基本一致
+    "模拟": ["simulation"],
+    "枚举": ["enumeration"],
+    "排序": ["sort_basic", "sort_advanced"],
+    "字符串": ["string_basic", "string_processing"],
+    "贪心": ["greedy_basic"],
+    "二分": ["binary_search"],
+    "前缀和": ["prefix_sum"],
+    "差分": ["difference"],
+    "双指针": ["two_pointer"],
+    "高精度": ["high_precision"],
+    "递推": ["recursion"],
+    "递归": ["recursion"],
+    "位运算": ["bit_operation"],
+    "动态规划": ["dp_linear"],
+    "DP": ["dp_linear"],
+    "背包": ["dp_knapsack_basic"],
+    "搜索": ["dfs", "bfs"],
+    "深搜": ["dfs"],
+    "DFS": ["dfs"],
+    "广搜": ["bfs"],
+    "BFS": ["bfs"],
+    "图论": ["graph_basic"],
+    "数论": ["number_theory_basic"],
+    "数学": ["number_theory_basic"],
+    "栈": ["stack"],
+    "队列": ["queue"],
+    "链表": ["linked_list"],
+    "哈希": ["hash_table"],
+    "并查集": ["union_find"],
+    "最短路": ["shortest_path"],
+    "最小生成树": ["mst"],
+    "拓扑排序": ["topo_sort"],
+    "树状数组": ["bit"],
+    "线段树": ["segment_tree"],
+    "堆": ["heap"],
+    "优先队列": ["heap"],
+}
+
 _PLATFORM_MAPS: dict[str, dict[str, list[str]]] = {
     "luogu": LUOGU_TAG_MAP,
     "bbcoj": BBCOJ_TAG_MAP,
     "ybt": YBT_TAG_MAP,
     "ctoj": CTOJ_TAG_MAP,
+    "coderlands": CODERLANDS_TAG_MAP,
 }
 
 
