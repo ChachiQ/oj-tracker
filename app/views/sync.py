@@ -750,62 +750,12 @@ def ai_cost_info():
         ),
     ).count()
 
-    # Review count: align with AIBackfillService._run_phase_review filters
-    reviewed_ids = (
-        db.session.query(AnalysisResult.submission_id)
-        .filter_by(analysis_type="submission_review")
-    )
-
-    # Count existing reviews per (problem, account) for the 3-per-group cap
-    reviewed_counts = {
-        (pid, aid): cnt
-        for pid, aid, cnt in db.session.query(
-            Submission.problem_id_ref,
-            Submission.platform_account_id,
-            func.count(AnalysisResult.id),
-        )
-        .join(AnalysisResult, AnalysisResult.submission_id == Submission.id)
-        .filter(AnalysisResult.analysis_type == "submission_review")
-        .group_by(Submission.problem_id_ref, Submission.platform_account_id)
-        .all()
-    }
-
-    # Count unreviewed submissions per (problem, account) with proper filters
-    unreviewed_groups = (
-        db.session.query(
-            Submission.problem_id_ref,
-            Submission.platform_account_id,
-            func.count(Submission.id),
-        )
-        .join(
-            PlatformAccount,
-            Submission.platform_account_id == PlatformAccount.id,
-        )
-        .filter(
-            PlatformAccount.is_active == True,  # noqa: E712
-            Submission.problem_id_ref.isnot(None),
-            Submission.source_code.isnot(None),
-            Submission.source_code != '',
-            ~Submission.id.in_(reviewed_ids),
-            Submission.platform_account_id.in_(account_ids) if account_ids else db.literal(False),
-        )
-        .group_by(Submission.problem_id_ref, Submission.platform_account_id)
-        .all()
-    )
-
-    # Apply per-(problem, account) cap: at most 3 reviews total
-    no_review = 0
-    for pid, aid, cnt in unreviewed_groups:
-        existing = reviewed_counts.get((pid, aid), 0)
-        if existing >= 3:
-            continue
-        no_review += min(cnt, 3 - existing)
-
+    # Phase 2 (submission review) is disabled since de11f4a — always report 0
     return jsonify({
         'monthly_cost': round(monthly_cost, 4),
         'monthly_budget': monthly_budget,
         'pending': {
             'comprehensive': comprehensive_pending,
-            'review': no_review,
+            'review': 0,
         },
     })
