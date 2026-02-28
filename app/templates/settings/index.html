@@ -133,7 +133,7 @@
                                 <form method="POST" action="{{ url_for('settings.toggle_account', account_id=account.id) }}"
                                       class="d-inline"
                                       {% if not account.is_active and account.consecutive_sync_failures and account.consecutive_sync_failures >= 10 %}
-                                      onsubmit="return confirm('该账号因连续失败{{ account.consecutive_sync_failures }}次被自动停用，确定要重新启用吗？')"
+                                      data-confirm="该账号因连续失败{{ account.consecutive_sync_failures }}次被自动停用，确定要重新启用吗？"
                                       {% endif %}>
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     {% if account.is_active %}
@@ -148,7 +148,7 @@
                                 </form>
                                 {# Delete #}
                                 <form method="POST" action="{{ url_for('settings.delete_account', account_id=account.id) }}"
-                                      class="d-inline" onsubmit="return confirm('确定要删除该账号吗？关联的提交记录不会被删除。')">
+                                      class="d-inline" data-confirm="确定要删除该账号吗？关联的提交记录不会被删除。" data-confirm-ok-class="btn-danger" data-confirm-ok-text="删除">
                                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <button type="submit" class="btn btn-outline-danger" title="删除账号">
                                         <i class="bi bi-trash"></i>
@@ -589,9 +589,15 @@
         var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
         if (dd && dd.dataset.requiresLogin === 'true') {
             var platform = dd.dataset.platform || '';
-            return confirm('该平台需要登录同步，会踢掉你在 ' + platform + ' 网站上的活跃会话，确定继续？');
+            return ojConfirm('该平台需要登录同步，会踢掉你在 ' + escapeHtml(platform) + ' 网站上的活跃会话，确定继续？');
         }
-        return true;
+        return Promise.resolve(true);
+    }
+
+    function escapeHtml(str) {
+        var div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
     }
 
     function hasLoginPlatforms() {
@@ -652,38 +658,40 @@
         .then(function(data) {
             var pending = data.pending;
             var total = (pending.comprehensive || 0) + (pending.review || 0);
-            var msg = 'AI 分析确认：\n\n' +
-                '本月已花费: $' + data.monthly_cost + ' / $' + data.monthly_budget + '\n' +
+            var msg = 'AI 分析确认：<br><br>' +
+                '本月已花费: $' + data.monthly_cost + ' / $' + data.monthly_budget + '<br>' +
                 '待处理: 综合分析 ' + (pending.comprehensive || 0) +
                 ' | 审查 ' + (pending.review || 0) +
-                ' (共 ' + total + ' 项)\n\n确定启动 AI 分析？';
-            return confirm(msg);
+                ' (共 ' + total + ' 项)<br><br>确定启动 AI 分析？';
+            return ojConfirm(msg, {title: 'AI 分析确认', okText: '启动分析'});
         });
     }
 
     // ── Sync Content (single account) ──
     window.syncContent = function(accountId, el) {
-        if (!confirmLoginIfNeeded(accountId)) return;
+        confirmLoginIfNeeded(accountId).then(function(ok) {
+            if (!ok) return;
 
-        var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
-        var platform = dd ? dd.dataset.platform : '';
-        showOverlay('正在同步 ' + platform + ' 数据...');
+            var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
+            var platform = dd ? dd.dataset.platform : '';
+            showOverlay('正在同步 ' + platform + ' 数据...');
 
-        fetch('/sync/content/' + accountId, {
-            method: 'POST',
-            headers: { 'X-CSRFToken': csrfToken },
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            hideOverlay();
-            showAlert(data.message, data.success ? 'success' : 'danger');
-            if (data.success) {
-                setTimeout(function() { location.reload(); }, 1500);
-            }
-        })
-        .catch(function(err) {
-            hideOverlay();
-            showAlert('同步请求失败: ' + err.message, 'danger');
+            fetch('/sync/content/' + accountId, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                hideOverlay();
+                showAlert(data.message, data.success ? 'success' : 'danger');
+                if (data.success) {
+                    setTimeout(function() { location.reload(); }, 1500);
+                }
+            })
+            .catch(function(err) {
+                hideOverlay();
+                showAlert('同步请求失败: ' + err.message, 'danger');
+            });
         });
     };
 
@@ -691,47 +699,50 @@
     window.syncContentAll = function() {
         var msg = '确定要同步所有平台的最新记录吗？';
         if (hasLoginPlatforms()) {
-            msg += '\n\n注意：部分平台需要登录，同步时会踢掉对应OJ网站的活跃会话。';
+            msg += '<br><br>注意：部分平台需要登录，同步时会踢掉对应OJ网站的活跃会话。';
         }
-        if (!confirm(msg)) return;
+        ojConfirm(msg, {title: '全部同步', okText: '开始同步'}).then(function(ok) {
+            if (!ok) return;
 
-        showOverlay('正在启动同步...');
+            showOverlay('正在启动同步...');
 
-        fetch('/sync/content-all', {
-            method: 'POST',
-            headers: { 'X-CSRFToken': csrfToken },
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (!data.success) {
-                hideOverlay();
-                showAlert(data.message, 'danger');
-                return;
-            }
-            pollSyncOverlay(data.job_id, function(result) {
-                if (result.status === 'completed') {
-                    var stats = result.stats || {};
-                    var detail = '同步完成: ' + (stats.accounts_synced || 0) + ' 个账号, ' +
-                        '新增 ' + (stats.total_new_submissions || 0) + ' 条提交, ' +
-                        (stats.total_new_problems || 0) + ' 道题目';
-                    showAlert(detail, 'success');
-                    setTimeout(function() { location.reload(); }, 1500);
-                } else {
-                    showAlert('同步失败: ' + (result.error_message || '未知错误'), 'danger');
+            fetch('/sync/content-all', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.success) {
+                    hideOverlay();
+                    showAlert(data.message, 'danger');
+                    return;
                 }
+                pollSyncOverlay(data.job_id, function(result) {
+                    if (result.status === 'completed') {
+                        var stats = result.stats || {};
+                        var detail = '同步完成: ' + (stats.accounts_synced || 0) + ' 个账号, ' +
+                            '新增 ' + (stats.total_new_submissions || 0) + ' 条提交, ' +
+                            (stats.total_new_problems || 0) + ' 道题目';
+                        showAlert(detail, 'success');
+                        setTimeout(function() { location.reload(); }, 1500);
+                    } else {
+                        showAlert('同步失败: ' + (result.error_message || '未知错误'), 'danger');
+                    }
+                });
+            })
+            .catch(function(err) {
+                hideOverlay();
+                showAlert('同步请求失败: ' + err.message, 'danger');
             });
-        })
-        .catch(function(err) {
-            hideOverlay();
-            showAlert('同步请求失败: ' + err.message, 'danger');
         });
     };
 
     // ── Sync Content + AI (single account) ──
     window.syncContentAndAI = function(accountId, el) {
-        if (!confirmLoginIfNeeded(accountId)) return;
-
-        confirmAICost().then(function(ok) {
+        confirmLoginIfNeeded(accountId).then(function(loginOk) {
+            if (!loginOk) return;
+            return confirmAICost();
+        }).then(function(ok) {
             if (!ok) return;
 
             var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
@@ -765,11 +776,12 @@
     window.syncContentAllAndAI = function() {
         var msg = '确定要同步所有平台的最新记录吗？';
         if (hasLoginPlatforms()) {
-            msg += '\n\n注意：部分平台需要登录，同步时会踢掉对应OJ网站的活跃会话。';
+            msg += '<br><br>注意：部分平台需要登录，同步时会踢掉对应OJ网站的活跃会话。';
         }
-        if (!confirm(msg)) return;
-
-        confirmAICost().then(function(ok) {
+        ojConfirm(msg, {title: '全部同步 + AI 分析', okText: '开始同步'}).then(function(ok) {
+            if (!ok) return;
+            return confirmAICost();
+        }).then(function(ok) {
             if (!ok) return;
 
             showOverlay('正在启动同步...');

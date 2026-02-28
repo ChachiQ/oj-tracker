@@ -70,9 +70,10 @@
                             <a href="{{ url_for('report.detail', report_id=report.id) }}" class="btn btn-outline-primary">
                                 <i class="bi bi-eye"></i> 查看
                             </a>
-                            <form method="POST" action="{{ url_for('report.delete', report_id=report.id) }}" class="d-inline">
+                            <form method="POST" action="{{ url_for('report.delete', report_id=report.id) }}" class="d-inline"
+                                  data-confirm="确定要删除此报告吗？" data-confirm-ok-class="btn-danger" data-confirm-ok-text="删除">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn btn-outline-danger" onclick="return confirm('确定要删除此报告吗？')">
+                                <button type="submit" class="btn btn-outline-danger">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </form>

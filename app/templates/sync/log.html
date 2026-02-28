@@ -174,7 +174,7 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (data.success) location.reload();
-                else alert(data.message);
+                else ojToast(data.message || '操作失败');
             });
         });
     });

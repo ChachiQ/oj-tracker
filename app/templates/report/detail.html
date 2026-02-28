@@ -46,9 +46,10 @@
                         <i class="bi bi-arrow-clockwise"></i> 重新生成
                     </button>
                 </form>
-                <form method="POST" action="{{ url_for('report.delete', report_id=report.id) }}" class="d-inline">
+                <form method="POST" action="{{ url_for('report.delete', report_id=report.id) }}" class="d-inline"
+                      data-confirm="确定要删除此报告吗？此操作不可撤销。" data-confirm-ok-class="btn-danger" data-confirm-ok-text="删除">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <button type="submit" id="deleteBtn" class="btn btn-outline-danger btn-sm" onclick="return confirm('确定要删除此报告吗？此操作不可撤销。')">
+                    <button type="submit" id="deleteBtn" class="btn btn-outline-danger btn-sm">
                         <i class="bi bi-trash"></i> 删除
                     </button>
                 </form>
@@ -154,40 +155,42 @@
 
     form.addEventListener('submit', function(e) {
         e.preventDefault();
-        if (!confirm('确定要重新生成此报告吗？旧报告将被替换。')) return;
+        ojConfirm('确定要重新生成此报告吗？旧报告将被替换。', {okText: '重新生成', okClass: 'btn-warning'}).then(function(ok) {
+            if (!ok) return;
 
-        regenBtn.disabled = true;
-        deleteBtn.disabled = true;
-        overlay.classList.remove('d-none');
-        overlay.style.display = 'flex';
-        startTimer();
+            regenBtn.disabled = true;
+            deleteBtn.disabled = true;
+            overlay.classList.remove('d-none');
+            overlay.style.display = 'flex';
+            startTimer();
 
-        var formData = new FormData(form);
-        fetch(form.action, {
-            method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest' },
-            body: formData
-        })
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            stopTimer();
-            if (data.success) {
-                window.location.href = '{{ url_for("report.detail", report_id=0) }}'.replace('/0', '/' + data.report_id);
-            } else {
+            var formData = new FormData(form);
+            fetch(form.action, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: formData
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                stopTimer();
+                if (data.success) {
+                    window.location.href = '{{ url_for("report.detail", report_id=0) }}'.replace('/0', '/' + data.report_id);
+                } else {
+                    overlay.classList.add('d-none');
+                    overlay.style.display = '';
+                    regenBtn.disabled = false;
+                    deleteBtn.disabled = false;
+                    ojToast(data.error || '重新生成失败');
+                }
+            })
+            .catch(function(err) {
+                stopTimer();
                 overlay.classList.add('d-none');
                 overlay.style.display = '';
                 regenBtn.disabled = false;
                 deleteBtn.disabled = false;
-                alert(data.error || '重新生成失败');
-            }
-        })
-        .catch(function(err) {
-            stopTimer();
-            overlay.classList.add('d-none');
-            overlay.style.display = '';
-            regenBtn.disabled = false;
-            deleteBtn.disabled = false;
-            alert('请求失败: ' + err.message);
+                ojToast('请求失败: ' + err.message);
+            });
         });
     });
 })();

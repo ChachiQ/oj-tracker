@@ -58,9 +58,10 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!link) return;
         var href = link.getAttribute('href');
         if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
-        if (!confirm('AI 正在生成分析报告，离开页面将中断分析。确定要离开吗？')) {
-            e.preventDefault();
-        }
+        e.preventDefault();
+        ojConfirm('AI 正在生成分析报告，离开页面将中断分析。确定要离开吗？', {okText: '离开', okClass: 'btn-warning'}).then(function(ok) {
+            if (ok) location.href = href;
+        });
     });
 });
 
@@ -974,19 +975,34 @@ function triggerAIAnalysis(studentId) {
     if (!btn) return;
 
     // Check for recent analysis (within 24 hours)
+    var needConfirm = false;
+    var confirmMsg = '';
     if (_lastAssessmentTime) {
         var lastTime = new Date(_lastAssessmentTime.replace(' ', 'T'));
         if (!isNaN(lastTime.getTime())) {
             var hoursAgo = (Date.now() - lastTime.getTime()) / 3600000;
             if (hoursAgo < 24) {
                 var timeLabel = formatSmartTime(_lastAssessmentTime);
-                if (!confirm('上次分析在 ' + timeLabel + ' 完成，短时间内重复分析结果差异不大。确定要继续分析吗？')) {
-                    return;
-                }
+                needConfirm = true;
+                confirmMsg = '上次分析在 ' + escapeHtml(timeLabel) + ' 完成，短时间内重复分析结果差异不大。确定要继续分析吗？';
             }
         }
     }
 
+    var startAnalysis = function() {
+        doTriggerAIAnalysis(studentId, btn);
+    };
+
+    if (needConfirm) {
+        ojConfirm(confirmMsg, {okText: '继续分析'}).then(function(ok) {
+            if (ok) startAnalysis();
+        });
+    } else {
+        startAnalysis();
+    }
+}
+
+function doTriggerAIAnalysis(studentId, btn) {
     // Set loading state
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 分析中...';
@@ -1375,38 +1391,40 @@ function renderNudgeBanner(data, studentId) {
  * Delete a specific assessment report
  */
 function deleteAssessment(studentId, logId) {
-    if (!confirm('确定要删除这条分析报告吗？')) return;
+    ojConfirm('确定要删除这条分析报告吗？', {okClass: 'btn-danger', okText: '删除'}).then(function(ok) {
+        if (!ok) return;
 
-    var csrfToken = document.querySelector('meta[name="csrf-token"]');
-    fetch('/api/knowledge/' + studentId + '/assessment/' + logId, {
-        method: 'DELETE',
-        headers: {
-            'X-CSRFToken': csrfToken ? csrfToken.content : '',
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-            if (data.success) {
-                // Remove from cached list and re-render page
-                _assessmentItems = _assessmentItems.filter(function(item) { return item.id !== logId; });
-                if (_assessmentItems.length === 0) {
-                    var card = document.getElementById('ai-assessment-card');
-                    if (card) card.style.display = 'none';
-                    _lastAssessmentTime = null;
-                } else {
-                    // Adjust page if current page is now out of range
-                    var totalPages = Math.ceil(_assessmentItems.length / _assessmentPageSize);
-                    if (_assessmentPage >= totalPages) _assessmentPage = totalPages - 1;
-                    _lastAssessmentTime = _assessmentItems[0].analyzed_at || null;
-                    renderAssessmentPage();
-                }
-            } else {
-                alert(data.error || '删除失败');
+        var csrfToken = document.querySelector('meta[name="csrf-token"]');
+        fetch('/api/knowledge/' + studentId + '/assessment/' + logId, {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': csrfToken ? csrfToken.content : '',
+                'X-Requested-With': 'XMLHttpRequest'
             }
         })
-        .catch(function (err) {
-            console.error('Delete assessment failed:', err);
-            alert('删除请求失败');
-        });
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.success) {
+                    // Remove from cached list and re-render page
+                    _assessmentItems = _assessmentItems.filter(function(item) { return item.id !== logId; });
+                    if (_assessmentItems.length === 0) {
+                        var card = document.getElementById('ai-assessment-card');
+                        if (card) card.style.display = 'none';
+                        _lastAssessmentTime = null;
+                    } else {
+                        // Adjust page if current page is now out of range
+                        var totalPages = Math.ceil(_assessmentItems.length / _assessmentPageSize);
+                        if (_assessmentPage >= totalPages) _assessmentPage = totalPages - 1;
+                        _lastAssessmentTime = _assessmentItems[0].analyzed_at || null;
+                        renderAssessmentPage();
+                    }
+                } else {
+                    ojToast(data.error || '删除失败');
+                }
+            })
+            .catch(function (err) {
+                console.error('Delete assessment failed:', err);
+                ojToast('删除请求失败');
+            });
+    });
 }

@@ -542,27 +542,29 @@ function apiPost(url, timeoutMs, body) {
 
 /* Resync problem content from OJ platform */
 function resyncProblem() {
-    if (!confirm('确定要重新同步题目内容吗？将从 OJ 平台重新抓取数据。')) return;
-    var btn = document.getElementById('btn-resync');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> 同步中...';
+    ojConfirm('确定要重新同步题目内容吗？将从 OJ 平台重新抓取数据。').then(function(ok) {
+        if (!ok) return;
+        var btn = document.getElementById('btn-resync');
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> 同步中...';
 
-    apiPost('/api/problem/' + PROBLEM_ID + '/resync')
-    .then(function(data) {
-        if (data.success) {
-            btn.className = 'btn btn-sm btn-success';
-            btn.innerHTML = '<i class="bi bi-check-lg"></i> 同步成功，正在刷新…';
-            setTimeout(function() { location.reload(); }, 1000);
-        } else {
-            alert(data.error || '同步失败');
+        apiPost('/api/problem/' + PROBLEM_ID + '/resync')
+        .then(function(data) {
+            if (data.success) {
+                btn.className = 'btn btn-sm btn-success';
+                btn.innerHTML = '<i class="bi bi-check-lg"></i> 同步成功，正在刷新…';
+                setTimeout(function() { location.reload(); }, 1000);
+            } else {
+                ojToast(data.error || '同步失败');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 同步题目内容';
+            }
+        })
+        .catch(function(err) {
+            ojToast('请求失败: ' + err.message);
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 同步题目内容';
-        }
-    })
-    .catch(function(err) {
-        alert('请求失败: ' + err.message);
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> 同步题目内容';
+        });
     });
 }
 
@@ -574,12 +576,14 @@ function triggerComprehensive(overrideMaxTokens) {
 
     var msg = overrideMaxTokens
         ? '将使用临时增加的 Token 上限 (' + overrideMaxTokens + ') 重试分析，确认？'
-        : '一键分析将生成：评级 + 思路解析 + 完整题解。\n这将消耗较多 AI 额度，确认继续？';
-    if (!confirm(msg)) {
-        btnEl.disabled = false;
-        return;
-    }
+        : '一键分析将生成：评级 + 思路解析 + 完整题解。<br>这将消耗较多 AI 额度，确认继续？';
+    ojConfirm(msg, {title: 'AI 一键分析', okText: '开始分析'}).then(function(ok) {
+        if (!ok) { btnEl.disabled = false; return; }
+        doTriggerComprehensive(overrideMaxTokens, btnEl);
+    });
+}
 
+function doTriggerComprehensive(overrideMaxTokens, btnEl) {
     var loadingEl = document.getElementById('classify-loading');
     var resultEl = document.getElementById('classify-result');
 
@@ -721,9 +725,9 @@ function renderClassifyLog(data, logWrapper) {
 }
 
 function confirmRefreshReview(subId) {
-    if (confirm('确定要重新生成解析吗？这将消耗 AI 额度。')) {
-        triggerReview(subId, true);
-    }
+    ojConfirm('确定要重新生成解析吗？这将消耗 AI 额度。', {okText: '重新生成'}).then(function(ok) {
+        if (ok) triggerReview(subId, true);
+    });
 }
 
 /* Submission-level: toggle panel, auto-trigger review if no data */

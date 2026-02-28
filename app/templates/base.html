@@ -147,6 +147,26 @@
         </div>
     </footer>
 
+    <!-- Confirm Modal -->
+    <div class="modal fade" id="ojConfirmModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="ojConfirmModalTitle">确认操作</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body" id="ojConfirmModalBody"></div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" data-bs-dismiss="modal" id="ojConfirmCancelBtn">取消</button>
+            <button class="btn btn-primary" id="ojConfirmOkBtn">确定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" id="ojToastContainer" style="z-index:1090"></div>
+
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
@@ -154,6 +174,85 @@
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function(el) {
         new bootstrap.Tooltip(el, {delay: {show: 200, hide: 0}});
     });
+
+    /* ── ojConfirm: Bootstrap Modal replacement for confirm() ── */
+    (function() {
+        var modalEl = document.getElementById('ojConfirmModal');
+        var titleEl = document.getElementById('ojConfirmModalTitle');
+        var bodyEl  = document.getElementById('ojConfirmModalBody');
+        var okBtn   = document.getElementById('ojConfirmOkBtn');
+        var cancelBtn = document.getElementById('ojConfirmCancelBtn');
+        var bsModal = modalEl ? new bootstrap.Modal(modalEl) : null;
+        var _resolve = null;
+
+        window.ojConfirm = function(html, opts) {
+            opts = opts || {};
+            return new Promise(function(resolve) {
+                _resolve = resolve;
+                titleEl.textContent = opts.title || '确认操作';
+                bodyEl.innerHTML = html;
+                okBtn.textContent = opts.okText || '确定';
+                okBtn.className = 'btn ' + (opts.okClass || 'btn-primary');
+                cancelBtn.textContent = opts.cancelText || '取消';
+                bsModal.show();
+            });
+        };
+
+        if (okBtn) {
+            okBtn.addEventListener('click', function() {
+                bsModal.hide();
+                if (_resolve) { _resolve(true); _resolve = null; }
+            });
+        }
+
+        if (modalEl) {
+            modalEl.addEventListener('hidden.bs.modal', function() {
+                if (_resolve) { _resolve(false); _resolve = null; }
+            });
+        }
+
+        /* ── ojToast: Bootstrap Toast replacement for alert() ── */
+        window.ojToast = function(message, type, duration) {
+            type = type || 'danger';
+            duration = duration || 5000;
+            var container = document.getElementById('ojToastContainer');
+            if (!container) return;
+            var iconMap = {danger:'bi-exclamation-triangle-fill',warning:'bi-exclamation-circle-fill',success:'bi-check-circle-fill',info:'bi-info-circle-fill'};
+            var icon = iconMap[type] || 'bi-info-circle-fill';
+            var typeLabel = {danger:'错误',warning:'警告',success:'成功',info:'提示'}[type] || '提示';
+            var wrapper = document.createElement('div');
+            wrapper.className = 'toast align-items-center text-bg-' + type + ' border-0';
+            wrapper.setAttribute('role', 'alert');
+            wrapper.innerHTML =
+                '<div class="d-flex">' +
+                '<div class="toast-body"><i class="bi ' + icon + ' me-1"></i> ' +
+                message.replace(/</g, '&lt;').replace(/>/g, '&gt;') +
+                '</div>' +
+                '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
+                '</div>';
+            container.appendChild(wrapper);
+            var bsToast = new bootstrap.Toast(wrapper, {delay: duration});
+            bsToast.show();
+            wrapper.addEventListener('hidden.bs.toast', function() { wrapper.remove(); });
+        };
+
+        /* ── Global data-confirm form interceptor ── */
+        document.addEventListener('submit', function(e) {
+            var form = e.target;
+            var msg = form.getAttribute('data-confirm');
+            if (!msg) return;
+            if (form._ojConfirmed) { form._ojConfirmed = false; return; }
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            var okClass = form.getAttribute('data-confirm-ok-class') || 'btn-primary';
+            var okText  = form.getAttribute('data-confirm-ok-text') || '确定';
+            ojConfirm(msg, {okClass: okClass, okText: okText}).then(function(ok) {
+                if (!ok) return;
+                form._ojConfirmed = true;
+                form.submit();
+            });
+        }, true);
+    })();
     </script>
     {% if current_user.is_authenticated %}
     <script>
