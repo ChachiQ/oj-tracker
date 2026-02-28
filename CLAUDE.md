@@ -30,6 +30,7 @@ oj-tracker/
 │   ├── templates/           # Jinja2模板
 │   ├── static/              # CSS/JS
 │   └── tasks/               # APScheduler定时任务
+├── tasks/                   # 项目管理 (lessons.md, todo.md)
 ├── migrations/              # Alembic数据库迁移
 ├── tests/                   # pytest测试套件 (292个用例)
 ├── backfill_tags.py         # 标签回填脚本
