@@ -47,6 +47,13 @@ _RESULT_STATUS_MAP = {
     '部分正确': SubmissionStatus.WA,
     '未通过': SubmissionStatus.WA,
     '编译错误': SubmissionStatus.CE,
+    '运行超时': SubmissionStatus.TLE,
+    '答案错误': SubmissionStatus.WA,
+    '运行错误': SubmissionStatus.RE,
+    '内存超限': SubmissionStatus.MLE,
+    '格式错误': SubmissionStatus.WA,
+    '输出超限': SubmissionStatus.RE,
+    '超时': SubmissionStatus.TLE,
 }
 
 # Records per page on YBT status page
@@ -300,6 +307,9 @@ class YBTScraper(BaseScraper):
                 status = mapped_status.value
                 break
 
+        if status == SubmissionStatus.UNKNOWN.value and result_text:
+            logger.warning(f"Unmapped YBT result text: '{result_text}' (raw: '{result_raw}')")
+
         # Parse score if present
         score = None
         if len(parts) > 1:
@@ -322,6 +332,10 @@ class YBTScraper(BaseScraper):
         # If Accepted with no score details, give full score
         if status == SubmissionStatus.AC.value and score is None:
             score = 10
+
+        # If still UNKNOWN but has a positive score, it was judged → treat as WA
+        if status == SubmissionStatus.UNKNOWN.value and score is not None and score > 0:
+            status = SubmissionStatus.WA.value
 
         return status, score
 
