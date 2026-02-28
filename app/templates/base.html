@@ -184,11 +184,13 @@
         var cancelBtn = document.getElementById('ojConfirmCancelBtn');
         var bsModal = modalEl ? new bootstrap.Modal(modalEl) : null;
         var _resolve = null;
+        var _confirmed = false;
 
         window.ojConfirm = function(html, opts) {
             opts = opts || {};
             return new Promise(function(resolve) {
                 _resolve = resolve;
+                _confirmed = false;
                 titleEl.textContent = opts.title || '确认操作';
                 bodyEl.innerHTML = html;
                 okBtn.textContent = opts.okText || '确定';
@@ -200,14 +202,19 @@
 
         if (okBtn) {
             okBtn.addEventListener('click', function() {
+                _confirmed = true;
                 bsModal.hide();
-                if (_resolve) { _resolve(true); _resolve = null; }
             });
         }
 
         if (modalEl) {
             modalEl.addEventListener('hidden.bs.modal', function() {
-                if (_resolve) { _resolve(false); _resolve = null; }
+                if (_resolve) {
+                    var r = _resolve;
+                    _resolve = null;
+                    r(_confirmed);
+                }
+                _confirmed = false;
             });
         }
 
