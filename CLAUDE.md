@@ -57,6 +57,7 @@ User 1-N SyncJob
 - `@register_scraper` 装饰器自动注册
 - 新增OJ只需添加一个文件，零修改核心代码
 - `ScrapedSubmission`/`ScrapedProblem` 统一中间数据格式
+- 详细设计文档见 `app/scrapers/DESIGN.md`
 
 ### 2. AI分析多模型支持
 - `BaseLLMProvider` 抽象基类
@@ -111,6 +112,8 @@ User 1-N SyncJob
 - 一本通 (ybt) - PHP系统 HTML解析（需密码登录，会影响活跃会话）
 - CTOJ 酷思未来 (ctoj) - Hydro系统 REST API（需密码登录，会影响活跃会话）
 - 代码部落 (coderlands) - 自研系统 REST API（需Cookie认证，不影响活跃会话）
+
+> 各平台详细 API 文档、认证方式和已知陷阱见 `app/scrapers/DESIGN.md`
 
 ## 当前进度
 见 CHANGELOG.md

@@ -47,3 +47,52 @@ function ojConfirm(message) {
 ### 通用原则
 
 **异步 UI 动画 + 共享状态 + Promise = 竞态高发区。** 状态变更必须与动画生命周期严格同步。
+
+---
+
+## 2. OJ 爬虫开发经验
+
+**日期**: 2026-02-28
+**参考文档**: `app/scrapers/DESIGN.md`
+
+### 2.1 YBT 编码是 UTF-8，不是 GBK
+
+YBT（一本通）是古老的 PHP 系统，但页面编码是 UTF-8。使用 `resp.content.decode('utf-8', errors='replace')`，不要假设 GBK。
+
+**规则**: 不要根据系统年代猜测编码，以实际响应为准。
+
+### 2.2 YBT pshow() 是单参数格式
+
+YBT 题目页面的 `pshow()` 函数只有一个双引号字符串参数：
+```javascript
+pshow("content with \\n and \\" escapes")
+```
+不是 `pshow("title", "content")` 双参数格式。正则必须精确匹配单参数。
+
+反转义顺序敏感：先处理 `\\n`/`\\"`/`\\'`，最后处理 `\\\\`。
+
+### 2.3 CTOJ 客户端过滤陷阱
+
+Hydro 的 `/d/{domain}/record?uidOrName={uid}` 已在服务端按用户过滤。不要在客户端再做 uid 匹配过滤——Hydro 返回的 `uid` 是数字 ID 而非用户名，客户端比对会导致所有记录被错误丢弃。
+
+**规则**: 先确认 API 是否已做过滤，再决定是否需要客户端过滤。重复过滤不是安全，是 bug。
+
+### 2.4 Coderlands hash cursor 耦合
+
+Coderlands 使用 hash-based 增量同步，通过 `self._new_cursor` 属性传递自定义 cursor。SyncService 通过 `getattr(scraper, '_new_cursor', None)` 读取。
+
+这是一个隐式耦合点——如果新爬虫也定义了 `_new_cursor` 属性，会被 SyncService 意外消费。
+
+**规则**: 自定义 cursor 机制应在 BaseScraper 中显式声明接口，而非依赖隐式属性。
+
+### 2.5 HOJ JWT Token 位置
+
+BBC OJ (HOJ) 的 JWT Token 在响应头 `Authorization` 中返回，**不带 `Bearer` 前缀**。设置时直接 `session.headers['Authorization'] = token`，加了 `Bearer ` 前缀会导致 401。
+
+**规则**: 不要假设所有 JWT 实现都遵循 `Bearer {token}` 规范。以实际 API 行为为准。
+
+### 2.6 通用规则
+
+- **新爬虫上线前**：必须在 `app/scrapers/DESIGN.md` 中记录平台章节
+- **修复爬虫 bug 后**：必须在 DESIGN.md 对应平台的"已知陷阱"节追加条目
+- **修改 API 路径/字段**：同步更新 DESIGN.md 中的 API 接口表
