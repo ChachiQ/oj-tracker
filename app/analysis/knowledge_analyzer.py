@@ -18,7 +18,7 @@ from app.models import Student, Submission, PlatformAccount, AnalysisLog, Analys
 from .engine import AnalysisEngine
 from .weakness import WeaknessDetector
 from .analysis_log import AnalysisLogManager
-from .ai_analyzer import AIAnalyzer
+from .ai_analyzer import AIAnalyzer, _parse_llm_json
 from .contest_calendar import get_upcoming_contests
 from .prompts.knowledge_assessment import build_knowledge_assessment_prompt
 
@@ -140,24 +140,17 @@ class KnowledgeAnalyzer:
         }
 
         try:
-            response = provider.chat(messages, model=model, max_tokens=4096)
+            response = provider.chat(messages, model=model, max_tokens=16384)
         except Exception as e:
             logger.error(f"Knowledge AI analysis failed (LLM call): {e}")
             yield {"step": "error", "message": f"AI 调用失败: {e}"}
             return
 
-        # Step 5: Parse response
+        # Step 5: Parse response (reuse multi-level repair from ai_analyzer)
         yield {"step": "parse", "message": "正在解析返回结果..."}
-        content = response.content.strip()
-        if content.startswith("```"):
-            lines = content.split("\n")
-            lines = [l for l in lines if not l.strip().startswith("```")]
-            content = "\n".join(lines)
-
-        try:
-            assessment = json.loads(content)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse knowledge assessment JSON: {content[:200]}")
+        assessment = _parse_llm_json(response.content)
+        if assessment is None:
+            logger.error(f"Failed to parse knowledge assessment JSON: {response.content[:200]}")
             yield {"step": "error", "message": "AI 返回结果解析失败"}
             return
 

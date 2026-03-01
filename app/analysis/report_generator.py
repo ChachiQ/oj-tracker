@@ -229,7 +229,7 @@ class ReportGenerator:
                 student_grade=self.student.grade if self.student else None,
             )
 
-            response = provider.chat(messages, model=model, max_tokens=4096)
+            response = provider.chat(messages, model=model, max_tokens=16384)
             ai_content = response.content
 
         except Exception as e:

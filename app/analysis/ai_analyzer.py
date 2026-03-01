@@ -487,25 +487,26 @@ class AIAnalyzer:
             provider, model = self._get_llm("basic", user_id=user_id)
             response = provider.chat(messages, model=model)
 
+            parsed = _parse_llm_json(response.content)
+            clean_json = json.dumps(parsed, ensure_ascii=False) if parsed else response.content
+
             result = AnalysisResult(
                 submission_id=submission_id,
                 analysis_type="single_submission",
-                result_json=response.content,
+                result_json=clean_json,
                 ai_model=response.model,
                 token_cost=response.input_tokens + response.output_tokens,
                 cost_usd=response.cost,
                 analyzed_at=datetime.utcnow(),
             )
 
-            # Try to parse JSON and extract structured fields
-            try:
-                parsed = json.loads(response.content)
+            if parsed:
                 result.summary = parsed.get("error_description", "")
                 result.error_patterns = json.dumps(
                     [parsed.get("error_type", "")], ensure_ascii=False
                 )
                 result.suggestions = parsed.get("suggestion", "")
-            except json.JSONDecodeError:
+            else:
                 result.summary = response.content[:500]
 
             db.session.add(result)
@@ -594,26 +595,27 @@ class AIAnalyzer:
 
         try:
             provider, model = self._get_llm("basic", user_id=user_id)
-            response = provider.chat(messages, model=model, max_tokens=4096)
+            response = provider.chat(messages, model=model, max_tokens=16384)
+
+            parsed = _parse_llm_json(response.content)
+            clean_json = json.dumps(parsed, ensure_ascii=False) if parsed else response.content
 
             result = AnalysisResult(
                 submission_id=submissions[-1].id,
                 analysis_type="problem_journey",
-                result_json=response.content,
+                result_json=clean_json,
                 ai_model=response.model,
                 token_cost=response.input_tokens + response.output_tokens,
                 cost_usd=response.cost,
                 analyzed_at=datetime.utcnow(),
             )
 
-            # Try to parse JSON and extract structured fields
-            try:
-                parsed = json.loads(response.content)
+            if parsed:
                 result.summary = parsed.get("journey_summary", "")
                 result.suggestions = json.dumps(
                     parsed.get("suggestions", []), ensure_ascii=False
                 )
-            except json.JSONDecodeError:
+            else:
                 result.summary = response.content[:500]
 
             db.session.add(result)
