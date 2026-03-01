@@ -109,7 +109,8 @@
                                 <div class="dropdown sync-dropdown"
                                      data-account-id="{{ account.id }}"
                                      data-platform="{{ account.platform }}"
-                                     {% if account.platform in requires_login_platforms %}data-requires-login="true"{% endif %}>
+                                     {% if account.platform in requires_login_platforms %}data-requires-login="true"{% endif %}
+                                     {% if account.platform in platforms and platforms[account.platform].AUTH_METHOD == 'cookie' %}data-auth-method="cookie"{% endif %}>
                                     <button class="btn btn-outline-success dropdown-toggle" type="button"
                                             data-bs-toggle="dropdown" aria-expanded="false"
                                             title="同步选项"
@@ -131,6 +132,13 @@
                                         </a></li>
                                     </ul>
                                 </div>
+                                {# Update Cookie (cookie-auth platforms only) #}
+                                {% if account.platform in platforms and platforms[account.platform].AUTH_METHOD == 'cookie' %}
+                                <button class="btn btn-outline-info" title="更新 Cookie"
+                                        onclick="showUpdateCookieModal({{ account.id }}); return false;">
+                                    <i class="bi bi-key"></i>
+                                </button>
+                                {% endif %}
                                 {# Toggle active/pause #}
                                 <form method="POST" action="{{ url_for('settings.toggle_account', account_id=account.id) }}"
                                       class="d-inline"
@@ -497,6 +505,39 @@
         </div>
     </div>
 </div>
+{# ── Update Cookie Modal ── #}
+<div class="modal fade" id="updateCookieModal" tabindex="-1" aria-labelledby="updateCookieModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="updateCookieModalLabel">
+                    <i class="bi bi-key"></i> 更新 Cookie
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="update-cookie-account-id">
+                <div class="mb-3">
+                    <label for="update-cookie-value" class="form-label">新的 Cookie <span class="text-danger">*</span></label>
+                    <textarea class="form-control" id="update-cookie-value" rows="3"
+                              placeholder="粘贴新的 JSESSIONID Cookie" required></textarea>
+                    <div class="form-text">
+                        获取方式：浏览器登录 → F12 开发者工具 → Application → Cookies → 复制 JSESSIONID 值<br>
+                        <span class="text-muted">格式：JSESSIONID=复制的值</span>
+                    </div>
+                </div>
+                <div id="update-cookie-error" class="alert alert-danger py-2 d-none" role="alert"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="update-cookie-submit">
+                    <span class="spinner-border spinner-border-sm d-none" id="update-cookie-spinner" role="status"></span>
+                    <i class="bi bi-check-circle" id="update-cookie-icon"></i> 验证并更新
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -715,7 +756,8 @@
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 hideOverlay();
-                showAlert(data.message, data.success ? 'success' : 'danger');
+                var msg = data.success ? data.message : enhanceSyncError(accountId, data.message);
+                showAlert(msg, data.success ? 'success' : 'danger');
                 if (data.success) {
                     setTimeout(function() { location.reload(); }, 1500);
                 }
@@ -794,7 +836,7 @@
                         window.startGlobalSyncPoll(data.ai_job_id);
                     }
                 } else {
-                    showAlert(data.message, 'danger');
+                    showAlert(enhanceSyncError(accountId, data.message), 'danger');
                 }
             })
             .catch(function(err) {
@@ -866,6 +908,79 @@
             });
         });
     };
+
+    // ── Update Cookie Modal ──
+    var updateCookieModal = document.getElementById('updateCookieModal');
+    var bsUpdateCookieModal = updateCookieModal ? new bootstrap.Modal(updateCookieModal) : null;
+
+    window.showUpdateCookieModal = function(accountId) {
+        document.getElementById('update-cookie-account-id').value = accountId;
+        document.getElementById('update-cookie-value').value = '';
+        document.getElementById('update-cookie-error').classList.add('d-none');
+        bsUpdateCookieModal.show();
+    };
+
+    if (document.getElementById('update-cookie-submit')) {
+        document.getElementById('update-cookie-submit').addEventListener('click', function() {
+            var accountId = document.getElementById('update-cookie-account-id').value;
+            var cookieValue = document.getElementById('update-cookie-value').value.trim();
+            var errorEl = document.getElementById('update-cookie-error');
+            var spinner = document.getElementById('update-cookie-spinner');
+            var icon = document.getElementById('update-cookie-icon');
+            var btn = this;
+
+            if (!cookieValue) {
+                errorEl.textContent = '请输入 Cookie';
+                errorEl.classList.remove('d-none');
+                return;
+            }
+
+            btn.disabled = true;
+            spinner.classList.remove('d-none');
+            icon.classList.add('d-none');
+            errorEl.classList.add('d-none');
+
+            fetch('/settings/account/' + accountId + '/update-cookie', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ cookie: cookieValue }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+                icon.classList.remove('d-none');
+                if (data.success) {
+                    bsUpdateCookieModal.hide();
+                    showAlert(data.message, 'success');
+                    setTimeout(function() { location.reload(); }, 1500);
+                } else {
+                    errorEl.textContent = data.message;
+                    errorEl.classList.remove('d-none');
+                }
+            })
+            .catch(function(err) {
+                btn.disabled = false;
+                spinner.classList.add('d-none');
+                icon.classList.remove('d-none');
+                errorEl.textContent = '请求失败: ' + err.message;
+                errorEl.classList.remove('d-none');
+            });
+        });
+    }
+
+    // ── Helper: enhance sync error with cookie update link ──
+    function enhanceSyncError(accountId, message) {
+        var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
+        if (dd && dd.dataset.authMethod === 'cookie' &&
+            (message.indexOf('Cookie') !== -1 || message.indexOf('Session 已过期') !== -1 || message.indexOf('cookie') !== -1)) {
+            return message + ' <a href="#" class="alert-link" onclick="showUpdateCookieModal(' + accountId + '); return false;">点击更新 Cookie</a>';
+        }
+        return message;
+    }
 
     // ── AI Backfill (optional account_id) ──
     window.startAIBackfill = function(accountId) {

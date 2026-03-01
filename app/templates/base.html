@@ -373,8 +373,12 @@
                             }
                             showGlobalAlert(msg + ' <a href="/sync/log" class="alert-link">查看日志</a>', 'success');
                         } else if (data.status === 'failed') {
-                            showGlobalAlert((jobTypeLabels[data.job_type] || '任务') + '失败: ' +
-                                (data.error_message || '未知错误'), 'danger');
+                            var errMsg = data.error_message || '未知错误';
+                            var failMsg = (jobTypeLabels[data.job_type] || '任务') + '失败: ' + errMsg;
+                            if (errMsg.indexOf('Cookie') !== -1 || errMsg.indexOf('Session 已过期') !== -1 || errMsg.indexOf('cookie') !== -1) {
+                                failMsg += ' <a href="/settings" class="alert-link">前往设置更新 Cookie</a>';
+                            }
+                            showGlobalAlert(failMsg, 'danger');
                         }
                     }
                 })

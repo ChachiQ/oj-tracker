@@ -227,6 +227,46 @@ def toggle_account(account_id):
     return redirect(url_for('settings.index'))
 
 
+@settings_bp.route('/account/<int:account_id>/update-cookie', methods=['POST'])
+@login_required
+def update_cookie(account_id):
+    """Update auth cookie for a cookie-auth platform account."""
+    account = PlatformAccount.query.get_or_404(account_id)
+    if account.student.parent_id != current_user.id:
+        return jsonify({'success': False, 'message': '无权操作'}), 403
+
+    scraper_cls = get_scraper_class(account.platform)
+    if not scraper_cls or getattr(scraper_cls, 'AUTH_METHOD', '') != 'cookie':
+        return jsonify({'success': False, 'message': '该平台不支持 Cookie 认证'}), 400
+
+    data = request.get_json(silent=True) or {}
+    new_cookie = (data.get('cookie') or '').strip()
+    if not new_cookie:
+        return jsonify({'success': False, 'message': '请提供新的 Cookie'}), 400
+
+    try:
+        scraper = get_scraper_instance(account.platform, auth_cookie=new_cookie)
+        if not scraper.validate_account(account.platform_uid):
+            return jsonify({
+                'success': False,
+                'message': 'Cookie 验证失败，请确认 JSESSIONID 是否正确且未过期',
+            })
+    except Exception:
+        return jsonify({
+            'success': False,
+            'message': 'Cookie 验证失败，请确认 JSESSIONID 是否正确且未过期',
+        })
+
+    account.auth_cookie = scraper.auth_cookie  # normalized
+    account.last_sync_error = None
+    account.consecutive_sync_failures = 0
+    if not account.is_active:
+        account.is_active = True
+    db.session.commit()
+
+    return jsonify({'success': True, 'message': 'Cookie 已更新，账号已恢复正常'})
+
+
 @settings_bp.route('/ai', methods=['POST'])
 @login_required
 def save_ai_config():
