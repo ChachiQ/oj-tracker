@@ -71,6 +71,14 @@ class CoderlandsScraper(BaseScraper):
 
     def __init__(self, auth_cookie: str = None, auth_password: str = None,
                  rate_limit: float = 2.0, platform_uid: str = None):
+        if auth_cookie:
+            auth_cookie = auth_cookie.strip()
+            # Strip "Cookie:" prefix if user copied from DevTools request headers
+            if auth_cookie.lower().startswith('cookie:'):
+                auth_cookie = auth_cookie[len('cookie:'):].strip()
+            # Auto-prepend JSESSIONID= if user only pasted the value
+            if '=' not in auth_cookie:
+                auth_cookie = f'JSESSIONID={auth_cookie}'
         super().__init__(auth_cookie=auth_cookie, auth_password=auth_password,
                          rate_limit=rate_limit, platform_uid=platform_uid)
         self._uuid_cache: dict[str, str] = {}  # problemNo → UUID
@@ -331,7 +339,7 @@ class CoderlandsScraper(BaseScraper):
             "3. 切换到 Application（应用）标签 → Cookies → "
             "course.coderlands.com\n"
             "4. 找到 JSESSIONID，复制其 Value 值\n"
-            "5. 在下方 Cookie 栏填入: JSESSIONID=复制的值"
+            "5. 在下方 Cookie 栏粘贴（直接粘贴值即可，系统会自动补全格式）"
         )
 
     # ── Exercise data ──

@@ -21,7 +21,7 @@ from app.models import (
     Submission,
     UserSetting,
 )
-from app.scrapers import get_all_scrapers
+from app.scrapers import get_all_scrapers, get_scraper_class, get_scraper_instance
 from app.analysis.llm.config import MODEL_CONFIG
 
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
@@ -157,6 +157,20 @@ def add_account():
     if existing:
         flash('该平台账号已存在', 'warning')
         return redirect(url_for('settings.index'))
+
+    # Validate cookie-auth accounts before saving
+    scraper_cls = get_scraper_class(platform)
+    if scraper_cls and getattr(scraper_cls, 'AUTH_METHOD', '') == 'cookie' and auth_cookie:
+        try:
+            scraper = get_scraper_instance(platform, auth_cookie=auth_cookie)
+            if not scraper.validate_account(platform_uid):
+                flash('Cookie 验证失败，请确认 JSESSIONID 是否正确且未过期', 'danger')
+                return redirect(url_for('settings.index'))
+            # Store normalized cookie (scraper __init__ normalizes it)
+            auth_cookie = scraper.auth_cookie
+        except Exception:
+            flash('Cookie 验证失败，请确认 JSESSIONID 是否正确且未过期', 'danger')
+            return redirect(url_for('settings.index'))
 
     account = PlatformAccount(
         student_id=student_id,
