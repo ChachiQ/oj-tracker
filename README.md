@@ -6,7 +6,7 @@
 
 ## 功能概览
 
-- **多平台同步** - 支持洛谷、BBC OJ（HOJ系统）、一本通OJ、CTOJ酷思未来，爬虫插件化架构可轻松扩展
+- **多平台同步** - 支持洛谷、BBC OJ（HOJ系统）、一本通OJ、CTOJ酷思未来、代码部落，爬虫插件化架构可轻松扩展
 - **同步/AI解耦** - 内容同步与AI分析独立运行，SyncJob任务追踪，支持暂停/恢复
 - **Dashboard总览** - 统计卡片、雷达图、热力图（可选时间范围）、难度分布、刷题日历
 - **知识点图谱** - ECharts力导向图，6阶段分层展示（语法基础→NOI），节点三色状态
@@ -174,6 +174,7 @@ User 1──N Student 1──N PlatformAccount 1──N Submission N──1 Prob
 | BBC OJ | `bbcoj` | HOJ系统 REST API |
 | 一本通 | `ybt` | PHP系统 HTML/JS 解析 |
 | CTOJ 酷思未来 | `ctoj` | Hydro系统 REST API |
+| 代码部落 | `coderlands` | 自研系统 REST API（Cookie 认证）|
 
 ### 添加新平台
 
@@ -367,7 +368,16 @@ class NewOJScraper(BaseScraper):
 - 大量AI分析稳定性修复（GLM-5兼容、JSON容错、超时控制）
 - 292个自动化测试用例
 
-### v0.7.0 -- 部署与扩展
+### v1.0.0 (2026-03-02) -- 第一个正式版 ✅
+
+- 代码部落（Coderlands）爬虫：Cookie 认证、hash-based 增量同步、UUID 三级解析
+- Cookie 更新 UI、题目分析页、KaTeX 数学渲染、未AC题目筛选
+- 爬虫子系统设计文档 + Phase 0 API 探测 SOP
+- Bootstrap Modal 统一组件替代原生对话框
+- 大量修复：UUID 解析、时间戳 UTC 转换、AI JSON 韧性、Markdown/LaTeX 保护
+- 5 个 OJ 平台全面支持、292个自动化测试用例
+
+### v1.1.0 -- 部署与扩展
 
 计划内容：
 - 云服务器部署方案（Gunicorn + Nginx）
@@ -382,6 +392,7 @@ class NewOJScraper(BaseScraper):
 | Phase 2 - 爬虫系统 | BaseScraper抽象基类, 3个爬虫, SyncService, 账号管理, 种子数据 | ✅ |
 | Phase 3 - 分析与可视化 | AnalysisEngine, Dashboard, WeaknessDetector, TrendAnalyzer, 知识点图谱 | ✅ |
 | Phase 4 - AI分析与推荐 | AI 4阶段流水线, 同步/AI解耦, AIBackfillService, SyncJob, 292个测试 | ✅ |
+| Phase 4.5 - 代码部落 + 文档 | Coderlands 爬虫, Cookie 认证 UI, 爬虫设计文档, v1.0.0 release | ✅ |
 | Phase 5 - 部署与扩展 | 云部署, 学校OJ适配, PDF导出 | 计划中 |
 
 ## 开发指南

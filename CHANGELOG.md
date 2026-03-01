@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.0.0 (2026-03-02) -- 第一个正式版 🎉
+
+> 从 v0.6.0 到 v1.0.0 共积累 40+ commits，涵盖新平台、新功能、大量修复和文档完善。
+
+### 新增
+- **代码部落 (Coderlands) 爬虫**：Cookie 认证、hash-based 增量同步、UUID 三级解析、DB 持久化（`33290d3`）
+- **Cookie 更新 UI**：Cookie 认证平台账号支持在线更新 Cookie，含格式校验和引导提示（`94bf4be`, `3525b8c`, `7cbbbfd`）
+- **题目分析页**：独立题目分析页面，支持 URL 直接访问（`eb5875c`）
+- **KaTeX 数学渲染**：AI 分析面板中的数学公式自动渲染，复杂度值用 `$` 包裹（`becfcb5`, `2059628`）
+- **未AC题目筛选**：题目列表新增"仅未AC"checkbox，筛选有提交但未通过的题目（`b9948db`）
+- **爬虫 SOP + 设计文档**：新增 `DESIGN.md` 架构文档和 Phase 0 API 探测强制流程（`6c0dd7d`, `c0f6c49`）
+- **Bootstrap Modal 替代原生对话框**：`ojConfirm` / `ojAlert` / `ojToast` 统一组件（`2bb893a`）
+
+### 修复
+- **Coderlands UUID 系列修复**：`getProbelmUuid` API 解析包装响应格式（`0a12245`）、课节遍历 fallback（`231a127`）、UUID 创建时持久化 + URL 直链（`047f7d5`）
+- **时间戳 UTC 转换**：Coderlands 和 BBCOJ 提交时间从 UTC+8 转为 UTC 存储（`2f5b920`）、YBT 已有数据修复（`05ab36f`）
+- **AI 分析韧性**：JSON 解析多层容错（`7da8953`, `aea7057`）、推理模型 token 耗尽降级重试（`aefb07d`, `14f8e35`）、代码审查错误缓存和崩溃处理（`c3a6c7c`, `f042224`）
+- **Markdown/LaTeX 渲染**：数学分隔符保护，防止被 Markdown 处理破坏（`fa3cd2d`）
+- **YBT 爬虫**：添加中文判题结果映射，修复 UNKNOWN 状态（`da85f42`, `189a088`）
+- **UI 修复**：smarttime 负天数（`ac57483`）、综合分析双击重复确认（`74487a3`）、AI 解析显示空结果（`7da8953`）、题目难度被爬虫覆盖（`b6228c6`）
+- **Modal 竞态条件**：单例 Modal Promise 封装在连续调用时事件监听器错位（`92ed399`）
+
+### 优化
+- **Dashboard 布局**：等高卡片、一致间距、雷达图过滤低阶标签、弱项告警位置调整（`95c91f9`, `9bb9587`）
+- **推理模型降级**：token 耗尽时临时降低 max_tokens 重试，而非直接失败（`aefb07d`）
+- **AI 回填精简**：跳过自动代码审查（Phase 2），降低 token 消耗（`de11f4a`）
+- **同步任务超时**：卡死任务超时从 6h 降为 2h，前端增加轮询超时（`4bce0f2`）
+
+### 文档
+- 爬虫子系统设计文档 `app/scrapers/DESIGN.md`：架构概览、5 平台深度解析、已知陷阱、接入指南
+- 爬虫开发 SOP：Phase 0 API 探测强制流程 + 检查清单
+- 经验教训文档 `tasks/lessons.md`：Modal 竞态、爬虫陷阱、UUID 解析策略
+
 ## v0.6.0 (2026-02-22) -- CTOJ平台 + 一键综合分析 + 全局同步进度 + 图片多模态AI
 
 ### 新增

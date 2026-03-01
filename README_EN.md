@@ -6,7 +6,7 @@ A web application that helps parents track their children's competitive programm
 
 ## Features
 
-- **Multi-Platform Sync** - Supports Luogu, BBC OJ (HOJ system), Ybt OJ, and CTOJ (Cool Think OJ), with a plugin-based scraper architecture for easy extension
+- **Multi-Platform Sync** - Supports Luogu, BBC OJ (HOJ system), Ybt OJ, CTOJ (Cool Think OJ), and Coderlands, with a plugin-based scraper architecture for easy extension
 - **Sync/AI Decoupling** - Content sync and AI analysis run independently, SyncJob task tracking, pause/resume support
 - **Dashboard** - Stats cards, radar chart, heatmap (selectable time range), difficulty distribution, and submission calendar
 - **Knowledge Graph** - ECharts force-directed graph with 6-stage layered display (Syntax Basics to NOI), tri-color node status
@@ -174,6 +174,7 @@ User 1──N Student 1──N PlatformAccount 1──N Submission N──1 Prob
 | BBC OJ | `bbcoj` | HOJ system REST API |
 | Ybt (Yi Ben Tong) | `ybt` | PHP system HTML/JS parsing |
 | CTOJ (Cool Think OJ) | `ctoj` | Hydro system REST API |
+| Coderlands | `coderlands` | Custom REST API (Cookie auth) |
 
 ### Adding a New Platform
 
@@ -367,7 +368,16 @@ All foundational features complete:
 - Numerous AI analysis stability fixes (GLM-5 compatibility, JSON fault tolerance, timeout control)
 - 292 automated test cases
 
-### v0.7.0 -- Deployment & Extensions
+### v1.0.0 (2026-03-02) -- First Official Release ✅
+
+- Coderlands scraper: Cookie auth, hash-based incremental sync, UUID three-tier resolution
+- Cookie update UI, problem analysis page, KaTeX math rendering, not-AC problem filter
+- Scraper subsystem design doc + Phase 0 API probing SOP
+- Bootstrap Modal unified components replacing native dialogs
+- Numerous fixes: UUID resolution, timestamp UTC conversion, AI JSON resilience, Markdown/LaTeX protection
+- 5 OJ platforms fully supported, 292 automated test cases
+
+### v1.1.0 -- Deployment & Extensions
 
 Planned:
 - Cloud deployment (Gunicorn + Nginx)
@@ -382,6 +392,7 @@ Planned:
 | Phase 2 - Scraper System | BaseScraper, 3 scrapers, SyncService, account management, seed data | ✅ |
 | Phase 3 - Analysis & Visualization | AnalysisEngine, Dashboard, WeaknessDetector, TrendAnalyzer, knowledge graph | ✅ |
 | Phase 4 - AI Analysis & Recommendations | AI 4-stage pipeline, sync/AI decoupling, AIBackfillService, SyncJob, 292 tests | ✅ |
+| Phase 4.5 - Coderlands + Docs | Coderlands scraper, Cookie auth UI, scraper design doc, v1.0.0 release | ✅ |
 | Phase 5 - Deployment & Extensions | Cloud deployment, school OJ adapters, PDF export | Planned |
 
 ## Development Guide
