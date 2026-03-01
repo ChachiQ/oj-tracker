@@ -602,8 +602,12 @@ class CoderlandsScraper(BaseScraper):
             )
             resp.encoding = 'utf-8'
             data = resp.json()
-            if isinstance(data, dict) and data.get('isSuccess') == '1':
-                uuid = data.get('data', '')
+            # Response may be flat {isSuccess, data} or wrapped {code, result: {isSuccess, data}}
+            inner = data
+            if isinstance(data, dict) and 'result' in data and isinstance(data['result'], dict):
+                inner = data['result']
+            if isinstance(inner, dict) and inner.get('isSuccess') == '1':
+                uuid = inner.get('data', '')
                 if uuid and _UUID_RE.match(uuid):
                     return uuid
             return None
