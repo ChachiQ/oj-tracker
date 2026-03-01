@@ -531,14 +531,18 @@
                 cookieField.style.display = '';
                 passwordInput.removeAttribute('required');
                 document.getElementById('add-cookie').setAttribute('required', 'required');
-                document.querySelector('#cookie-field .form-text').textContent =
-                    '此平台使用 Cookie 认证，Cookie 会过期，需要定期更新。';
+                document.querySelector('#cookie-field .form-label').innerHTML =
+                    'Cookie <span class="text-danger">*</span>';
+                document.querySelector('#cookie-field .form-text').innerHTML =
+                    '获取方式：浏览器登录 → F12 开发者工具 → Application → Cookies → 复制 JSESSIONID 值<br>' +
+                    '<span class="text-muted">格式：JSESSIONID=复制的值。Cookie 会过期，需定期更新。</span>';
             } else if (requiresLogin) {
                 // Password-based auth
                 passwordField.style.display = '';
                 cookieField.style.display = 'none';
                 passwordInput.setAttribute('required', 'required');
                 document.getElementById('add-cookie').removeAttribute('required');
+                document.querySelector('#cookie-field .form-label').innerHTML = 'Cookie（可选）';
                 if (loginWarning) loginWarning.style.display = '';
             } else {
                 // No auth needed
@@ -546,6 +550,7 @@
                 cookieField.style.display = '';
                 passwordInput.removeAttribute('required');
                 document.getElementById('add-cookie').removeAttribute('required');
+                document.querySelector('#cookie-field .form-label').innerHTML = 'Cookie（可选）';
                 document.querySelector('#cookie-field .form-text').textContent =
                     '仅在需要时填写，Cookie 将加密存储。';
             }
