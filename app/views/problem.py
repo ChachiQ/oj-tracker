@@ -49,6 +49,7 @@ def list_problems():
     tag_name = request.args.get('tag', '')
     difficulties = request.args.getlist('difficulty', type=int)
     search = request.args.get('q', '')
+    status_filter = request.args.get('status', '')
 
     # Gather account IDs for current user's students
     students = Student.query.filter_by(parent_id=current_user.id).all()
@@ -73,6 +74,19 @@ def list_problems():
             query = query.filter(or_(*conditions))
     if search:
         query = query.filter(Problem.title.contains(search))
+
+    # Filter: only problems with submissions but no AC
+    if status_filter == 'not_ac' and account_ids:
+        has_submission = db.session.query(Submission.id).filter(
+            Submission.problem_id_ref == Problem.id,
+            Submission.platform_account_id.in_(account_ids),
+        ).correlate(Problem).exists()
+        has_ac = db.session.query(Submission.id).filter(
+            Submission.problem_id_ref == Problem.id,
+            Submission.platform_account_id.in_(account_ids),
+            Submission.status == 'AC',
+        ).correlate(Problem).exists()
+        query = query.filter(has_submission, ~has_ac)
 
     # Subquery: latest submission time per problem for this user's accounts
     if account_ids:
@@ -147,6 +161,7 @@ def list_problems():
         current_tag=tag_name,
         current_difficulties=difficulties,
         search=search,
+        current_status=status_filter,
         latest_submissions=latest_submissions,
     )
 

@@ -95,6 +95,13 @@
                 <input type="text" class="form-control form-control-sm" id="filter-search" name="q"
                        placeholder="题目 ID 或标题..." value="{{ request.args.get('q', '') }}">
             </div>
+            <div class="col-auto d-flex align-items-end">
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" id="filter-not-ac" name="status" value="not_ac"
+                           {% if request.args.get('status') == 'not_ac' %}checked{% endif %}>
+                    <label class="form-check-label" for="filter-not-ac">仅未AC</label>
+                </div>
+            </div>
             <div class="col-12 col-sm-6 col-md-2">
                 <button type="submit" class="btn btn-primary btn-sm w-100">
                     <i class="bi bi-search"></i> 搜索
@@ -286,7 +293,7 @@
 {% else %}
 {% call empty_state('bi-journal-code', '暂无题目') %}
     <p class="text-muted">
-        {% if request.args.get('q') or request.args.get('platform') or request.args.get('tag') or request.args.get('difficulty') %}
+        {% if request.args.get('q') or request.args.get('platform') or request.args.get('tag') or request.args.get('difficulty') or request.args.get('status') %}
             没有找到符合筛选条件的题目，请尝试调整筛选条件。
         {% else %}
             绑定 OJ 平台账号并同步数据后，题目会自动出现在这里。
@@ -350,6 +357,7 @@
     // Auto-submit on platform / tag change
     document.getElementById('filter-platform').addEventListener('change', function() { form.submit(); });
     document.getElementById('filter-tag').addEventListener('change', function() { form.submit(); });
+    document.getElementById('filter-not-ac').addEventListener('change', function() { form.submit(); });
 })();
 </script>
 {% endblock %}
