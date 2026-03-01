@@ -91,7 +91,22 @@ BBC OJ (HOJ) 的 JWT Token 在响应头 `Authorization` 中返回，**不带 `Be
 
 **规则**: 不要假设所有 JWT 实现都遵循 `Bearer {token}` 规范。以实际 API 行为为准。
 
-### 2.6 通用规则
+### 2.6 Coderlands getClassWorkOne 只接受 UUID
+
+**日期**: 2026-03-01
+
+`getClassWorkOne?uuid={param}` 的 `uuid` 参数**只接受 32 位十六进制 UUID**，传入题号会返回 HTTP 500（无错误消息）。这导致初版 UUID 解析 Stage 2 对 53 个题号发起 159 次无效 API 调用（53 × 3 重试），全部 500 错误。
+
+**正确做法**：通过课节遍历 (`getlesconNew`) 获取 UUID。`myls` 返回 `result.lessonInfo[]`（不是 `dataList`），每个课节通过 `getlesconNew?uuid={lessonUuid}&classUuid={classUuid}` 获取题目列表，题目 UUID 在 `dataList[].uuid`，题号在 `dataList[].name` 字段（格式 `"P{no} 题目名"`，无独立 `problemNo` 字段）。
+
+**限制**：`myls` 只返回当前班级课节，过去班级的题目 UUID 不可见。
+
+**规则**:
+- 不要猜测 API 参数的接受类型，先用诊断脚本验证
+- 对未知 API 响应结构，先打印完整响应再写解析代码
+- N × retry 的 API 调用模式在参数错误时会放大问题（需有快速失败机制）
+
+### 2.7 通用规则
 
 - **新爬虫上线前**：必须在 `app/scrapers/DESIGN.md` 中记录平台章节
 - **修复爬虫 bug 后**：必须在 DESIGN.md 对应平台的"已知陷阱"节追加条目

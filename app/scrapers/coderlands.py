@@ -223,11 +223,11 @@ class CoderlandsScraper(BaseScraper):
             raise Exception("Session 已过期，请重新复制 JSESSIONID Cookie")
 
     def fetch_problem(self, problem_id: str) -> ScrapedProblem | None:
-        """Fetch problem details.
+        """Fetch problem details via getClassWorkOne.
 
         problem_id can be:
-        - UUID (32 hex chars): used directly in getClassWorkOne
-        - P{number}: strip P prefix, use number as uuid param
+        - UUID (32 hex chars): used directly
+        - P{number}: resolved to UUID via cache/lesson traversal
         """
         try:
             uuid_param = self._problem_id_to_uuid_param(problem_id)
@@ -360,15 +360,18 @@ class CoderlandsScraper(BaseScraper):
                 ac_str = item.get('acStr', '')
                 unac_str = item.get('unAcStr', '')
                 if ac_str:
-                    for pid in ac_str.split(','):
+                    for pid in re.split(r'[,\s]+', ac_str):
                         pid = pid.strip()
                         if pid:
-                            ac_ids.add(pid)
+                            # Strip P/p prefix if present
+                            m = _PNO_RE.match(pid)
+                            ac_ids.add(m.group(1) if m else pid)
                 if unac_str:
-                    for pid in unac_str.split(','):
+                    for pid in re.split(r'[,\s]+', unac_str):
                         pid = pid.strip()
                         if pid:
-                            unac_ids.add(pid)
+                            m = _PNO_RE.match(pid)
+                            unac_ids.add(m.group(1) if m else pid)
 
             return ac_ids, unac_ids
 
@@ -440,31 +443,44 @@ class CoderlandsScraper(BaseScraper):
     # ── UUID resolution ──
 
     def _problem_id_to_uuid_param(self, problem_id: str) -> str:
-        """Convert a problem_id to the param needed by getClassWorkOne.
+        """Convert a problem_id to the UUID needed by getClassWorkOne.
 
         - 32 hex UUID → use directly
-        - P{no} → strip P, use number
-        - bare number → use directly
+        - P{no} → check UUID cache, fall back to lesson traversal
+        - bare number → check UUID cache, fall back to lesson traversal
+
+        NOTE: getClassWorkOne ONLY accepts 32-hex UUIDs.  Passing a bare
+        number returns HTTP 500.
         """
         if _UUID_RE.match(problem_id):
             return problem_id
         m = _PNO_RE.match(problem_id)
-        if m:
-            return m.group(1)
+        no = m.group(1) if m else problem_id
+        # Try cache
+        if no in self._uuid_cache:
+            return self._uuid_cache[no]
+        # Build map and try again
+        self._build_uuid_map_from_lessons()
+        if no in self._uuid_cache:
+            return self._uuid_cache[no]
+        self.logger.warning(
+            f"Coderlands: could not resolve UUID for problem {problem_id}, "
+            f"getClassWorkOne will likely fail"
+        )
         return problem_id
 
     def _resolve_uuids(self, problem_nos: set[str]) -> dict[str, str]:
         """Map problem numbers to UUIDs.
 
         Strategy:
-        1. Check cache first
-        2. Try getClassWorkOne with bare number (may work)
-        3. Fall back to lesson traversal for remaining
+        1. Check in-memory cache
+        2. Traverse lessons via getlesconNew to discover problem UUIDs
+           (getClassWorkOne only accepts UUIDs, not problem numbers)
         """
         result: dict[str, str] = {}
         remaining: set[str] = set()
 
-        # Check cache
+        # Stage 1: cache hits
         for no in problem_nos:
             if no in self._uuid_cache:
                 result[no] = self._uuid_cache[no]
@@ -474,99 +490,128 @@ class CoderlandsScraper(BaseScraper):
         if not remaining:
             return result
 
-        # Try direct number query for each remaining
-        still_remaining: set[str] = set()
-        for no in remaining:
-            try:
-                api_result = self._api_get(
-                    f'/server/student/stady/getClassWorkOne'
-                    f'?uuid={no}&lessonUuid=personalCenter'
-                )
-                data = api_result.get('data', api_result) if isinstance(api_result, dict) else api_result
-                if data and isinstance(data, dict) and data.get('uuid'):
-                    uuid = data['uuid']
-                    self._uuid_cache[no] = uuid
-                    result[no] = uuid
-                else:
-                    still_remaining.add(no)
-            except Exception:
-                still_remaining.add(no)
-
-        if not still_remaining:
-            return result
-
-        # Fall back to lesson traversal
+        # Stage 2: lesson traversal
         self.logger.info(
-            f"Coderlands: {len(still_remaining)} problems need lesson traversal for UUID"
+            f"Coderlands: {len(remaining)} problems need lesson traversal for UUID"
         )
-        lesson_map = self._build_uuid_map_from_lessons()
-        for no in still_remaining:
-            if no in lesson_map:
-                result[no] = lesson_map[no]
-                self._uuid_cache[no] = lesson_map[no]
+        self._build_uuid_map_from_lessons()
+
+        resolved = 0
+        unresolved = []
+        for no in remaining:
+            if no in self._uuid_cache:
+                result[no] = self._uuid_cache[no]
+                resolved += 1
             else:
-                self.logger.warning(
-                    f"Coderlands: could not resolve UUID for problem {no}"
-                )
+                unresolved.append(no)
+
+        if unresolved:
+            self.logger.warning(
+                f"Coderlands: {len(unresolved)} problems could not be resolved "
+                f"(likely from past classes): {', '.join(sorted(unresolved)[:10])}"
+                + (f" ... and {len(unresolved) - 10} more" if len(unresolved) > 10 else "")
+            )
+
+        self.logger.info(
+            f"Coderlands UUID resolution: {len(result)} resolved, "
+            f"{len(unresolved)} unresolved out of {len(problem_nos)} requested"
+        )
 
         return result
 
-    def _build_uuid_map_from_lessons(self) -> dict[str, str]:
-        """Build problemNo → UUID map by traversing all lessons."""
-        uuid_map: dict[str, str] = {}
+    def _build_uuid_map_from_lessons(self) -> None:
+        """Populate _uuid_cache by traversing all lessons via getlesconNew.
+
+        myls API returns:
+            result.classInfo.uuid → classUuid
+            result.lessonInfo[] → [{uuid, lessonName, ...}, ...]
+
+        For each lesson, getlesconNew returns:
+            result.dataList[] → [{uuid, name: "P{no} title", ...}, ...]
+
+        The problem number is extracted from the name field prefix.
+        """
+        if self._lesson_cache is not None:
+            # Already traversed in this session
+            return
+
+        self._lesson_cache = []
 
         try:
-            # Get lesson list
-            result = self._api_get('/server/student/stady/myls')
-            lessons = []
+            myls_result = self._api_get('/server/student/stady/myls')
+            if not isinstance(myls_result, dict):
+                self.logger.warning("Coderlands myls: unexpected response type")
+                return
 
-            # result may contain course sections with lessons
-            if isinstance(result, dict):
-                # Try common structures
-                for key in ('dataList', 'data', 'list'):
-                    if key in result and isinstance(result[key], list):
-                        for item in result[key]:
-                            if isinstance(item, dict):
-                                # May have nested lessons
-                                if 'lessonList' in item:
-                                    for lesson in item['lessonList']:
-                                        if isinstance(lesson, dict) and lesson.get('uuid'):
-                                            lessons.append(lesson['uuid'])
-                                elif 'uuid' in item:
-                                    lessons.append(item['uuid'])
-                        break
-            elif isinstance(result, list):
-                for item in result:
-                    if isinstance(item, dict):
-                        if 'lessonList' in item:
-                            for lesson in item['lessonList']:
-                                if isinstance(lesson, dict) and lesson.get('uuid'):
-                                    lessons.append(lesson['uuid'])
-                        elif 'uuid' in item:
-                            lessons.append(item['uuid'])
+            # Extract classUuid and lessonInfo
+            class_info = myls_result.get('classInfo', {})
+            class_uuid = class_info.get('uuid', '') if isinstance(class_info, dict) else ''
+            lesson_infos = myls_result.get('lessonInfo', [])
 
-            self.logger.info(f"Coderlands: found {len(lessons)} lessons to traverse")
+            if not isinstance(lesson_infos, list):
+                self.logger.warning(
+                    f"Coderlands myls: lessonInfo is {type(lesson_infos).__name__}, "
+                    f"expected list. Keys in result: {list(myls_result.keys())}"
+                )
+                return
 
-            # For each lesson, get problems
-            for lesson_uuid in lessons:
+            self.logger.info(
+                f"Coderlands: found {len(lesson_infos)} lessons, "
+                f"classUuid={class_uuid[:8]}..."
+            )
+
+            # Traverse each lesson to discover problems
+            problems_found = 0
+            for lesson in lesson_infos:
+                if not isinstance(lesson, dict):
+                    continue
+                lesson_uuid = lesson.get('uuid', '')
+                lesson_name = lesson.get('lessonName', '')
+                if not lesson_uuid:
+                    continue
+
                 try:
+                    params = f'uuid={lesson_uuid}'
+                    if class_uuid:
+                        params += f'&classUuid={class_uuid}'
                     lesson_result = self._api_get(
-                        f'/server/student/stady/getClassWorkOne'
-                        f'?uuid={lesson_uuid}&lessonUuid={lesson_uuid}'
+                        f'/server/student/stady/getlesconNew?{params}'
                     )
-                    data = lesson_result.get('data', lesson_result) if isinstance(lesson_result, dict) else lesson_result
-                    if data and isinstance(data, dict):
-                        pno = str(data.get('problemNo', ''))
-                        puuid = data.get('uuid', '')
-                        if pno and puuid:
-                            uuid_map[pno] = puuid
-                except Exception as e:
-                    self.logger.debug(f"Error traversing lesson {lesson_uuid}: {e}")
+                    data_list = (
+                        lesson_result.get('dataList', [])
+                        if isinstance(lesson_result, dict) else []
+                    )
+                    for item in data_list:
+                        if not isinstance(item, dict):
+                            continue
+                        puuid = item.get('uuid', '')
+                        name = item.get('name', '')
+                        if not puuid or not name:
+                            continue
+                        # Extract problem number from name like "P11311 digit函数"
+                        m = re.match(r'^P(\d+)\s', name)
+                        if m:
+                            pno = m.group(1)
+                            self._uuid_cache[pno] = puuid
+                            problems_found += 1
 
+                except CoderlandsSessionExpired:
+                    raise
+                except Exception as e:
+                    self.logger.debug(
+                        f"Error traversing lesson '{lesson_name}': {e}"
+                    )
+
+            self.logger.info(
+                f"Coderlands: lesson traversal complete — "
+                f"{problems_found} problems mapped from "
+                f"{len(lesson_infos)} lessons"
+            )
+
+        except CoderlandsSessionExpired:
+            raise
         except Exception as e:
             self.logger.error(f"Error building UUID map from lessons: {e}")
-
-        return uuid_map
 
     # ── Per-problem submission fetching ──
 
