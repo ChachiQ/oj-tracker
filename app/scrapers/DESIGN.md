@@ -176,7 +176,7 @@ _auto_discover()  # 在模块导入时自动执行
 | bbcoj | `bbcoj.cn/problem/{id}` 或 `bbcoj.cn/training/{n}/problem/{id}` | `BA405` |
 | ybt | `ybt.ssoier.cn:8088/problem_show.php?pid={id}` | `1234` |
 | ctoj | `ctoj.ac/d/{domain}/p/{pid}` | **`domain/pid`**（双捕获组拼接） |
-| coderlands | `coderlands.com/web/#/newAnswer#{UUID}` | 32位十六进制 UUID |
+| coderlands | `coderlands.com/web/#/newAnswer#{UUID}` | 32位十六进制 UUID（`get_problem_url()` 需传入 UUID 参数生成直链） |
 
 **注意**：CTOJ 使用双捕获组 `([^/]+)/([^/?\s]+)` 拼接为 `domain/pid` 格式。
 
@@ -492,6 +492,7 @@ Hydro 返回内存以 **bytes** 为单位，需 `// 1024` 转换为 KB。
 | 提交列表 | GET | `/server/student/stady/listSubNew?problemUuid={uuid}` | 按题目拉取 |
 | 提交详情 | GET | `/server/student/stady/mDetail?uuid={submission_uuid}` | 含源代码 |
 | UUID 解析 | POST | `/server/student/person/center/getProbelmUuid` | form-encoded `problemNo=P{no}`，返回 `{isSuccess:"1", data:"uuid"}` |
+| 题目页面 | — | `/web/#/newAnswer#{uuid}` | 题目在线答题页面（hash-based routing，需 UUID） |
 | 课节列表 | GET | `/server/student/stady/myls` | 返回 `lessonInfo[]` + `classInfo`（仅 `_problem_id_to_uuid_param` fallback 使用） |
 | 课节内容 | GET | `/server/student/stady/getlesconNew?uuid={lessonUuid}&classUuid={classUuid}` | 返回课节内题目列表（仅 `_problem_id_to_uuid_param` fallback 使用） |
 

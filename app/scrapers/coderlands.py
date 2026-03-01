@@ -278,7 +278,8 @@ class CoderlandsScraper(BaseScraper):
                 title=title,
                 difficulty_raw=difficulty_raw,
                 tags=tags,
-                url=self.get_problem_url(canonical_id),
+                url=self.get_problem_url(canonical_id, uuid=data.get('uuid', '')),
+                platform_uuid=data.get('uuid') or None,
                 description=description,
                 input_desc=input_format,
                 output_desc=output_format,
@@ -326,12 +327,14 @@ class CoderlandsScraper(BaseScraper):
             self.logger.error(f"Error fetching code for {record_id}: {e}")
             return None
 
-    def get_problem_url(self, problem_id: str) -> str:
+    def get_problem_url(self, problem_id: str, uuid: str = '') -> str:
         """Generate a URL for the problem.
 
-        Since Coderlands uses hash-based routing with UUIDs,
-        we return the personal center URL as a reasonable default.
+        If a UUID is provided, returns a direct link to the problem answer page.
+        Otherwise falls back to the personal center exercise page.
         """
+        if uuid:
+            return f"{self.BASE_URL}/web/#/newAnswer#{uuid}"
         return f"{self.BASE_URL}/web/#/person/center/exercise"
 
     def get_auth_instructions(self) -> str:

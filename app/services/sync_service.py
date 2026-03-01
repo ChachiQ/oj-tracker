@@ -163,7 +163,9 @@ class SyncService:
             # Backfill missing content fields
             fields = ['description', 'input_desc', 'output_desc', 'examples', 'hint']
             missing = [f for f in fields if not getattr(problem, f)]
-            if missing:
+            # Also backfill Coderlands problems missing UUID (needed for URL)
+            needs_uuid = (platform == 'coderlands' and not problem.platform_uuid)
+            if missing or needs_uuid:
                 try:
                     scraped = scraper.fetch_problem(problem_id)
                     if scraped:
@@ -171,6 +173,9 @@ class SyncService:
                             val = getattr(scraped, f, None)
                             if val:
                                 setattr(problem, f, val)
+                        # Update URL if we got a more specific one
+                        if scraped.url and scraped.url != problem.url:
+                            problem.url = scraped.url
                 except Exception as e:
                     logger.debug(f"Backfill failed for {platform}:{problem_id}: {e}")
             return problem
@@ -192,6 +197,10 @@ class SyncService:
                     url=scraped.url or scraper.get_problem_url(problem_id),
                     source=scraped.source,
                 )
+                # Set platform_uuid if provided (e.g. Coderlands)
+                if scraped.platform_uuid:
+                    problem.platform_uuid = scraped.platform_uuid
+
                 # Store original platform tags for future re-mapping
                 if scraped.tags:
                     problem.platform_tags = json.dumps(

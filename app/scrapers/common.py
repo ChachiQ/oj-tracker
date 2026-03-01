@@ -38,6 +38,7 @@ class ScrapedProblem:
     tags: list[str] = field(default_factory=list)
     source: str | None = None
     url: str = ''
+    platform_uuid: str | None = None
     description: str | None = None
     input_desc: str | None = None
     output_desc: str | None = None

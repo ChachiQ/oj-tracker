@@ -306,6 +306,7 @@ def create_app(config_name=None):
         _fix_ybt_timestamps(app)
         _fix_coderlands_timestamps(app)
         _fix_bbcoj_timestamps(app)
+        _fix_coderlands_urls(app)
         _cleanup_stale_jobs(app)
 
     return app
@@ -414,6 +415,33 @@ def _fix_coderlands_timestamps(app):
     except Exception as e:
         db.session.rollback()
         app.logger.error(f'Failed to fix Coderlands timestamps: {e}')
+
+
+def _fix_coderlands_urls(app):
+    """One-time fix: update Coderlands problem URLs to use direct links with UUID."""
+    marker = os.path.join(app.instance_path, '.coderlands_urls_fixed')
+    if os.path.exists(marker):
+        return
+    from sqlalchemy import text
+    try:
+        result = db.session.execute(text("""
+            UPDATE problem
+            SET url = 'https://course.coderlands.com/web/#/newAnswer#' || platform_uuid
+            WHERE platform = 'coderlands'
+              AND platform_uuid IS NOT NULL
+              AND platform_uuid != ''
+        """))
+        count = result.rowcount
+        if count:
+            db.session.commit()
+            app.logger.info(f'Fixed {count} Coderlands problem URLs (added direct links)')
+        else:
+            db.session.rollback()
+        os.makedirs(app.instance_path, exist_ok=True)
+        open(marker, 'w').close()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'Failed to fix Coderlands URLs: {e}')
 
 
 def _fix_bbcoj_timestamps(app):
