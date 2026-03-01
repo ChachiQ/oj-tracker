@@ -491,8 +491,9 @@ Hydro 返回内存以 **bytes** 为单位，需 `// 1024` 转换为 KB。
 | 题目详情 | GET | `/server/student/stady/getClassWorkOne?uuid={}&lessonUuid=personalCenter` | **注意 "stady" 拼写** |
 | 提交列表 | GET | `/server/student/stady/listSubNew?problemUuid={uuid}` | 按题目拉取 |
 | 提交详情 | GET | `/server/student/stady/mDetail?uuid={submission_uuid}` | 含源代码 |
-| 课节列表 | GET | `/server/student/stady/myls` | 返回 `lessonInfo[]` + `classInfo` |
-| 课节内容 | GET | `/server/student/stady/getlesconNew?uuid={lessonUuid}&classUuid={classUuid}` | 返回课节内题目列表（含 UUID） |
+| UUID 解析 | POST | `/server/student/person/center/getProbelmUuid` | form-encoded `problemNo=P{no}`，返回 `{isSuccess:"1", data:"uuid"}` |
+| 课节列表 | GET | `/server/student/stady/myls` | 返回 `lessonInfo[]` + `classInfo`（仅 `_problem_id_to_uuid_param` fallback 使用） |
+| 课节内容 | GET | `/server/student/stady/getlesconNew?uuid={lessonUuid}&classUuid={classUuid}` | 返回课节内题目列表（仅 `_problem_id_to_uuid_param` fallback 使用） |
 
 #### 认证流程
 
@@ -517,29 +518,41 @@ Hydro 返回内存以 **bytes** 为单位，需 `// 1024` 转换为 KB。
 5. 同步完成后 self._new_cursor = exercise_hash
 ```
 
-#### UUID 解析（课节遍历策略）
+#### UUID 解析（getProbelmUuid 策略）
 
 Coderlands 内部使用 32 位十六进制 UUID 标识题目，但 exercise API 只返回题号（数字）。
 需要将题号映射到 UUID 才能调用 `listSubNew` 获取提交记录。
 
 **重要**：`getClassWorkOne` API **只接受 32 位十六进制 UUID**，传入题号（数字）会返回 HTTP 500。
 
-解析策略（`_resolve_uuids()`）：
+**批量解析策略**（`_resolve_uuids()`）：
 
 ```
-1. 缓存命中 → 直接使用 _uuid_cache[problem_no]
-2. 课节遍历 → _build_uuid_map_from_lessons()
-   - GET /server/student/stady/myls → 获取 lessonInfo[] 和 classInfo.uuid
-   - 对每个课节 GET /server/student/stady/getlesconNew?uuid={lessonUuid}&classUuid={classUuid}
-   - 每个课节返回 dataList[]，每项含 uuid 和 name（格式 "P{no} 题目名"）
-   - 从 name 字段正则提取题号，建立 problemNo → UUID 映射
+0. DB 加载 → _load_uuids_from_db(): 从 Problem.platform_uuid 列批量加载已持久化的 UUID → O(1) DB 查询
+1. 缓存命中 → 直接使用 _uuid_cache[problem_no]（包含 Stage 0 加载的）→ O(1)
+2. getProbelmUuid API → _fetch_problem_uuid(): 逐个解析剩余题号 → 1 call/problem, 100% 命中率
+   - POST /server/student/person/center/getProbelmUuid
+   - form-encoded body: problemNo=P{no}
+   - 响应格式: {"isSuccess": "1", "data": "<32位UUID>"}
+   - 注意 API 名称拼写 "Probelm"（非 "Problem"）是平台方错误
+   - 解析成功后批量调用 _persist_uuids_to_db() 持久化到 DB
 ```
 
-**限制**：`myls` 只返回**当前班级**的课节。exercise API 返回的题目可能来自**过去班级**，
-这些题目的 UUID 无法通过当前 API 解析。未能解析的题目会被跳过并记录警告日志。
+**单题解析策略**（`_problem_id_to_uuid_param()`，用于 `fetch_problem()`）：
 
-**性能**：31 课节 × 1 API 调用 = ~60 秒（受 2 秒速率限制）。映射结果缓存在 `_uuid_cache`
-中，同一 scraper 实例生命周期内不重复遍历。
+```
+1. 缓存命中 → _uuid_cache
+2. getProbelmUuid API → _fetch_problem_uuid()
+3. 课节遍历 fallback → _build_uuid_map_from_lessons()（仅在 API 失败时）
+```
+
+**UUID 持久化**：`Problem.platform_uuid` 列存储已发现的 UUID。持久化发生在三个时机：
+- `_resolve_uuids()` 中 `getProbelmUuid` 解析完成后批量写入
+- `fetch_problem()` 发现新 UUID 时单条写入
+- `_build_uuid_map_from_lessons()` 完成后批量写入（fallback 路径）
+
+**性能**：`getProbelmUuid` 每个题目 1 次 API 调用（受 2 秒速率限制）。首次同步时
+N 个新题需 ~2N 秒解析，后续同步从 DB 加载，0 API 调用。
 
 #### DB 内查询（打破纯库模式）
 
@@ -551,21 +564,22 @@ from app.models import Submission, PlatformAccount, Problem
 用途：
 - `_get_locally_ac_problem_ids()`: 查询本地已 AC 的题目，跳过不需要同步的
 - `_get_db_known_problem_ids()`: 查询 DB 已知题目，识别新增题目
+- `_load_uuids_from_db()`: 从 `Problem.platform_uuid` 加载已持久化的 UUID 映射
+- `_persist_uuids_to_db()` / `_persist_single_uuid()`: 将新发现的 UUID 写回 DB
 
 这打破了其他爬虫"纯库、不依赖 app 层"的模式，但对于 Coderlands 的增量同步策略是必要的。
 
 #### 已知陷阱
 
 1. **JSESSIONID 过期无自动刷新**：Cookie 过期后只能抛异常，用户需手动更新。没有自动重新登录机制
-2. **getClassWorkOne 只接受 UUID**：传入题号（数字）会返回 HTTP 500。**绝不能**用题号直接调 `getClassWorkOne`。UUID 必须通过课节遍历 (`getlesconNew`) 获取
-3. **myls 响应结构**：课节列表在 `result.lessonInfo[]`（不是 `dataList/data/list`）。每项含 `uuid`、`lessonName`、`status`
-4. **getlesconNew 题号在 name 字段**：返回的 `dataList[].name` 格式为 `"P{no} 题目名"`，没有独立的 `problemNo` 字段。需用正则 `^P(\d+)\s` 提取
-5. **过去班级题目不可见**：`myls` 只返回当前班级的课节。exercise API 返回的题目可能来自过去班级，这些题目的 UUID 无法解析（会被跳过）
-6. **课节遍历耗时**：`_build_uuid_map_from_lessons()` 为每个课节发起一次 API 请求，~30 课节需要 ~60 秒（受 2 秒速率限制）。结果会缓存
-7. **API 路径拼写错误**：URL 中是 `stady` 而不是 `study`——这是平台方的拼写错误，不要"修正"
-8. **problem_id 格式**：使用 `P{number}` 格式（如 `P1234`），exercise API 返回 P 前缀+空格分隔，解析时用 `re.split(r'[,\s]+', ...)` + `_PNO_RE`
-9. **record_id 格式**：`P{no}/{submission_uuid}`，用 `/` 分隔题目 ID 和提交 UUID
-10. **DB 耦合**：直接导入 `app.models`，在无 Flask app context 环境下会失败
+2. **getClassWorkOne 只接受 UUID**：传入题号（数字）会返回 HTTP 500。**绝不能**用题号直接调 `getClassWorkOne`。UUID 通过 `getProbelmUuid` API 或课节遍历获取
+3. **getProbelmUuid API 拼写**：API 路径中是 `Probelm`（非 `Problem`）——平台方拼写错误，不要"修正"。需 form-encoded POST（`data=`），不是 JSON
+4. **getProbelmUuid 响应格式不同**：返回 `{isSuccess: "1", data: "uuid"}`，不是标准的 `{code: 1, result: {...}}`。不能用 `_api_post`，需直接用 `_request_with_retry`
+5. **API 路径拼写错误**：URL 中是 `stady` 而不是 `study`——这是平台方的拼写错误，不要"修正"
+6. **problem_id 格式**：使用 `P{number}` 格式（如 `P1234`），exercise API 返回 P 前缀+空格分隔，解析时用 `re.split(r'[,\s]+', ...)` + `_PNO_RE`
+7. **record_id 格式**：`P{no}/{submission_uuid}`，用 `/` 分隔题目 ID 和提交 UUID
+8. **DB 耦合**：直接导入 `app.models`，在无 Flask app context 环境下会失败
+9. **课节遍历仅作 fallback**：`_build_uuid_map_from_lessons()` 仅在 `_problem_id_to_uuid_param()` 中作为 fallback 使用（当 `getProbelmUuid` 失败时）。`_resolve_uuids()` 批量解析不再调用
 
 ---
 

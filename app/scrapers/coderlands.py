@@ -203,11 +203,13 @@ class CoderlandsScraper(BaseScraper):
             uuid_map = self._resolve_uuids(problems_to_sync)
 
             # Step 5: Fetch submissions per problem
+            # For new-to-DB problems, ignore `since` — we need their full history
             for problem_no, uuid in uuid_map.items():
                 problem_id = f"P{problem_no}"
+                effective_since = None if problem_no in new_problems else since
                 try:
                     yield from self._fetch_problem_submissions(
-                        problem_id, uuid, since
+                        problem_id, uuid, effective_since
                     )
                 except CoderlandsSessionExpired:
                     raise
@@ -244,9 +246,10 @@ class CoderlandsScraper(BaseScraper):
             problem_no = str(data.get('problemNo', ''))
             canonical_id = f"P{problem_no}" if problem_no else problem_id
 
-            # Cache UUID mapping if available
+            # Cache UUID mapping if available and persist to DB
             if problem_no and data.get('uuid'):
                 self._uuid_cache[problem_no] = data['uuid']
+                self._persist_single_uuid(problem_no, data['uuid'])
 
             title = data.get('problemName', '')
             difficulty_raw = data.get('difficultLevel', '')
@@ -446,8 +449,8 @@ class CoderlandsScraper(BaseScraper):
         """Convert a problem_id to the UUID needed by getClassWorkOne.
 
         - 32 hex UUID → use directly
-        - P{no} → check UUID cache, fall back to lesson traversal
-        - bare number → check UUID cache, fall back to lesson traversal
+        - P{no} → check UUID cache → getProbelmUuid API → lesson traversal
+        - bare number → same resolution chain
 
         NOTE: getClassWorkOne ONLY accepts 32-hex UUIDs.  Passing a bare
         number returns HTTP 500.
@@ -459,7 +462,12 @@ class CoderlandsScraper(BaseScraper):
         # Try cache
         if no in self._uuid_cache:
             return self._uuid_cache[no]
-        # Build map and try again
+        # Try getProbelmUuid API (fast, 100% hit rate)
+        uuid = self._fetch_problem_uuid(no)
+        if uuid:
+            self._uuid_cache[no] = uuid
+            return uuid
+        # Fall back to lesson traversal (for edge cases)
         self._build_uuid_map_from_lessons()
         if no in self._uuid_cache:
             return self._uuid_cache[no]
@@ -473,14 +481,17 @@ class CoderlandsScraper(BaseScraper):
         """Map problem numbers to UUIDs.
 
         Strategy:
+        0. Load persisted UUIDs from DB (survives class changes)
         1. Check in-memory cache
-        2. Traverse lessons via getlesconNew to discover problem UUIDs
-           (getClassWorkOne only accepts UUIDs, not problem numbers)
+        2. Call getProbelmUuid API for each remaining problem (100% hit rate)
         """
         result: dict[str, str] = {}
         remaining: set[str] = set()
 
-        # Stage 1: cache hits
+        # Stage 0: DB lookup — load persisted UUIDs for problems we need
+        self._load_uuids_from_db(problem_nos)
+
+        # Stage 1: cache hits (now includes DB-loaded UUIDs)
         for no in problem_nos:
             if no in self._uuid_cache:
                 result[no] = self._uuid_cache[no]
@@ -490,25 +501,24 @@ class CoderlandsScraper(BaseScraper):
         if not remaining:
             return result
 
-        # Stage 2: lesson traversal
+        # Stage 2: getProbelmUuid API for each remaining problem
         self.logger.info(
-            f"Coderlands: {len(remaining)} problems need lesson traversal for UUID"
+            f"Coderlands: {len(remaining)} problems need UUID via getProbelmUuid"
         )
-        self._build_uuid_map_from_lessons()
+        for no in sorted(remaining):
+            uuid = self._fetch_problem_uuid(no)
+            if uuid:
+                self._uuid_cache[no] = uuid
+                result[no] = uuid
 
-        resolved = 0
-        unresolved = []
-        for no in remaining:
-            if no in self._uuid_cache:
-                result[no] = self._uuid_cache[no]
-                resolved += 1
-            else:
-                unresolved.append(no)
+        # Persist all newly discovered UUIDs to DB
+        self._persist_uuids_to_db()
 
+        unresolved = [no for no in problem_nos if no not in result]
         if unresolved:
             self.logger.warning(
-                f"Coderlands: {len(unresolved)} problems could not be resolved "
-                f"(likely from past classes): {', '.join(sorted(unresolved)[:10])}"
+                f"Coderlands: {len(unresolved)} problems unresolvable: "
+                f"{', '.join(sorted(unresolved)[:10])}"
                 + (f" ... and {len(unresolved) - 10} more" if len(unresolved) > 10 else "")
             )
 
@@ -518,6 +528,88 @@ class CoderlandsScraper(BaseScraper):
         )
 
         return result
+
+    def _load_uuids_from_db(self, problem_nos: set[str]) -> None:
+        """Load persisted platform_uuid values from DB into _uuid_cache."""
+        try:
+            from app.models import Problem
+            pid_list = [f'P{no}' for no in problem_nos if no not in self._uuid_cache]
+            if not pid_list:
+                return
+            db_problems = Problem.query.filter(
+                Problem.platform == self.PLATFORM_NAME,
+                Problem.problem_id.in_(pid_list),
+                Problem.platform_uuid.isnot(None),
+            ).all()
+            loaded = 0
+            for p in db_problems:
+                m = _PNO_RE.match(p.problem_id)
+                if m:
+                    self._uuid_cache[m.group(1)] = p.platform_uuid
+                    loaded += 1
+            if loaded:
+                self.logger.info(f"Coderlands: loaded {loaded} UUIDs from DB")
+        except Exception as e:
+            self.logger.debug(f"Coderlands: DB UUID load failed (ok outside app ctx): {e}")
+
+    def _persist_uuids_to_db(self) -> None:
+        """Write newly discovered UUIDs back to Problem.platform_uuid."""
+        try:
+            from app.models import Problem
+            from app.extensions import db
+            updated = 0
+            for pno, puuid in self._uuid_cache.items():
+                problem = Problem.query.filter_by(
+                    platform=self.PLATFORM_NAME, problem_id=f'P{pno}'
+                ).first()
+                if problem and not problem.platform_uuid:
+                    problem.platform_uuid = puuid
+                    updated += 1
+            if updated:
+                db.session.flush()
+                self.logger.info(f"Coderlands: persisted {updated} UUIDs to DB")
+        except Exception as e:
+            self.logger.debug(f"Coderlands: DB UUID persist failed (ok outside app ctx): {e}")
+
+    def _persist_single_uuid(self, problem_no: str, uuid: str) -> None:
+        """Write a single UUID back to Problem.platform_uuid if not already set."""
+        try:
+            from app.models import Problem
+            from app.extensions import db
+            problem = Problem.query.filter_by(
+                platform=self.PLATFORM_NAME, problem_id=f'P{problem_no}'
+            ).first()
+            if problem and not problem.platform_uuid:
+                problem.platform_uuid = uuid
+                db.session.flush()
+        except Exception:
+            pass  # Best-effort; bulk persist handles the rest
+
+    def _fetch_problem_uuid(self, problem_no: str) -> str | None:
+        """Resolve a single problem number to UUID via getProbelmUuid API.
+
+        POST /server/student/person/center/getProbelmUuid
+        with form-encoded body: problemNo=P{no}
+
+        Returns the UUID string on success, None on failure.
+        """
+        try:
+            url = f"{self.BASE_URL}/server/student/person/center/getProbelmUuid"
+            resp = self._request_with_retry(
+                url, method='POST',
+                data=f'problemNo=P{problem_no}',
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            )
+            resp.encoding = 'utf-8'
+            data = resp.json()
+            if isinstance(data, dict) and data.get('isSuccess') == '1':
+                uuid = data.get('data', '')
+                if uuid and _UUID_RE.match(uuid):
+                    return uuid
+            return None
+        except Exception as e:
+            self.logger.debug(f"getProbelmUuid failed for {problem_no}: {e}")
+            return None
 
     def _build_uuid_map_from_lessons(self) -> None:
         """Populate _uuid_cache by traversing all lessons via getlesconNew.
@@ -607,6 +699,9 @@ class CoderlandsScraper(BaseScraper):
                 f"{problems_found} problems mapped from "
                 f"{len(lesson_infos)} lessons"
             )
+
+            # Persist newly discovered UUIDs to DB
+            self._persist_uuids_to_db()
 
         except CoderlandsSessionExpired:
             raise
