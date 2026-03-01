@@ -590,12 +590,12 @@ from app.models import Submission, PlatformAccount, Problem
 | 平台 | 格式 | 时区 | 转换方式 |
 |------|------|------|----------|
 | Luogu | Unix epoch 秒 | UTC | `datetime.utcfromtimestamp()` |
-| BBCOJ | ISO-8601 字符串 或 epoch 毫秒 | UTC | 字符串解析 或 `/ 1000.0` |
+| BBCOJ | ISO-8601 字符串 或 epoch 毫秒 | **UTC+8**（字符串）/ UTC（epoch） | 字符串 `strptime() - timedelta(hours=8)`，epoch `/ 1000.0` |
 | YBT | `YYYY-MM-DD HH:MM:SS` | **UTC+8** | `strptime() - timedelta(hours=8)` |
-| CTOJ | ISO-8601 字符串 或 epoch 毫秒 | UTC | 同 BBCOJ |
-| Coderlands | `YYYY-MM-DD HH:MM:SS` | 未明确（假设 UTC） | `strptime()` 多格式尝试 |
+| CTOJ | ISO-8601 字符串 或 epoch 毫秒 | UTC | 同 BBCOJ epoch 处理 |
+| Coderlands | `YYYY-MM-DD HH:MM:SS` | **UTC+8** | `strptime() - timedelta(hours=8)` 多格式尝试 |
 
-**注意**：YBT 是唯一需要手动时区转换的平台。
+**注意**：中国平台（YBT、BBCOJ、Coderlands）的字符串时间戳均为 UTC+8，scraper 负责转换为 UTC 存储。
 
 ### 4.2 错误恢复机制
 

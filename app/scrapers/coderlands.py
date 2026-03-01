@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Generator
 
 from .base import BaseScraper
@@ -818,12 +818,15 @@ class CoderlandsScraper(BaseScraper):
 
     @staticmethod
     def _parse_time(time_str: str) -> datetime | None:
-        """Parse Coderlands time strings (e.g. '2024-01-15 14:30:00')."""
+        """Parse Coderlands time strings (e.g. '2024-01-15 14:30:00').
+
+        Coderlands returns UTC+8 timestamps; convert to UTC for storage.
+        """
         if not time_str:
             return None
         for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M'):
             try:
-                return datetime.strptime(time_str, fmt)
+                return datetime.strptime(time_str, fmt) - timedelta(hours=8)
             except ValueError:
                 continue
         return None

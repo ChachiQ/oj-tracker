@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Generator
 
 from .base import BaseScraper
@@ -174,12 +174,13 @@ class BBCOJScraper(BaseScraper):
                         try:
                             # HOJ returns ISO-8601 or epoch-style timestamps
                             if isinstance(submit_time_str, str):
-                                # Try ISO format first
+                                # Try ISO format first; BBCOJ returns UTC+8 strings
                                 clean_time = submit_time_str.replace('T', ' ').replace('Z', '')
                                 if '.' in clean_time:
                                     clean_time = clean_time.split('.')[0]
-                                submitted_at = datetime.strptime(clean_time, '%Y-%m-%d %H:%M:%S')
+                                submitted_at = datetime.strptime(clean_time, '%Y-%m-%d %H:%M:%S') - timedelta(hours=8)
                             elif isinstance(submit_time_str, (int, float)):
+                                # Epoch timestamps are already UTC
                                 submitted_at = datetime.utcfromtimestamp(submit_time_str / 1000.0)
                         except (ValueError, TypeError) as e:
                             self.logger.debug(f"Could not parse submit time '{submit_time_str}': {e}")
