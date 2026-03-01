@@ -106,6 +106,13 @@ User 1-N SyncJob
 - 日志使用 logging 模块
 - 配置通过环境变量管理
 
+### 爬虫开发强制流程
+新增 OJ 爬虫时，**必须先完成 Phase 0 API 探测**，再写爬虫代码：
+1. 创建 `scripts/probe_{platform}.py` 诊断脚本，对每个 API endpoint 打印完整响应
+2. 确认：认证格式、响应编码、JSON key 名、参数接受类型、服务端是否已过滤
+3. 基于探测事实（非假设）编写爬虫代码
+4. 完整流程和检查清单见 `tasks/lessons.md` 第 3 节"爬虫开发 SOP"
+
 ## 已支持的OJ平台
 - 洛谷 (luogu) - JSON API（无需登录）
 - BBC OJ (bbcoj) - HOJ系统 REST API（需密码登录，会影响活跃会话）

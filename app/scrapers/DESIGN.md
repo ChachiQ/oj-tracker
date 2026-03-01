@@ -633,6 +633,16 @@ if account.consecutive_sync_failures >= 10:
 
 ## 5. 新平台接入指南
 
+### 前置要求：Phase 0 API 探测
+
+> **在写任何爬虫代码之前**，必须先完成 API 探测。详细 SOP 和检查清单见 `tasks/lessons.md` 第 3 节。
+
+1. 创建 `scripts/probe_{platform}.py` 诊断脚本
+2. 对每个将使用的 API endpoint 调用并打印完整响应（所有字段）
+3. 记录：认证格式、响应编码、JSON key 名/类型/嵌套层级、服务端是否已过滤
+4. 确认 API 参数接受类型（UUID vs 数字 vs 字符串）
+5. 产出一份 API 行为事实清单，作为下方 10 步清单的输入
+
 ### 10 步清单
 
 1. **新建文件**：`app/scrapers/{platform_name}.py`
