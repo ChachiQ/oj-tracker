@@ -501,7 +501,9 @@ function renderMath(container) {
         renderMathInElement(container, {
             delimiters: [
                 {left: '$$', right: '$$', display: true},
-                {left: '$', right: '$', display: false}
+                {left: '$', right: '$', display: false},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '\\[', right: '\\]', display: true}
             ],
             throwOnError: false
         });
@@ -890,13 +892,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     /* KaTeX: render LaTeX math in problem content areas */
     document.querySelectorAll('.report-content').forEach(function(el) {
-        renderMathInElement(el, {
-            delimiters: [
-                {left: '$$', right: '$$', display: true},
-                {left: '$', right: '$', display: false}
-            ],
-            throwOnError: false
-        });
+        renderMath(el);
     });
 
     /* highlight.js: syntax highlight all code blocks */

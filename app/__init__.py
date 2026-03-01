@@ -180,6 +180,22 @@ def create_app(config_name=None):
             flags=re.MULTILINE | re.DOTALL,
         )
 
+        # Extract math delimiters before any escaping/markdown processing
+        math_blocks = []
+
+        def _replace_math(m):
+            idx = len(math_blocks)
+            math_blocks.append(m.group(0))
+            return f'\x00MATHBLOCK_{idx}\x00'
+
+        # Display math $$...$$ first (greedy across newlines)
+        text = re.sub(r'\$\$(.+?)\$\$', _replace_math, text, flags=re.DOTALL)
+        # Inline math $...$ (single-line, not matching $$)
+        text = re.sub(r'(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)', _replace_math, text)
+        # LaTeX-style: \[...\] (display) and \(...\) (inline)
+        text = re.sub(r'\\\[(.+?)\\\]', _replace_math, text, flags=re.DOTALL)
+        text = re.sub(r'\\\((.+?)\\\)', _replace_math, text)
+
         if escape:
             text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
         else:
@@ -252,6 +268,13 @@ def create_app(config_name=None):
                 placeholder = f'\x00CODEBLOCK_{idx}\x00'
                 text = text.replace(f'<p>{placeholder}</p>', placeholder)
                 text = text.replace(placeholder, code_blocks[idx])
+
+        # Restore math block placeholders
+        if math_blocks:
+            for idx in range(len(math_blocks)):
+                placeholder = f'\x00MATHBLOCK_{idx}\x00'
+                text = text.replace(f'<p>{placeholder}</p>', placeholder)
+                text = text.replace(placeholder, math_blocks[idx])
 
         return Markup(text)
 
