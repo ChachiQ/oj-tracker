@@ -269,6 +269,11 @@ class CTOJScraper(BaseScraper):
             title = pdoc.get('title', '')
             content = pdoc.get('content', '')
 
+            # Skip objective/quiz problems (MCQ) — not programming problems
+            if '{{ select(' in content:
+                self.logger.info(f"Skipping objective problem {problem_id} (contains MCQ template)")
+                return None
+
             # Parse Hydro markdown content into structured fields
             description, input_desc, output_desc, examples, hint = self._parse_hydro_content(content)
 

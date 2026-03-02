@@ -33,6 +33,7 @@ class SyncService:
         stats = {'new_submissions': 0, 'new_problems': 0, 'errors': 0}
         first_record_id = None
         seen_new_problems = set()  # avoid counting the same new problem twice
+        _skip_pids = set()  # problems to skip (e.g. CTOJ objective/MCQ)
 
         try:
             for scraped_sub in scraper.fetch_submissions(
@@ -44,6 +45,11 @@ class SyncService:
                     first_record_id = scraped_sub.platform_record_id
                 # Skip compile error submissions – no analytical value
                 if scraped_sub.status == SubmissionStatus.CE.value:
+                    continue
+
+                # Skip problems known to be non-programming (e.g. MCQ)
+                pid_key = (account.platform, scraped_sub.problem_id)
+                if pid_key in _skip_pids:
                     continue
 
                 try:
@@ -70,6 +76,11 @@ class SyncService:
                     problem = self._ensure_problem(
                         account.platform, scraped_sub.problem_id, scraper
                     )
+
+                    # fetch_problem returned None (e.g. CTOJ objective problem)
+                    if problem is None and pid_key not in _skip_pids:
+                        _skip_pids.add(pid_key)
+                        continue
 
                     # Create submission
                     submission = Submission(
