@@ -14,9 +14,8 @@
 <!-- Filters -->
 <div class="card shadow-sm mb-4">
     <div class="card-body">
-        <form method="GET" action="{{ url_for('problem.list_problems') }}" class="row g-3 align-items-end">
-            <div class="col-12 col-sm-6 col-md-2">
-                <label for="filter-platform" class="form-label">平台</label>
+        <form method="GET" action="{{ url_for('problem.list_problems') }}" class="row g-2 align-items-center">
+            <div class="col-auto">
                 <select class="form-select form-select-sm" id="filter-platform" name="platform">
                     <option value="">全部平台</option>
                     {% for p in platforms %}
@@ -24,8 +23,7 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-12 col-sm-6 col-md-2">
-                <label for="filter-tag" class="form-label">知识点标签</label>
+            <div class="col-auto">
                 <select class="form-select form-select-sm" id="filter-tag" name="tag">
                     <option value="">全部标签</option>
                     {% if tags %}
@@ -43,12 +41,11 @@
                     {% endif %}
                 </select>
             </div>
-            <div class="col-12 col-sm-6 col-md-2">
-                <label class="form-label">难度</label>
+            <div class="col-auto">
                 {% set diff_labels = {1: '入门', 2: '入门+', 3: '普及-', 4: '普及', 5: '提高-', 6: '提高', 7: '省选-', 8: '省选', 9: 'NOI-', 10: 'NOI'} %}
                 {% set selected_diffs = request.args.getlist('difficulty')|map('int')|list %}
                 <div class="dropdown" id="difficulty-dropdown">
-                    <button class="btn btn-sm btn-outline-secondary w-100 dropdown-toggle text-start" type="button"
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle text-start" type="button"
                             data-bs-toggle="dropdown" data-bs-auto-close="outside" id="diff-dropdown-btn">
                         {% if selected_diffs %}
                             难度: {% for d in selected_diffs %}{% if d == -1 %}未评级{% else %}{{ d }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
@@ -90,22 +87,21 @@
                     {% endfor %}
                 </div>
             </div>
-            <div class="col-12 col-sm-6 col-md-4">
-                <label for="filter-search" class="form-label">搜索</label>
-                <input type="text" class="form-control form-control-sm" id="filter-search" name="q"
-                       placeholder="题目 ID 或标题..." value="{{ request.args.get('q', '') }}">
-            </div>
-            <div class="col-auto d-flex align-items-end">
-                <div class="form-check mb-1">
+            <div class="col-auto">
+                <div class="form-check mb-0">
                     <input class="form-check-input" type="checkbox" id="filter-not-ac" name="status" value="not_ac"
                            {% if request.args.get('status') == 'not_ac' %}checked{% endif %}>
-                    <label class="form-check-label" for="filter-not-ac">仅未AC</label>
+                    <label class="form-check-label" for="filter-not-ac">未AC</label>
                 </div>
             </div>
-            <div class="col-12 col-sm-6 col-md-2">
-                <button type="submit" class="btn btn-primary btn-sm w-100">
-                    <i class="bi bi-search"></i> 搜索
-                </button>
+            <div class="col">
+                <div class="input-group input-group-sm">
+                    <input type="text" class="form-control" id="filter-search" name="q"
+                           placeholder="题目 ID 或标题..." value="{{ request.args.get('q', '') }}">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search"></i> 搜索
+                    </button>
+                </div>
             </div>
         </form>
     </div>
