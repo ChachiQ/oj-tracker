@@ -148,22 +148,23 @@ class ReportGenerator:
             ]
         )
 
-        # Build radar chart data
-        radar_categories = [
-            "搜索",
-            "动态规划",
-            "图论",
-            "数据结构",
-            "数学",
-            "字符串",
-            "基础算法",
-        ]
+        # Build radar chart data — map Tag.category to display labels
+        CATEGORY_TO_RADAR = {
+            "search": "搜索",
+            "dp": "动态规划",
+            "graph": "图论",
+            "ds": "数据结构",
+            "math": "数学",
+            "string": "字符串",
+            "basic": "基础算法",
+        }
         radar_curr = {}
         for tag_name, info in tag_scores.items():
-            cat = info.get("display_name", tag_name)
-            for rc in radar_categories:
-                if rc in cat:
-                    radar_curr[rc] = max(radar_curr.get(rc, 0), info["score"])
+            radar_label = CATEGORY_TO_RADAR.get(info.get("category", ""))
+            if radar_label:
+                radar_curr[radar_label] = max(
+                    radar_curr.get(radar_label, 0), info["score"]
+                )
 
         # Call AI to generate report narrative
         try:

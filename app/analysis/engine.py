@@ -367,6 +367,7 @@ class AnalysisEngine:
             result[tag_name] = {
                 "score": round(total_score),
                 "display_name": tag.display_name,
+                "category": tag.category,
                 "stage": tag.stage,
                 "solved": solved,
                 "attempted": attempted,
