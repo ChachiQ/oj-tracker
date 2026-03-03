@@ -405,7 +405,7 @@
             if (!newSubBanner || !accounts || accounts.length === 0) return;
             var platforms = accounts.map(function(a) {
                 var label = a.platform + ':' + a.platform_uid;
-                if (a.check_method === 'time_based') label += ' (超过24h未同步)';
+                if (a.check_method === 'time_based') label += ' (超过5天未同步)';
                 return label;
             });
             newSubText.textContent = '检测到可能有新提交: ' + platforms.join(', ');

@@ -216,6 +216,8 @@ def _start_content_sync_thread(job_id, user_id):
                     'account_details': account_details,
                 }
                 job.finished_at = datetime.utcnow()
+                # Clear check-new cache so banner won't reappear
+                UserSetting.set(user_id, 'check_new_result_at', '')
                 db.session.commit()
 
             except Exception as e:
@@ -283,6 +285,8 @@ def sync_content(account_id):
                 'new_problems': stats.get('new_problems', 0),
             }]
             job.stats = stats
+            # Clear check-new cache so banner won't reappear
+            UserSetting.set(current_user.id, 'check_new_result_at', '')
 
         job.finished_at = datetime.utcnow()
         db.session.commit()
@@ -371,6 +375,8 @@ def sync_content_and_ai(account_id):
         sync_job.status = 'completed'
         sync_job.stats = stats
         sync_job.finished_at = datetime.utcnow()
+        # Clear check-new cache so banner won't reappear
+        UserSetting.set(current_user.id, 'check_new_result_at', '')
         db.session.commit()
 
     except Exception as e:
@@ -621,8 +627,8 @@ def check_new():
                 continue
 
             if scraper_cls.REQUIRES_LOGIN:
-                # Time-based check: flag if last sync > 24h ago
-                if account.last_sync_at and (now - account.last_sync_at).total_seconds() > 86400:
+                # Time-based check: flag if last sync > 5 days ago
+                if account.last_sync_at and (now - account.last_sync_at).total_seconds() > 432000:
                     accounts_with_new.append({
                         'account_id': account.id,
                         'platform': account.platform,
