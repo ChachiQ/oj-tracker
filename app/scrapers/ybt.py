@@ -139,12 +139,12 @@ class YBTScraper(BaseScraper):
         return self._ensure_logged_in(platform_uid)
 
     def fetch_submissions(
-        self, platform_uid: str, since: datetime = None, cursor: str = None
+        self, platform_uid: str, since: datetime = None, cursor: str = None,
+        problem_id: str = None,
     ) -> Generator[ScrapedSubmission, None, None]:
         """Fetch submissions for a YBT user by parsing the status page."""
         if not self._ensure_logged_in(platform_uid):
-            self.logger.error("Cannot fetch submissions: not logged in")
-            return
+            raise RuntimeError(f"一本通OJ 登录失败，请检查用户名和密码是否正确 (用户: {platform_uid})")
 
         start = 0
         reached_end = False

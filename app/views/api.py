@@ -571,44 +571,14 @@ def problem_resync_submissions(problem_id):
     if not problem:
         return jsonify({'error': '题目不存在'}), 404
 
-    if problem.platform != 'coderlands':
-        return jsonify({'error': '该平台暂不支持单题同步提交记录'}), 400
-
     from app.extensions import db
     from app.scrapers.common import SubmissionStatus
 
-    # Find the user's platform account for coderlands
     scraper_kwargs = _find_user_scraper_kwargs(problem.platform)
     if not scraper_kwargs:
         return jsonify({'error': '未找到该平台的账号，请先在设置中添加'}), 400
 
-    try:
-        scraper = get_scraper_instance(problem.platform, **scraper_kwargs)
-    except ValueError as e:
-        return jsonify({'error': f'创建爬虫失败: {e}'}), 500
-
-    # Resolve the problem UUID from problem_id (P{no})
-    uuid_param = scraper._problem_id_to_uuid_param(problem.problem_id)
-
-    try:
-        # Fetch problem details to get the real UUID
-        api_result = scraper._api_get(
-            f'/server/student/stady/getClassWorkOne'
-            f'?uuid={uuid_param}&lessonUuid=personalCenter'
-        )
-        data = api_result.get('data', api_result) if isinstance(api_result, dict) else api_result
-        if not data or not isinstance(data, dict) or not data.get('uuid'):
-            return jsonify({'error': '无法获取题目 UUID'}), 500
-        problem_uuid = data['uuid']
-    except Exception as e:
-        return jsonify({'error': f'获取题目信息失败: {e}'}), 500
-
-    try:
-        submissions = scraper.fetch_problem_submissions_by_uuid(problem_uuid)
-    except Exception as e:
-        return jsonify({'error': f'获取提交记录失败: {e}'}), 500
-
-    # Find the user's account for dedup
+    # Find the user's platform account for dedup
     account = None
     students = Student.query.filter_by(parent_id=current_user.id).all()
     for s in students:
@@ -621,6 +591,44 @@ def problem_resync_submissions(problem_id):
 
     if not account:
         return jsonify({'error': '未找到该平台的账号'}), 400
+
+    try:
+        scraper = get_scraper_instance(problem.platform, **scraper_kwargs)
+    except ValueError as e:
+        return jsonify({'error': f'创建爬虫失败: {e}'}), 500
+
+    if problem.platform == 'coderlands':
+        # Coderlands: fetch submissions by problem UUID
+        uuid_param = scraper._problem_id_to_uuid_param(problem.problem_id)
+        try:
+            api_result = scraper._api_get(
+                f'/server/student/stady/getClassWorkOne'
+                f'?uuid={uuid_param}&lessonUuid=personalCenter'
+            )
+            data = api_result.get('data', api_result) if isinstance(api_result, dict) else api_result
+            if not data or not isinstance(data, dict) or not data.get('uuid'):
+                return jsonify({'error': '无法获取题目 UUID'}), 500
+            problem_uuid = data['uuid']
+        except Exception as e:
+            return jsonify({'error': f'获取题目信息失败: {e}'}), 500
+
+        try:
+            submissions = scraper.fetch_problem_submissions_by_uuid(problem_uuid)
+        except Exception as e:
+            return jsonify({'error': f'获取提交记录失败: {e}'}), 500
+    else:
+        # All other platforms: fetch with server-side filter where supported,
+        # client-side filter as safety net
+        try:
+            submissions = [
+                s for s in scraper.fetch_submissions(
+                    account.platform_uid, since=None, cursor=None,
+                    problem_id=problem.problem_id,
+                )
+                if s.problem_id == problem.problem_id
+            ]
+        except Exception as e:
+            return jsonify({'error': f'获取提交记录失败: {e}'}), 500
 
     new_count = 0
     for scraped_sub in submissions:

@@ -126,12 +126,12 @@ class BBCOJScraper(BaseScraper):
         return self._ensure_logged_in(platform_uid)
 
     def fetch_submissions(
-        self, platform_uid: str, since: datetime = None, cursor: str = None
+        self, platform_uid: str, since: datetime = None, cursor: str = None,
+        problem_id: str = None,
     ) -> Generator[ScrapedSubmission, None, None]:
         """Fetch submissions for the authenticated BBC OJ user."""
         if not self._ensure_logged_in(platform_uid):
-            self.logger.error("Cannot fetch submissions: not logged in")
-            return
+            raise RuntimeError(f"BBC OJ 登录失败，请检查用户名和密码是否正确 (用户: {platform_uid})")
 
         page = 1
         limit = 20
@@ -143,6 +143,8 @@ class BBCOJScraper(BaseScraper):
                     f"{self.BASE_URL}/api/get-submission-list"
                     f"?limit={limit}&currentPage={page}&onlyMine=true"
                 )
+                if problem_id:
+                    url += f"&problemID={problem_id}"
                 resp = self._rate_limited_get(url)
                 self.logger.debug(f"BBC OJ submissions page {page} response status: {resp.status_code}")
                 resp.encoding = 'utf-8'

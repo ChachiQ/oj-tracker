@@ -42,11 +42,9 @@
                 <button class="btn btn-sm btn-outline-secondary" id="btn-resync" onclick="resyncProblem()">
                     <i class="bi bi-arrow-repeat"></i> 同步题目内容
                 </button>
-                {% if problem.platform == 'coderlands' %}
                 <button class="btn btn-sm btn-outline-primary" id="btn-resync-subs" onclick="resyncSubmissions()">
                     <i class="bi bi-cloud-download"></i> 同步提交记录
                 </button>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -584,7 +582,7 @@ function resyncSubmissions() {
         btn.disabled = true;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> 同步中...';
 
-        apiPost('/api/problem/' + PROBLEM_ID + '/resync-submissions')
+        apiPost('/api/problem/' + PROBLEM_ID + '/resync-submissions', 120000)
         .then(function(data) {
             if (data.success) {
                 btn.className = 'btn btn-sm btn-success';

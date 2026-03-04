@@ -128,12 +128,12 @@ class CTOJScraper(BaseScraper):
         return True
 
     def fetch_submissions(
-        self, platform_uid: str, since: datetime = None, cursor: str = None
+        self, platform_uid: str, since: datetime = None, cursor: str = None,
+        problem_id: str = None,
     ) -> Generator[ScrapedSubmission, None, None]:
         """Fetch submissions across all domains for the authenticated user."""
         if not self._ensure_logged_in(platform_uid):
-            self.logger.error("Cannot fetch submissions: not logged in")
-            return
+            raise RuntimeError(f"CTOJ 登录失败，请检查用户名和密码是否正确 (用户: {platform_uid})")
 
         domains = self._fetch_domains()
         if not domains:

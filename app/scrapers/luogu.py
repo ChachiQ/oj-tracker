@@ -104,7 +104,8 @@ class LuoguScraper(BaseScraper):
             return False
 
     def fetch_submissions(
-        self, platform_uid: str, since: datetime = None, cursor: str = None
+        self, platform_uid: str, since: datetime = None, cursor: str = None,
+        problem_id: str = None,
     ) -> Generator[ScrapedSubmission, None, None]:
         """Fetch submissions for a Luogu user, paginated."""
         page = 1
