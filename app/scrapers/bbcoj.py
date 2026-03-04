@@ -176,11 +176,11 @@ class BBCOJScraper(BaseScraper):
                         try:
                             # HOJ returns ISO-8601 or epoch-style timestamps
                             if isinstance(submit_time_str, str):
-                                # Try ISO format first; BBCOJ returns UTC+8 strings
+                                # HOJ returns UTC timestamps (ISO-8601, possibly Z-suffixed)
                                 clean_time = submit_time_str.replace('T', ' ').replace('Z', '')
                                 if '.' in clean_time:
                                     clean_time = clean_time.split('.')[0]
-                                submitted_at = datetime.strptime(clean_time, '%Y-%m-%d %H:%M:%S') - timedelta(hours=8)
+                                submitted_at = datetime.strptime(clean_time, '%Y-%m-%d %H:%M:%S')
                             elif isinstance(submit_time_str, (int, float)):
                                 # Epoch timestamps are already UTC
                                 submitted_at = datetime.utcfromtimestamp(submit_time_str / 1000.0)
