@@ -73,7 +73,7 @@ oj-tracker/
 ### 安装
 
 ```bash
-git clone https://github.com/<your-username>/oj-tracker.git
+git clone https://github.com/ChachiQ/oj-tracker.git
 cd oj-tracker
 python -m venv venv
 source venv/bin/activate
