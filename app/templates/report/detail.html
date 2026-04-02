@@ -11,6 +11,7 @@
     <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-text"></i> 学习报告</h4>
 </div>
 
+<div id="reportCapture">
 <!-- Report Header -->
 <div class="card shadow-sm mb-4">
     <div class="card-body">
@@ -36,10 +37,13 @@
                     生成时间：{{ report.created_at.strftime('%Y-%m-%d %H:%M') if report.created_at else '-' }}
                 </p>
             </div>
-            <div class="col-12 col-md-4 text-md-end mt-3 mt-md-0">
+            <div class="col-12 col-md-4 text-md-end mt-3 mt-md-0" id="reportActions">
                 <a href="{{ url_for('report.list_reports') }}" class="btn btn-outline-secondary btn-sm">
                     <i class="bi bi-list"></i> 返回列表
                 </a>
+                <button id="screenshotBtn" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-image"></i> 生成截图
+                </button>
                 <form id="regenerateForm" method="POST" action="{{ url_for('report.regenerate', report_id=report.id) }}" class="d-inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" id="regenerateBtn" class="btn btn-outline-warning btn-sm">
@@ -106,15 +110,40 @@
 </div>
 {% endif %}
 
+</div><!-- /reportCapture -->
+
 <!-- Back Button -->
 <div class="text-center mt-4 mb-4">
     <a href="{{ url_for('report.list_reports') }}" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left"></i> 返回报告列表
     </a>
 </div>
+<!-- Screenshot Preview Modal -->
+<div class="modal fade" id="screenshotModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">截图预览</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center p-3">
+                <img id="screenshotPreview" style="max-width:100%;border:1px solid #e3e6f0;border-radius:0.25rem;">
+            </div>
+            <div class="modal-footer">
+                <button id="screenshotCopyBtn" class="btn btn-outline-primary">
+                    <i class="bi bi-clipboard"></i> 复制图片
+                </button>
+                <button id="screenshotSaveBtn" class="btn btn-primary">
+                    <i class="bi bi-download"></i> 保存图片
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
 (function() {
     var form = document.getElementById('regenerateForm');
@@ -179,6 +208,85 @@
                 ojToast('请求失败: ' + err.message);
             });
         });
+    });
+})();
+
+// Screenshot with preview
+(function() {
+    var btn = document.getElementById('screenshotBtn');
+    if (!btn) return;
+
+    var modalEl = document.getElementById('screenshotModal');
+    var previewImg = document.getElementById('screenshotPreview');
+    var copyBtn = document.getElementById('screenshotCopyBtn');
+    var saveBtn = document.getElementById('screenshotSaveBtn');
+    var bsModal = new bootstrap.Modal(modalEl);
+    var currentBlob = null;
+    var currentURL = null;
+
+    var filename = '{{ (report.student.name if report.student else "报告") }}'
+        + '_{% if report.report_type == "weekly" %}周报{% elif report.report_type == "monthly" %}月报{% else %}季报{% endif %}'
+        + '_{{ report.period_start.strftime("%Y%m%d") if report.period_start else "" }}'
+        + '.png';
+
+    // Cleanup on modal close
+    modalEl.addEventListener('hidden.bs.modal', function() {
+        if (currentURL) { URL.revokeObjectURL(currentURL); currentURL = null; }
+        currentBlob = null;
+        previewImg.src = '';
+    });
+
+    // Generate screenshot
+    btn.addEventListener('click', function() {
+        var capture = document.getElementById('reportCapture');
+        var actions = document.getElementById('reportActions');
+        if (!capture) return;
+
+        var origHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 截图中...';
+        if (actions) actions.style.display = 'none';
+
+        html2canvas(capture, {
+            scale: 2,
+            backgroundColor: '#f8f9fc',
+            useCORS: true,
+            logging: false
+        }).then(function(canvas) {
+            canvas.toBlob(function(blob) {
+                currentBlob = blob;
+                currentURL = URL.createObjectURL(blob);
+                previewImg.src = currentURL;
+                bsModal.show();
+            }, 'image/png');
+        }).catch(function(err) {
+            ojToast('截图失败: ' + err.message);
+        }).finally(function() {
+            if (actions) actions.style.display = '';
+            btn.disabled = false;
+            btn.innerHTML = origHTML;
+        });
+    });
+
+    // Copy to clipboard
+    copyBtn.addEventListener('click', function() {
+        if (!currentBlob) return;
+        navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': currentBlob })
+        ]).then(function() {
+            ojToast('已复制到剪贴板');
+        }).catch(function() {
+            ojToast('复制失败，请尝试保存图片');
+        });
+    });
+
+    // Save to file
+    saveBtn.addEventListener('click', function() {
+        if (!currentURL) return;
+        var a = document.createElement('a');
+        a.href = currentURL;
+        a.download = filename;
+        a.click();
     });
 })();
 </script>
