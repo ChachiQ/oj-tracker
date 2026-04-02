@@ -71,20 +71,8 @@
     </div>
     {% endif %}
 
-    <!-- Radar Comparison Chart -->
-    <div class="col-12 col-lg-5">
-        <div class="chart-container">
-            <div class="chart-title"><i class="bi bi-radar"></i> 能力变化对比</div>
-            <div id="report-radar" class="chart-responsive"
-                 data-prev="{{ report.prev_scores|tojson if report.prev_scores else '{}' }}"
-                 data-curr="{{ report.curr_scores|tojson if report.curr_scores else '{}' }}"
-                 style="height: 380px;">
-            </div>
-        </div>
-    </div>
-
     <!-- AI Report Content -->
-    <div class="col-12 col-lg-7">
+    <div class="col-12">
         <div class="chart-container position-relative" id="reportContentCard">
             <div class="chart-title"><i class="bi bi-robot"></i> AI 分析报告</div>
             <div class="report-content">
@@ -127,7 +115,6 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/report.js') }}"></script>
 <script>
 (function() {
     var form = document.getElementById('regenerateForm');
