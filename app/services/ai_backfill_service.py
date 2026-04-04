@@ -11,6 +11,7 @@ page.
 from __future__ import annotations
 
 import logging
+import time
 import threading
 from concurrent.futures import (
     ThreadPoolExecutor, as_completed,
@@ -143,13 +144,26 @@ class AIBackfillService:
             return
 
         max_workers = self._get_max_workers(user_id)
+
+        # Inter-request cooldown to avoid Zhipu concurrency rate limits.
+        provider_name = self.app.config.get("AI_PROVIDER", "zhipu")
+        if user_id:
+            user_prov = UserSetting.get(user_id, 'ai_provider')
+            if user_prov:
+                provider_name = user_prov
+        inter_request_delay = 2.0 if provider_name == "zhipu" else 0.0
+
         completed = 0
         ok_count = 0
         consecutive_errors = 0
 
         def _run_one(item):
             with self.app.app_context():
-                return process_fn(item, user_id)
+                try:
+                    return process_fn(item, user_id)
+                finally:
+                    if inter_request_delay > 0:
+                        time.sleep(inter_request_delay)
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {

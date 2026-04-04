@@ -37,7 +37,7 @@ MODEL_CONFIG = {
         }
     },
     "zhipu": {
-        "max_concurrency": 3,
+        "max_concurrency": 1,
         "models": {
             "glm-5": {
                 "input_price": 1.0,

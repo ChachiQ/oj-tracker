@@ -120,7 +120,8 @@ class SyncService:
                     stats['errors'] += 1
 
             # Update sync cursor and clear any previous error
-            account.last_sync_at = datetime.utcnow()
+            if first_record_id:
+                account.last_sync_at = datetime.utcnow()
             # Some scrapers (e.g. Coderlands) use a custom cursor (hash-based)
             scraper_cursor = getattr(scraper, '_new_cursor', None)
             if isinstance(scraper_cursor, str):

@@ -6,6 +6,7 @@ Supports GLM-5 model via the official zhipuai Python SDK.
 from __future__ import annotations
 
 import logging
+import random
 import time
 
 from .base import BaseLLMProvider, LLMResponse
@@ -22,10 +23,13 @@ DEFAULT_MODEL = "glm-5"
 
 try:
     from zhipuai import ZhipuAI
+    from zhipuai.core._errors import APIReachLimitError, APIServerFlowExceedError
 
     _ZHIPU_AVAILABLE = True
 except ImportError:
     _ZHIPU_AVAILABLE = False
+    APIReachLimitError = None
+    APIServerFlowExceedError = None
     logger.info(
         "zhipuai package not installed. Zhipu provider will not be available. "
         "Install with: pip install zhipuai"
@@ -96,13 +100,44 @@ class ZhipuProvider(BaseLLMProvider):
         if temperature <= 0:
             temperature = 0.01
 
-        start_time = time.time()
-        response = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
+        # Retry with exponential backoff for rate limit (429) and server overload (503).
+        # The SDK already retries 3x internally with short delays (0.5-8s);
+        # we apply longer waits appropriate for Zhipu's concurrency-based throttling.
+        max_retries = 4
+        base_delay = 10.0
+        rate_limit_exceptions = tuple(
+            exc for exc in (APIReachLimitError, APIServerFlowExceedError)
+            if exc is not None
         )
+
+        start_time = time.time()
+        for attempt in range(max_retries + 1):
+            try:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                )
+                if attempt > 0:
+                    logger.info(
+                        "Zhipu API succeeded on retry %d (after %ds total)",
+                        attempt, int(time.time() - start_time),
+                    )
+                break
+            except rate_limit_exceptions as e:
+                if attempt >= max_retries:
+                    logger.error(
+                        "Zhipu rate limit: exhausted %d retries (%ds elapsed)",
+                        max_retries, int(time.time() - start_time),
+                    )
+                    raise
+                delay = base_delay * (2 ** attempt) + random.uniform(0, 2)
+                logger.warning(
+                    "Zhipu rate limit (attempt %d/%d): %.200s -- waiting %.1fs",
+                    attempt + 1, max_retries + 1, str(e), delay,
+                )
+                time.sleep(delay)
         latency_ms = int((time.time() - start_time) * 1000)
 
         # Extract content — reasoning models may swap content/reasoning_content

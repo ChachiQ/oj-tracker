@@ -12,6 +12,12 @@ import logging
 import re
 from datetime import datetime
 
+try:
+    from zhipuai.core._errors import APIReachLimitError, APIServerFlowExceedError
+    _ZHIPU_RATE_LIMIT_ERRORS = (APIReachLimitError, APIServerFlowExceedError)
+except ImportError:
+    _ZHIPU_RATE_LIMIT_ERRORS = ()
+
 from flask import current_app
 
 from app.extensions import db
@@ -908,12 +914,20 @@ class AIAnalyzer:
             messages = self._inject_images_for_provider(messages, provider.PROVIDER_NAME)
             response = provider.chat(messages, model=model, max_tokens=effective_max_tokens)
         except Exception as e:
-            logger.error(f"Comprehensive analysis LLM call failed for {problem_id}: {e}")
-            problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
-            if problem.ai_retry_count >= 3:
-                problem.ai_skip_backfill = True
-                logger.warning(f"Problem {problem_id} flagged for skip after {problem.ai_retry_count} failures")
-            problem.ai_analysis_error = str(e)[:500]
+            is_rate_limit = _ZHIPU_RATE_LIMIT_ERRORS and isinstance(e, _ZHIPU_RATE_LIMIT_ERRORS)
+            if is_rate_limit:
+                logger.warning(
+                    "Comprehensive analysis rate-limited for %s "
+                    "(not counting toward skip threshold): %s", problem_id, e,
+                )
+                problem.ai_analysis_error = f"[RATE_LIMITED] {str(e)[:480]}"
+            else:
+                logger.error(f"Comprehensive analysis LLM call failed for {problem_id}: {e}")
+                problem.ai_retry_count = (problem.ai_retry_count or 0) + 1
+                if problem.ai_retry_count >= 3:
+                    problem.ai_skip_backfill = True
+                    logger.warning(f"Problem {problem_id} flagged for skip after {problem.ai_retry_count} failures")
+                problem.ai_analysis_error = str(e)[:500]
             db.session.commit()
             return None
 
