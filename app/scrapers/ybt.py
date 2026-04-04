@@ -338,6 +338,10 @@ class YBTScraper(BaseScraper):
         if status == SubmissionStatus.UNKNOWN.value and score is not None and score > 0:
             status = SubmissionStatus.PA.value
 
+        # PA with score 0 means completely wrong → downgrade to WA
+        if status == SubmissionStatus.PA.value and (score is None or score == 0):
+            status = SubmissionStatus.WA.value
+
         return status, score
 
     def fetch_problem(self, problem_id: str) -> ScrapedProblem | None:
