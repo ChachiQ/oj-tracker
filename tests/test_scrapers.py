@@ -127,6 +127,7 @@ class TestSubmissionStatus:
         assert SubmissionStatus.MLE == 'MLE'
         assert SubmissionStatus.RE == 'RE'
         assert SubmissionStatus.CE == 'CE'
+        assert SubmissionStatus.PA == 'PA'
         assert SubmissionStatus.UNKNOWN == 'UNKNOWN'
         assert SubmissionStatus.PENDING == 'PENDING'
         assert SubmissionStatus.JUDGING == 'JUDGING'
@@ -136,7 +137,7 @@ class TestSubmissionStatus:
         assert SubmissionStatus.AC == 'AC'
 
     def test_all_statuses_count(self):
-        assert len(SubmissionStatus) == 9
+        assert len(SubmissionStatus) == 10
 
 
 class TestCTOJScraper:

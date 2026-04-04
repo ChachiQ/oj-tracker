@@ -154,6 +154,11 @@ main {
     color: white;
 }
 
+.badge-pa {
+    background-color: #e0a800;
+    color: white;
+}
+
 /* Difficulty hint hover panel */
 .diff-hint-wrap {
     position: relative;

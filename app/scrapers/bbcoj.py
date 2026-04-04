@@ -27,7 +27,7 @@ _STATUS_MAP = {
     5: SubmissionStatus.JUDGING,     # Compiling
     6: SubmissionStatus.PENDING,     # Pending (Rejudge)
     7: SubmissionStatus.JUDGING,     # Judging (Rejudge)
-    8: SubmissionStatus.WA,          # Partial Accepted
+    8: SubmissionStatus.PA,          # Partial Accepted
     9: SubmissionStatus.UNKNOWN,     # Submitting
 }
 

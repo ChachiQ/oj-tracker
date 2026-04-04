@@ -12,6 +12,7 @@ class SubmissionStatus(str, Enum):
     MLE = 'MLE'
     RE = 'RE'
     CE = 'CE'
+    PA = 'PA'      # Partial Accepted
     UNKNOWN = 'UNKNOWN'
     PENDING = 'PENDING'
     JUDGING = 'JUDGING'

@@ -25,7 +25,7 @@ _STATUS_MAP = {
     7: SubmissionStatus.RE,
     11: SubmissionStatus.RE,       # RE variants
     12: SubmissionStatus.AC,
-    14: SubmissionStatus.WA,       # Unaccepted (partial)
+    14: SubmissionStatus.PA,       # Unaccepted (partial)
     21: SubmissionStatus.UNKNOWN,  # Hack Success
     22: SubmissionStatus.UNKNOWN,  # Hack Failure
 }

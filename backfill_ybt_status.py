@@ -1,9 +1,7 @@
 """Backfill UNKNOWN submission statuses for YBT platform.
 
-All UNKNOWN YBT submissions were caused by missing Chinese status mappings
-('部分正确' and '答案正确') in _RESULT_STATUS_MAP.  AC submissions were
-already correctly mapped via the English "Accepted" text, so every remaining
-UNKNOWN is '部分正确' → WA.
+UNKNOWN YBT submissions are caused by unmapped result texts (e.g. 'Unaccepted',
+'部分正确').  These represent partial-accepted submissions → PA.
 
 Usage:
     python backfill_ybt_status.py            # fix all UNKNOWN YBT submissions
@@ -51,14 +49,14 @@ def main():
             action = '[DRY RUN] Would update' if args.dry_run else 'Updating'
             logger.info(
                 f'  {action} submission {sub.id} (record {sub.platform_record_id}): '
-                f'UNKNOWN -> WA (score={sub.score})'
+                f'UNKNOWN -> PA (score={sub.score})'
             )
             if not args.dry_run:
-                sub.status = 'WA'
+                sub.status = 'PA'
 
         if not args.dry_run:
             db.session.commit()
-            logger.info(f'Done. Updated {len(unknown_subs)} submissions to WA.')
+            logger.info(f'Done. Updated {len(unknown_subs)} submissions to PA.')
         else:
             logger.info(f'Dry run complete. Would update {len(unknown_subs)} submissions.')
 

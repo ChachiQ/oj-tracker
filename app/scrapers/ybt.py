@@ -40,11 +40,12 @@ _RESULT_STATUS_MAP = {
     'Waiting': SubmissionStatus.PENDING,
     'Compiling': SubmissionStatus.JUDGING,
     'Running': SubmissionStatus.JUDGING,
+    'Unaccepted': SubmissionStatus.PA,
     # Chinese status texts from YBT
     '完全正确': SubmissionStatus.AC,
     '答案正确': SubmissionStatus.AC,
-    '不完全正确': SubmissionStatus.WA,
-    '部分正确': SubmissionStatus.WA,
+    '不完全正确': SubmissionStatus.PA,
+    '部分正确': SubmissionStatus.PA,
     '未通过': SubmissionStatus.WA,
     '编译错误': SubmissionStatus.CE,
     '运行超时': SubmissionStatus.TLE,
@@ -333,9 +334,9 @@ class YBTScraper(BaseScraper):
         if status == SubmissionStatus.AC.value and score is None:
             score = 10
 
-        # If still UNKNOWN but has a positive score, it was judged → treat as WA
+        # If still UNKNOWN but has a positive score, it was judged → treat as PA
         if status == SubmissionStatus.UNKNOWN.value and score is not None and score > 0:
-            status = SubmissionStatus.WA.value
+            status = SubmissionStatus.PA.value
 
         return status, score
 
