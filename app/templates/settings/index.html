@@ -443,7 +443,7 @@
 <div class="modal fade" id="addAccountModal" tabindex="-1" aria-labelledby="addAccountModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="{{ url_for('settings.add_account') }}">
+            <form method="POST" action="{{ url_for('settings.add_account') }}" id="add-account-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-header">
                     <h5 class="modal-title" id="addAccountModalLabel">
@@ -492,7 +492,21 @@
                         <label for="add-cookie" class="form-label">Cookie（可选）</label>
                         <textarea class="form-control" id="add-cookie" name="auth_cookie" rows="3"
                                   placeholder="部分平台需要 Cookie 才能获取完整数据"></textarea>
-                        <div class="form-text">仅在需要时填写，Cookie 将加密存储。</div>
+                        <div class="form-text" id="add-cookie-help">仅在需要时填写，Cookie 将加密存储。</div>
+                    </div>
+                    {# Luogu separate cookie fields #}
+                    <div id="luogu-cookie-fields" style="display:none">
+                        <div class="mb-2">
+                            <label class="form-label">__client_id <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="add-luogu-client"
+                                   placeholder="点击 __client_id 的 Value 列复制，粘贴到这里">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label">_uid <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="add-luogu-uid"
+                                   placeholder="点击 _uid 的 Value 列复制，粘贴到这里">
+                        </div>
+                        <div class="form-text">浏览器登录洛谷 → F12 → Application → Cookies → 逐个复制上面两个值</div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -517,14 +531,8 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="update-cookie-account-id">
-                <div class="mb-3">
-                    <label for="update-cookie-value" class="form-label">新的 Cookie <span class="text-danger">*</span></label>
-                    <textarea class="form-control" id="update-cookie-value" rows="3"
-                              placeholder="粘贴新的 Cookie" required></textarea>
-                    <div class="form-text" id="update-cookie-help">
-                        获取方式：浏览器登录 → F12 开发者工具 → Application → Cookies → 复制所需 Cookie 值
-                    </div>
-                </div>
+                <input type="hidden" id="update-cookie-platform">
+                <div id="update-cookie-fields"></div>
                 <div id="update-cookie-error" class="alert alert-danger py-2 d-none" role="alert"></div>
             </div>
             <div class="modal-footer">
@@ -565,20 +573,30 @@
             var authMethod = selected.getAttribute('data-auth-method') || 'password';
             var loginWarning = document.getElementById('login-warning');
 
+            var luoguFields = document.getElementById('luogu-cookie-fields');
+            luoguFields.style.display = 'none';
+
             if (requiresLogin && authMethod === 'cookie') {
-                // Cookie-based auth
                 var platformName = this.value;
-                var addHint = _cookieHints[platformName] || {};
                 passwordField.style.display = 'none';
-                cookieField.style.display = '';
                 passwordInput.removeAttribute('required');
-                document.getElementById('add-cookie').setAttribute('required', 'required');
-                document.getElementById('add-cookie').placeholder = addHint.placeholder || '粘贴 Cookie';
-                document.querySelector('#cookie-field .form-label').innerHTML =
-                    'Cookie <span class="text-danger">*</span>';
-                document.querySelector('#cookie-field .form-text').innerHTML =
-                    (addHint.help || '获取方式：浏览器登录 → F12 → Application → Cookies → 复制所需 Cookie 值') +
-                    '<br><span class="text-muted">Cookie 会过期，需定期更新。</span>';
+
+                if (platformName === 'luogu') {
+                    // Luogu: two separate input fields
+                    cookieField.style.display = 'none';
+                    luoguFields.style.display = '';
+                    document.getElementById('add-cookie').removeAttribute('required');
+                } else {
+                    // Other cookie platforms (e.g. Coderlands): single textarea
+                    cookieField.style.display = '';
+                    document.getElementById('add-cookie').setAttribute('required', 'required');
+                    document.getElementById('add-cookie').placeholder = '粘贴 JSESSIONID 值（直接粘贴值即可）';
+                    document.querySelector('#cookie-field .form-label').innerHTML =
+                        'Cookie <span class="text-danger">*</span>';
+                    document.getElementById('add-cookie-help').innerHTML =
+                        '浏览器登录 → F12 → Application → Cookies → 复制 JSESSIONID 值<br>' +
+                        '<span class="text-muted">Cookie 会过期，需定期更新。</span>';
+                }
             } else if (requiresLogin) {
                 // Password-based auth
                 passwordField.style.display = '';
@@ -594,8 +612,23 @@
                 passwordInput.removeAttribute('required');
                 document.getElementById('add-cookie').removeAttribute('required');
                 document.querySelector('#cookie-field .form-label').innerHTML = 'Cookie（可选）';
-                document.querySelector('#cookie-field .form-text').textContent =
+                document.getElementById('add-cookie-help').textContent =
                     '仅在需要时填写，Cookie 将加密存储。';
+            }
+        });
+    }
+
+    // ── Assemble Luogu cookie before form submit ──
+    var addForm = document.getElementById('add-account-form');
+    if (addForm) {
+        addForm.addEventListener('submit', function() {
+            var platform = platformSelect ? platformSelect.value : '';
+            if (platform === 'luogu') {
+                var c = (document.getElementById('add-luogu-client').value || '').trim();
+                var u = (document.getElementById('add-luogu-uid').value || '').trim();
+                if (c && u) {
+                    document.getElementById('add-cookie').value = '__client_id=' + c + '; _uid=' + u;
+                }
             }
         });
     }
@@ -915,43 +948,74 @@
     var updateCookieModal = document.getElementById('updateCookieModal');
     var bsUpdateCookieModal = updateCookieModal ? new bootstrap.Modal(updateCookieModal) : null;
 
-    var _cookieHints = {
+    // ── Platform-specific cookie field renderers ──
+    var _cookieLayouts = {
         'luogu': {
-            placeholder: '格式：__client_id=xxx; _uid=xxx',
-            help: '获取方式：浏览器登录洛谷 → F12 → Application → Cookies → 复制 __client_id 和 _uid 的值<br>' +
-                  '<span class="text-muted">格式：__client_id=xxx; _uid=xxx</span>'
-        },
-        'coderlands': {
-            placeholder: '粘贴 JSESSIONID Cookie',
-            help: '获取方式：浏览器登录代码部落 → F12 → Application → Cookies → 复制 JSESSIONID 值<br>' +
-                  '<span class="text-muted">格式：JSESSIONID=复制的值（直接粘贴值也可以）</span>'
+            render: function() {
+                return '<div class="mb-3">' +
+                    '<label class="form-label">__client_id <span class="text-danger">*</span></label>' +
+                    '<input type="text" class="form-control" id="update-cookie-luogu-client" placeholder="点击 __client_id 的 Value 列复制，粘贴到这里" required>' +
+                    '</div>' +
+                    '<div class="mb-3">' +
+                    '<label class="form-label">_uid <span class="text-danger">*</span></label>' +
+                    '<input type="text" class="form-control" id="update-cookie-luogu-uid" placeholder="点击 _uid 的 Value 列复制，粘贴到这里" required>' +
+                    '</div>' +
+                    '<div class="form-text">浏览器登录洛谷 → F12 → Application → Cookies → 逐个复制上面两个值</div>';
+            },
+            collect: function() {
+                var c = (document.getElementById('update-cookie-luogu-client').value || '').trim();
+                var u = (document.getElementById('update-cookie-luogu-uid').value || '').trim();
+                if (!c || !u) return null;
+                return '__client_id=' + c + '; _uid=' + u;
+            },
+            emptyMsg: '请填写 __client_id 和 _uid'
         }
+    };
+
+    var _defaultLayout = {
+        render: function(platform) {
+            var hints = {
+                'coderlands': { ph: '粘贴 JSESSIONID 值（直接粘贴值即可）', help: '浏览器登录代码部落 → F12 → Application → Cookies → 复制 JSESSIONID 值' }
+            };
+            var h = hints[platform] || { ph: '粘贴 Cookie', help: '浏览器登录 → F12 → Application → Cookies → 复制所需 Cookie 值' };
+            return '<div class="mb-3">' +
+                '<label class="form-label">新的 Cookie <span class="text-danger">*</span></label>' +
+                '<textarea class="form-control" id="update-cookie-value" rows="3" placeholder="' + h.ph + '" required></textarea>' +
+                '<div class="form-text">' + h.help + '</div>' +
+                '</div>';
+        },
+        collect: function() {
+            var v = (document.getElementById('update-cookie-value').value || '').trim();
+            return v || null;
+        },
+        emptyMsg: '请输入 Cookie'
     };
 
     window.showUpdateCookieModal = function(accountId, platform) {
         document.getElementById('update-cookie-account-id').value = accountId;
-        document.getElementById('update-cookie-value').value = '';
+        document.getElementById('update-cookie-platform').value = platform || '';
         document.getElementById('update-cookie-error').classList.add('d-none');
-        var hint = _cookieHints[platform] || {
-            placeholder: '粘贴新的 Cookie',
-            help: '获取方式：浏览器登录 → F12 → Application → Cookies → 复制所需 Cookie 值'
-        };
-        document.getElementById('update-cookie-value').placeholder = hint.placeholder;
-        document.getElementById('update-cookie-help').innerHTML = hint.help;
+        var layout = _cookieLayouts[platform] || _defaultLayout;
+        document.getElementById('update-cookie-fields').innerHTML =
+            typeof layout.render === 'function'
+                ? (layout.render.length ? layout.render(platform) : layout.render())
+                : _defaultLayout.render(platform);
         bsUpdateCookieModal.show();
     };
 
     if (document.getElementById('update-cookie-submit')) {
         document.getElementById('update-cookie-submit').addEventListener('click', function() {
             var accountId = document.getElementById('update-cookie-account-id').value;
-            var cookieValue = document.getElementById('update-cookie-value').value.trim();
+            var platform = document.getElementById('update-cookie-platform').value;
+            var layout = _cookieLayouts[platform] || _defaultLayout;
+            var cookieValue = layout.collect();
             var errorEl = document.getElementById('update-cookie-error');
             var spinner = document.getElementById('update-cookie-spinner');
             var icon = document.getElementById('update-cookie-icon');
             var btn = this;
 
             if (!cookieValue) {
-                errorEl.textContent = '请输入 Cookie';
+                errorEl.textContent = layout.emptyMsg || '请输入 Cookie';
                 errorEl.classList.remove('d-none');
                 return;
             }
