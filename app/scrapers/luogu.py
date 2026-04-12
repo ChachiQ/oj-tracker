@@ -13,6 +13,12 @@ from . import register_scraper
 
 logger = logging.getLogger(__name__)
 
+
+class LuoguSessionExpired(Exception):
+    """Raised when Luogu cookies are missing or expired."""
+    pass
+
+
 # Luogu status code mapping
 _STATUS_MAP = {
     0: SubmissionStatus.PENDING,
@@ -82,6 +88,11 @@ class LuoguScraper(BaseScraper):
     }
 
     def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0):
+        # Normalize cookie: strip "Cookie:" prefix if user pasted from DevTools
+        if auth_cookie:
+            auth_cookie = auth_cookie.strip()
+            if auth_cookie.lower().startswith('cookie:'):
+                auth_cookie = auth_cookie[7:].strip()
         super().__init__(auth_cookie=auth_cookie, auth_password=auth_password, rate_limit=rate_limit)
         self._tag_cache: dict[int, str] | None = None
         # Add the content-only header for JSON responses
@@ -89,6 +100,13 @@ class LuoguScraper(BaseScraper):
             'x-lentille-request': 'content-only',
             'Referer': 'https://www.luogu.com.cn/',
         })
+
+    def _check_auth_response(self, response_json: dict):
+        """Raise LuoguSessionExpired if the response is a login redirect."""
+        if response_json.get('instance') == 'auth':
+            raise LuoguSessionExpired(
+                "Cookie 已过期或未设置，请更新洛谷 Cookie"
+            )
 
     def _extract_data(self, response_json: dict) -> dict:
         """Extract the main data payload from Luogu API response.
@@ -123,16 +141,27 @@ class LuoguScraper(BaseScraper):
         return self._tag_cache
 
     def validate_account(self, platform_uid: str) -> bool:
-        """Validate that a Luogu user account exists."""
+        """Validate that a Luogu user account exists and cookies are valid."""
         try:
+            # User profile is public — verify UID exists
             url = f"{self.BASE_URL}/user/{platform_uid}"
             resp = self._rate_limited_get(url)
             data = resp.json()
             current_data = self._extract_data(data)
             user = current_data.get('user', None)
-            if user and user.get('uid'):
-                return True
-            return False
+            if not user or not user.get('uid'):
+                return False
+
+            # If cookies are provided, verify they work for authenticated endpoints
+            if self.auth_cookie:
+                rec_url = f"{self.BASE_URL}/record/list?user={platform_uid}&page=1"
+                rec_resp = self._rate_limited_get(rec_url)
+                rec_data = rec_resp.json()
+                if rec_data.get('instance') == 'auth':
+                    self.logger.warning("Luogu cookie validation failed — session expired")
+                    return False
+
+            return True
         except Exception as e:
             self.logger.error(f"Failed to validate Luogu account {platform_uid}: {e}")
             return False
@@ -157,15 +186,10 @@ class LuoguScraper(BaseScraper):
                     break
 
                 data = resp.json()
+                self._check_auth_response(data)
 
                 current_data = self._extract_data(data)
                 records_data = current_data.get('records', {})
-                if not records_data:
-                    self.logger.warning(
-                        f"Luogu /record/list for user {platform_uid} page {page} "
-                        f"lacks 'records' — auth may be required"
-                    )
-                    break
                 records = records_data.get('result', [])
 
                 if not records:
@@ -228,6 +252,8 @@ class LuoguScraper(BaseScraper):
                     break
                 page += 1
 
+            except LuoguSessionExpired:
+                raise
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code == 429:
                     self.logger.warning(f"Luogu rate limited (429), waiting 30s before retry")
@@ -326,6 +352,7 @@ class LuoguScraper(BaseScraper):
             url = f"{self.BASE_URL}/record/{record_id}"
             resp = self._rate_limited_get(url)
             data = resp.json()
+            self._check_auth_response(data)
 
             current_data = self._extract_data(data)
             record = current_data.get('record', {})
@@ -333,6 +360,8 @@ class LuoguScraper(BaseScraper):
 
             return source_code
 
+        except LuoguSessionExpired:
+            raise
         except Exception as e:
             self.logger.error(f"Error fetching Luogu submission code for record {record_id}: {e}")
             return None
@@ -360,6 +389,12 @@ class LuoguScraper(BaseScraper):
         return f"https://www.luogu.com.cn/problem/{problem_id}"
 
     def get_auth_instructions(self) -> str:
-        return ("洛谷现在需要登录才能查看提交记录。"
-                "请在浏览器登录洛谷后，F12 → Application → Cookies → "
-                "复制 __client_id 和 _uid 的值，格式：__client_id=xxx; _uid=xxx")
+        return (
+            "洛谷使用 Cookie 认证，请按以下步骤获取：\n"
+            "1. 在浏览器打开 www.luogu.com.cn 并登录\n"
+            "2. 按 F12 打开开发者工具\n"
+            "3. 切换到 Application（应用）标签 → Cookies → "
+            "www.luogu.com.cn\n"
+            "4. 找到 __client_id 和 _uid，分别复制其 Value 值\n"
+            "5. 在下方 Cookie 栏粘贴，格式：__client_id=xxx; _uid=xxx"
+        )

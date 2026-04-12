@@ -259,6 +259,7 @@ Cookie: __client_id=xxx; _uid=xxx   ← 提交列表必需
 3. **标签 ID vs 名称**：`problem.tags` 是 ID 数组而非名称，通过 `/_lfe/tags/zh-CN` 获取映射（旧接口 `currentData.tags` 已废弃）
 4. **API 响应结构变更 (2026-04)**：顶层数据键从 `currentData` 改为 `data`，`_extract_data()` 做了兼容处理
 5. **题目内容字段变更 (2026-04)**：`background`/`description`/`inputFormat`/`outputFormat`/`hint` 从顶层移入 `problem['content']` dict，且 `inputFormat`→`formatI`、`outputFormat`→`formatO`
+6. **Session 过期检测**：未登录时响应 `instance == "auth"` + `template == "login"`，`_check_auth_response()` 检测后抛 `LuoguSessionExpired`，错误消息含 "Cookie" 关键词以触发前端更新提示
 
 ---
 
