@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 import time
 from datetime import datetime
 from typing import Generator
+from urllib.parse import unquote
 
 import requests
 
@@ -87,6 +90,8 @@ class LuoguScraper(BaseScraper):
         29: 'PyPy 3',
     }
 
+    _EMBEDDED_JSON_RE = re.compile(r'decodeURIComponent\("([^"]+)"\)')
+
     def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0):
         # Normalize cookie: strip "Cookie:" prefix if user pasted from DevTools
         if auth_cookie:
@@ -95,11 +100,30 @@ class LuoguScraper(BaseScraper):
                 auth_cookie = auth_cookie[7:].strip()
         super().__init__(auth_cookie=auth_cookie, auth_password=auth_password, rate_limit=rate_limit)
         self._tag_cache: dict[int, str] | None = None
-        # Add the content-only header for JSON responses
+        # Luogu needs cookies in the jar (not header) for authenticated sessions.
+        # Move auth_cookie from header to jar.
+        if self.auth_cookie:
+            self.session.headers.pop('Cookie', None)
+            for part in self.auth_cookie.split(';'):
+                part = part.strip()
+                if '=' in part:
+                    k, v = part.split('=', 1)
+                    self.session.cookies.set(k.strip(), v.strip(), domain='.luogu.com.cn')
         self.session.headers.update({
             'x-lentille-request': 'content-only',
             'Referer': 'https://www.luogu.com.cn/',
         })
+
+    def _parse_response(self, resp: requests.Response) -> dict:
+        """Parse Luogu response — JSON directly or embedded JSON in HTML."""
+        ct = resp.headers.get('Content-Type', '')
+        if 'application/json' in ct:
+            return resp.json()
+        # Authenticated responses return HTML with embedded JSON
+        m = self._EMBEDDED_JSON_RE.search(resp.text)
+        if m:
+            return json.loads(unquote(m.group(1)))
+        raise ValueError(f"Cannot parse Luogu response (Content-Type: {ct})")
 
     def _check_auth_response(self, response_json: dict):
         """Raise LuoguSessionExpired if the response is a login redirect."""
@@ -156,7 +180,7 @@ class LuoguScraper(BaseScraper):
             if self.auth_cookie:
                 rec_url = f"{self.BASE_URL}/record/list?user={platform_uid}&page=1"
                 rec_resp = self._rate_limited_get(rec_url)
-                rec_data = rec_resp.json()
+                rec_data = self._parse_response(rec_resp)
                 if rec_data.get('instance') == 'auth':
                     self.logger.warning("Luogu cookie validation failed — session expired")
                     return False
@@ -179,13 +203,7 @@ class LuoguScraper(BaseScraper):
             try:
                 url = f"{self.BASE_URL}/record/list?user={platform_uid}&page={page}"
                 resp = self._rate_limited_get(url)
-
-                content_type = resp.headers.get('Content-Type', '')
-                if 'application/json' not in content_type and 'text/json' not in content_type:
-                    self.logger.error(f"Unexpected Content-Type: {content_type} for page {page}")
-                    break
-
-                data = resp.json()
+                data = self._parse_response(resp)
                 self._check_auth_response(data)
 
                 current_data = self._extract_data(data)
@@ -351,7 +369,7 @@ class LuoguScraper(BaseScraper):
         try:
             url = f"{self.BASE_URL}/record/{record_id}"
             resp = self._rate_limited_get(url)
-            data = resp.json()
+            data = self._parse_response(resp)
             self._check_auth_response(data)
 
             current_data = self._extract_data(data)
