@@ -200,10 +200,11 @@ class TestSyncSessionConflict:
         assert cls is not None
         assert cls.REQUIRES_LOGIN is True
 
-    def test_requires_login_luogu_false(self):
+    def test_requires_login_luogu_true(self):
         cls = get_scraper_class('luogu')
         assert cls is not None
-        assert cls.REQUIRES_LOGIN is False
+        assert cls.REQUIRES_LOGIN is True
+        assert cls.AUTH_METHOD == 'cookie'
 
     @patch('app.services.sync_service.get_scraper_instance')
     def test_sync_success_clears_last_sync_error(self, mock_get, app, db, sample_data):
@@ -263,13 +264,13 @@ class TestSyncSessionConflict:
 
 class TestSchedulerSkipLogin:
     @patch('app.services.sync_service.SyncService.sync_account')
-    def test_scheduler_skips_requires_login(self, mock_sync, app, db, sample_data):
+    def test_scheduler_skips_login_without_credentials(self, mock_sync, app, db, sample_data):
         with app.app_context():
             sid = sample_data['student_id']
-            # Create a bbcoj account (REQUIRES_LOGIN=True)
+            # Create a bbcoj account without password (should be skipped)
             bbcoj_acct = PlatformAccount(
                 student_id=sid, platform='bbcoj',
-                platform_uid='bbctest', auth_password='pw', is_active=True,
+                platform_uid='bbctest', is_active=True,
             )
             db.session.add(bbcoj_acct)
             db.session.commit()
@@ -277,28 +278,45 @@ class TestSchedulerSkipLogin:
             # Simulate what the scheduler does
             from app.scrapers import get_scraper_class as gsc
             accounts = PlatformAccount.query.filter_by(is_active=True).all()
+            skipped = []
             synced = []
             for account in accounts:
                 cls = gsc(account.platform)
                 if cls and getattr(cls, 'REQUIRES_LOGIN', False):
-                    continue
+                    auth_method = getattr(cls, 'AUTH_METHOD', 'password')
+                    has_auth = (account.auth_cookie if auth_method == 'cookie'
+                                else account.auth_password)
+                    if not has_auth:
+                        skipped.append(account.platform)
+                        continue
                 synced.append(account.platform)
 
-            # bbcoj should NOT be in the synced list; luogu should be
-            assert 'bbcoj' not in synced
-            assert 'luogu' in synced
+            # bbcoj without password should be skipped
+            assert 'bbcoj' in skipped
+            # luogu without cookie should also be skipped
+            assert 'luogu' in skipped
 
     @patch('app.services.sync_service.SyncService.sync_account')
-    def test_scheduler_syncs_non_login_platforms(self, mock_sync, app, db, sample_data):
+    def test_scheduler_syncs_login_with_credentials(self, mock_sync, app, db, sample_data):
         with app.app_context():
+            # Give the luogu account a cookie so it gets synced
+            acct = db.session.get(PlatformAccount, sample_data['account_id'])
+            acct.auth_cookie = '__client_id=abc; _uid=123'
+            db.session.commit()
+
             from app.scrapers import get_scraper_class as gsc
             accounts = PlatformAccount.query.filter_by(is_active=True).all()
-            non_login = []
+            synced = []
             for account in accounts:
                 cls = gsc(account.platform)
-                if cls and not getattr(cls, 'REQUIRES_LOGIN', False):
-                    non_login.append(account.platform)
-            assert len(non_login) > 0
+                if cls and getattr(cls, 'REQUIRES_LOGIN', False):
+                    auth_method = getattr(cls, 'AUTH_METHOD', 'password')
+                    has_auth = (account.auth_cookie if auth_method == 'cookie'
+                                else account.auth_password)
+                    if not has_auth:
+                        continue
+                synced.append(account.platform)
+            assert 'luogu' in synced
 
     def test_scheduler_ybt_also_skipped(self, app, db, sample_data):
         with app.app_context():

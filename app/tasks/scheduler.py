@@ -25,9 +25,13 @@ def init_scheduler(app):
             synced = 0
             for account in accounts:
                 cls = get_scraper_class(account.platform)
-                if cls and getattr(cls, 'REQUIRES_LOGIN', False) and not account.auth_password:
-                    skipped += 1
-                    continue
+                if cls and getattr(cls, 'REQUIRES_LOGIN', False):
+                    auth_method = getattr(cls, 'AUTH_METHOD', 'password')
+                    has_auth = (account.auth_cookie if auth_method == 'cookie'
+                                else account.auth_password)
+                    if not has_auth:
+                        skipped += 1
+                        continue
                 service.sync_account(account.id)
                 synced += 1
             logger.info(

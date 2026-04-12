@@ -215,8 +215,8 @@ Coderlands 爬虫通过设置 `self._new_cursor` 属性传递自定义 cursor，
 |------|-----|
 | PLATFORM_NAME | `luogu` |
 | BASE_URL | `https://www.luogu.com.cn` |
-| REQUIRES_LOGIN | `False` |
-| AUTH_METHOD | `password`（默认，实际不需要登录） |
+| REQUIRES_LOGIN | `True`（2026-04 起提交列表需登录） |
+| AUTH_METHOD | `cookie`（`__client_id` + `_uid`） |
 | SUPPORT_CODE_FETCH | `True` |
 | 系统类型 | 自研平台，JSON API |
 
@@ -232,10 +232,15 @@ Coderlands 爬虫通过设置 `self._new_cursor` 属性传递自定义 cursor，
 
 #### 认证流程
 
-无需登录。但需要特殊请求头：
+2026-04 起提交列表（`/record/list`）需要登录，题目详情仍可匿名访问。
+认证方式为 Cookie：`__client_id=xxx; _uid=xxx`（从浏览器登录后复制）。
+洛谷使用 WebAuthn 登录，不支持程序化密码登录。
+
+请求头（所有请求都需要）：
 ```
 x-lentille-request: content-only    ← 关键：告诉服务端只返回 JSON 数据
 Referer: https://www.luogu.com.cn/
+Cookie: __client_id=xxx; _uid=xxx   ← 提交列表必需
 ```
 
 #### 数据解析要点

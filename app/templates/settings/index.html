@@ -575,8 +575,8 @@
                 document.querySelector('#cookie-field .form-label').innerHTML =
                     'Cookie <span class="text-danger">*</span>';
                 document.querySelector('#cookie-field .form-text').innerHTML =
-                    '获取方式：浏览器登录 → F12 开发者工具 → Application → Cookies → 复制 JSESSIONID 值<br>' +
-                    '<span class="text-muted">格式：JSESSIONID=复制的值。Cookie 会过期，需定期更新。</span>';
+                    '获取方式：浏览器登录 → F12 开发者工具 → Application → Cookies → 复制所需 Cookie 值<br>' +
+                    '<span class="text-muted">具体格式见上方平台说明。Cookie 会过期，需定期更新。</span>';
             } else if (requiresLogin) {
                 // Password-based auth
                 passwordField.style.display = '';

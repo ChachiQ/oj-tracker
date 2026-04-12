@@ -64,7 +64,7 @@ class TestScraperRegistry:
         scrapers = get_all_scrapers()
         assert scrapers['bbcoj'].REQUIRES_LOGIN is True
         assert scrapers['ybt'].REQUIRES_LOGIN is True
-        assert scrapers['luogu'].REQUIRES_LOGIN is False
+        assert scrapers['luogu'].REQUIRES_LOGIN is True
         assert scrapers['ctoj'].REQUIRES_LOGIN is True
 
 

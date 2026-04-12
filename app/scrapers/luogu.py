@@ -52,6 +52,8 @@ class LuoguScraper(BaseScraper):
     PLATFORM_DISPLAY = "洛谷"
     BASE_URL = "https://www.luogu.com.cn"
     SUPPORT_CODE_FETCH = True
+    REQUIRES_LOGIN = True
+    AUTH_METHOD = 'cookie'
 
     # Language ID to name mapping (common ones)
     _LANG_MAP = {
@@ -358,4 +360,6 @@ class LuoguScraper(BaseScraper):
         return f"https://www.luogu.com.cn/problem/{problem_id}"
 
     def get_auth_instructions(self) -> str:
-        return "请在浏览器登录洛谷后，F12 → Application → Cookies → 复制 __client_id 和 _uid 的值"
+        return ("洛谷现在需要登录才能查看提交记录。"
+                "请在浏览器登录洛谷后，F12 → Application → Cookies → "
+                "复制 __client_id 和 _uid 的值，格式：__client_id=xxx; _uid=xxx")
