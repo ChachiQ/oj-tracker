@@ -224,10 +224,11 @@ Coderlands 爬虫通过设置 `self._new_cursor` 属性传递自定义 cursor，
 
 | 接口 | 方法 | URL | 说明 |
 |------|------|-----|------|
-| 用户验证 | GET | `/user/{uid}` | 检查 `currentData.user.uid` 存在 |
+| 用户验证 | GET | `/user/{uid}` | 检查 `data.user.uid` 存在 |
 | 提交列表 | GET | `/record/list?user={uid}&page={n}` | 分页，JSON 响应 |
 | 题目详情 | GET | `/problem/{pid}` | JSON 响应，含标签 ID 列表 |
-| 提交代码 | GET | `/record/{record_id}` | `currentData.record.sourceCode` |
+| 提交代码 | GET | `/record/{record_id}` | `data.record.sourceCode` |
+| 标签列表 | GET | `/_lfe/tags/zh-CN` | 返回 `{tags: [{id, name, type, parent}]}` |
 
 #### 认证流程
 
@@ -242,7 +243,7 @@ Referer: https://www.luogu.com.cn/
 - **分页**：`page` 参数，每页 `perPage`（默认20）条。`MAX_PAGES=100` 硬上限
 - **状态码**：数字枚举（0=Pending, 12=AC, 6=WA 等），见 `_STATUS_MAP`
 - **难度**：数字 0-7 → 中文标签（`_DIFFICULTY_LABELS`），如 `3='普及/提高-'`
-- **标签**：`problem.tags` 返回的是 **标签 ID 列表**（整数），需要用 `currentData.tags` 数组交叉引用获取标签名称
+- **标签**：`problem.tags` 返回的是 **标签 ID 列表**（整数），需通过 `/_lfe/tags/zh-CN` 端点获取标签名称（实例级缓存）
 - **语言**：数字 ID → 名称（`_LANG_MAP`），如 `12='C++17'`
 - **时间戳**：Unix epoch 秒
 
@@ -250,7 +251,9 @@ Referer: https://www.luogu.com.cn/
 
 1. **429 限流**：洛谷会返回 429 状态码，特殊处理为 `time.sleep(30)` 后重试同一页（不是指数退避）
 2. **Content-Type 检查**：偶尔返回非 JSON 响应（HTML 错误页），需检查 `Content-Type` 含 `application/json` 或 `text/json`
-3. **标签 ID vs 名称**：`problem.tags` 是 ID 数组而非名称，必须从 `currentData.tags` 解析 `{id → name}` 映射表
+3. **标签 ID vs 名称**：`problem.tags` 是 ID 数组而非名称，通过 `/_lfe/tags/zh-CN` 获取映射（旧接口 `currentData.tags` 已废弃）
+4. **API 响应结构变更 (2026-04)**：顶层数据键从 `currentData` 改为 `data`，`_extract_data()` 做了兼容处理
+5. **题目内容字段变更 (2026-04)**：`background`/`description`/`inputFormat`/`outputFormat`/`hint` 从顶层移入 `problem['content']` dict，且 `inputFormat`→`formatI`、`outputFormat`→`formatO`
 
 ---
 

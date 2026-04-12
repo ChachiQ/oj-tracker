@@ -81,11 +81,44 @@ class LuoguScraper(BaseScraper):
 
     def __init__(self, auth_cookie: str = None, auth_password: str = None, rate_limit: float = 2.0):
         super().__init__(auth_cookie=auth_cookie, auth_password=auth_password, rate_limit=rate_limit)
+        self._tag_cache: dict[int, str] | None = None
         # Add the content-only header for JSON responses
         self.session.headers.update({
             'x-lentille-request': 'content-only',
             'Referer': 'https://www.luogu.com.cn/',
         })
+
+    def _extract_data(self, response_json: dict) -> dict:
+        """Extract the main data payload from Luogu API response.
+
+        Handles both the new ('data') and legacy ('currentData') response structures.
+        """
+        if 'data' in response_json:
+            return response_json['data']
+        if 'currentData' in response_json:
+            return response_json['currentData']
+        return {}
+
+    def _get_tag_map(self) -> dict[int, str]:
+        """Fetch and cache the Luogu tag ID-to-name mapping from /_lfe/tags/zh-CN."""
+        if self._tag_cache is not None:
+            return self._tag_cache
+
+        try:
+            url = f"{self.BASE_URL}/_lfe/tags/zh-CN"
+            resp = self._rate_limited_get(url)
+            tags_list = resp.json().get('tags', [])
+            self._tag_cache = {
+                t['id']: t['name']
+                for t in tags_list
+                if isinstance(t, dict) and 'id' in t and 'name' in t
+            }
+            self.logger.info(f"Loaded {len(self._tag_cache)} Luogu tags")
+        except Exception as e:
+            self.logger.error(f"Failed to fetch Luogu tag mapping: {e}")
+            self._tag_cache = {}
+
+        return self._tag_cache
 
     def validate_account(self, platform_uid: str) -> bool:
         """Validate that a Luogu user account exists."""
@@ -93,8 +126,7 @@ class LuoguScraper(BaseScraper):
             url = f"{self.BASE_URL}/user/{platform_uid}"
             resp = self._rate_limited_get(url)
             data = resp.json()
-            # Check that currentData.user exists
-            current_data = data.get('currentData', {})
+            current_data = self._extract_data(data)
             user = current_data.get('user', None)
             if user and user.get('uid'):
                 return True
@@ -124,8 +156,14 @@ class LuoguScraper(BaseScraper):
 
                 data = resp.json()
 
-                current_data = data.get('currentData', {})
+                current_data = self._extract_data(data)
                 records_data = current_data.get('records', {})
+                if not records_data:
+                    self.logger.warning(
+                        f"Luogu /record/list for user {platform_uid} page {page} "
+                        f"lacks 'records' — auth may be required"
+                    )
+                    break
                 records = records_data.get('result', [])
 
                 if not records:
@@ -206,7 +244,7 @@ class LuoguScraper(BaseScraper):
             resp = self._rate_limited_get(url)
             data = resp.json()
 
-            current_data = data.get('currentData', {})
+            current_data = self._extract_data(data)
             problem = current_data.get('problem', {})
 
             if not problem:
@@ -217,45 +255,42 @@ class LuoguScraper(BaseScraper):
             difficulty_raw_code = problem.get('difficulty', 0)
             difficulty_label = _DIFFICULTY_LABELS.get(difficulty_raw_code, '暂无评定')
 
-            # Tags
-            tags = []
-            for tag_obj in problem.get('tags', []):
-                if isinstance(tag_obj, dict):
-                    tags.append(tag_obj.get('name', ''))
-                elif isinstance(tag_obj, (int, str)):
-                    tags.append(str(tag_obj))
-
-            # Tag names might need resolving from tag IDs; store raw IDs if names unavailable
+            # Tags: resolve integer IDs to names via /_lfe/tags endpoint
+            raw_tags = problem.get('tags', [])
             tag_names = []
-            tag_data = current_data.get('tags', [])
-            if tag_data:
-                tag_id_to_name = {}
-                for t in tag_data:
-                    if isinstance(t, dict):
-                        tag_id_to_name[t.get('id')] = t.get('name', '')
-                # Resolve tags
-                for tag_id in problem.get('tags', []):
-                    name = tag_id_to_name.get(tag_id)
-                    if name:
-                        tag_names.append(name)
-                    else:
-                        tag_names.append(str(tag_id))
+            if raw_tags and all(isinstance(t, int) for t in raw_tags):
+                tag_map = self._get_tag_map()
+                tag_names = [tag_map.get(t, str(t)) for t in raw_tags]
+            elif raw_tags and all(isinstance(t, dict) for t in raw_tags):
+                tag_names = [t.get('name', str(t.get('id', ''))) for t in raw_tags]
             else:
-                tag_names = tags
+                tag_names = [str(t) for t in raw_tags]
 
             # Source
             source = problem.get('provider', {}).get('name', '') if isinstance(problem.get('provider'), dict) else None
 
-            # Description content
-            description = problem.get('background', '') or ''
-            content = problem.get('description', '')
-            if content:
+            # Content fields: new API nests them in problem['content'] dict
+            # with renamed keys (inputFormat→formatI, outputFormat→formatO).
+            # Fall back to old top-level fields for backward compat.
+            content_dict = problem.get('content', {})
+            if isinstance(content_dict, dict) and content_dict.get('description'):
+                background = content_dict.get('background', '') or ''
+                desc_text = content_dict.get('description', '') or ''
+                input_desc = content_dict.get('formatI', None)
+                output_desc = content_dict.get('formatO', None)
+                hint = content_dict.get('hint', None)
+            else:
+                background = problem.get('background', '') or ''
+                desc_text = problem.get('description', '') or ''
+                input_desc = problem.get('inputFormat', None)
+                output_desc = problem.get('outputFormat', None)
+                hint = problem.get('hint', None)
+
+            description = background
+            if desc_text:
                 if description:
                     description += '\n\n'
-                description += content
-
-            input_desc = problem.get('inputFormat', None)
-            output_desc = problem.get('outputFormat', None)
+                description += desc_text
 
             # Examples
             samples = problem.get('samples', [])
@@ -264,8 +299,6 @@ class LuoguScraper(BaseScraper):
                 if isinstance(sample, (list, tuple)) and len(sample) >= 2:
                     examples_parts.append(f"输入样例 {i + 1}:\n{sample[0]}\n输出样例 {i + 1}:\n{sample[1]}")
             examples = '\n\n'.join(examples_parts) if examples_parts else None
-
-            hint = problem.get('hint', None)
 
             return ScrapedProblem(
                 problem_id=problem_id,
@@ -292,7 +325,7 @@ class LuoguScraper(BaseScraper):
             resp = self._rate_limited_get(url)
             data = resp.json()
 
-            current_data = data.get('currentData', {})
+            current_data = self._extract_data(data)
             record = current_data.get('record', {})
             source_code = record.get('sourceCode', None)
 
