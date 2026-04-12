@@ -166,29 +166,24 @@ class LuoguScraper(BaseScraper):
 
     def validate_account(self, platform_uid: str) -> bool:
         """Validate that a Luogu user account exists and cookies are valid."""
-        try:
-            # User profile is public — verify UID exists
-            url = f"{self.BASE_URL}/user/{platform_uid}"
-            resp = self._rate_limited_get(url)
-            data = resp.json()
-            current_data = self._extract_data(data)
-            user = current_data.get('user', None)
-            if not user or not user.get('uid'):
+        # If cookies are provided, validate via authenticated record list endpoint.
+        # This also implicitly proves the user exists.
+        if self.auth_cookie:
+            rec_url = f"{self.BASE_URL}/record/list?user={platform_uid}&page=1"
+            rec_resp = self._rate_limited_get(rec_url)
+            rec_data = self._parse_response(rec_resp)
+            if rec_data.get('instance') == 'auth':
+                self.logger.warning("Luogu cookie validation failed — session expired")
                 return False
-
-            # If cookies are provided, verify they work for authenticated endpoints
-            if self.auth_cookie:
-                rec_url = f"{self.BASE_URL}/record/list?user={platform_uid}&page=1"
-                rec_resp = self._rate_limited_get(rec_url)
-                rec_data = self._parse_response(rec_resp)
-                if rec_data.get('instance') == 'auth':
-                    self.logger.warning("Luogu cookie validation failed — session expired")
-                    return False
-
             return True
-        except Exception as e:
-            self.logger.error(f"Failed to validate Luogu account {platform_uid}: {e}")
-            return False
+
+        # No cookies — verify UID via public user profile
+        url = f"{self.BASE_URL}/user/{platform_uid}"
+        resp = self._rate_limited_get(url)
+        data = self._parse_response(resp)
+        current_data = self._extract_data(data)
+        user = current_data.get('user', None)
+        return bool(user and user.get('uid'))
 
     def fetch_submissions(
         self, platform_uid: str, since: datetime = None, cursor: str = None,

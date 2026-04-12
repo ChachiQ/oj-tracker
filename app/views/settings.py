@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from flask import (
@@ -24,6 +25,7 @@ from app.models import (
 from app.scrapers import get_all_scrapers, get_scraper_class, get_scraper_instance
 from app.analysis.llm.config import MODEL_CONFIG
 
+logger = logging.getLogger(__name__)
 settings_bp = Blueprint('settings', __name__, url_prefix='/settings')
 
 
@@ -164,12 +166,12 @@ def add_account():
         try:
             scraper = get_scraper_instance(platform, auth_cookie=auth_cookie)
             if not scraper.validate_account(platform_uid):
-                flash('Cookie 验证失败，请确认 JSESSIONID 是否正确且未过期', 'danger')
+                flash('Cookie 验证失败，请确认 Cookie 是否正确且未过期', 'danger')
                 return redirect(url_for('settings.index'))
             # Store normalized cookie (scraper __init__ normalizes it)
             auth_cookie = scraper.auth_cookie
         except Exception:
-            flash('Cookie 验证失败，请确认 JSESSIONID 是否正确且未过期', 'danger')
+            flash('Cookie 验证失败，请确认 Cookie 是否正确且未过期', 'danger')
             return redirect(url_for('settings.index'))
 
     account = PlatformAccount(
@@ -246,15 +248,18 @@ def update_cookie(account_id):
 
     try:
         scraper = get_scraper_instance(account.platform, auth_cookie=new_cookie)
-        if not scraper.validate_account(account.platform_uid):
+        valid = scraper.validate_account(account.platform_uid)
+        logger.info(f"Cookie validation for {account.platform}:{account.platform_uid} = {valid}")
+        if not valid:
             return jsonify({
                 'success': False,
-                'message': 'Cookie 验证失败，请确认 JSESSIONID 是否正确且未过期',
+                'message': f'Cookie 验证失败（platform_uid={account.platform_uid}），请确认 Cookie 是否正确且未过期',
             })
-    except Exception:
+    except Exception as e:
+        logger.error(f"Cookie validation error for account {account_id}: {e}", exc_info=True)
         return jsonify({
             'success': False,
-            'message': 'Cookie 验证失败，请确认 JSESSIONID 是否正确且未过期',
+            'message': f'Cookie 验证异常: {e}',
         })
 
     account.auth_cookie = scraper.auth_cookie  # normalized
