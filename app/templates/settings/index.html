@@ -135,7 +135,7 @@
                                 {# Update Cookie (cookie-auth platforms only) #}
                                 {% if account.platform in platforms and platforms[account.platform].AUTH_METHOD == 'cookie' %}
                                 <button class="btn btn-outline-info" title="更新 Cookie"
-                                        onclick="showUpdateCookieModal({{ account.id }}); return false;">
+                                        onclick="showUpdateCookieModal({{ account.id }}, '{{ account.platform }}'); return false;">
                                     <i class="bi bi-key"></i>
                                 </button>
                                 {% endif %}
@@ -520,10 +520,9 @@
                 <div class="mb-3">
                     <label for="update-cookie-value" class="form-label">新的 Cookie <span class="text-danger">*</span></label>
                     <textarea class="form-control" id="update-cookie-value" rows="3"
-                              placeholder="粘贴新的 JSESSIONID Cookie" required></textarea>
-                    <div class="form-text">
-                        获取方式：浏览器登录 → F12 开发者工具 → Application → Cookies → 复制 JSESSIONID 值<br>
-                        <span class="text-muted">格式：JSESSIONID=复制的值</span>
+                              placeholder="粘贴新的 Cookie" required></textarea>
+                    <div class="form-text" id="update-cookie-help">
+                        获取方式：浏览器登录 → F12 开发者工具 → Application → Cookies → 复制所需 Cookie 值
                     </div>
                 </div>
                 <div id="update-cookie-error" class="alert alert-danger py-2 d-none" role="alert"></div>
@@ -567,16 +566,19 @@
             var loginWarning = document.getElementById('login-warning');
 
             if (requiresLogin && authMethod === 'cookie') {
-                // Cookie-based auth (e.g. Coderlands)
+                // Cookie-based auth
+                var platformName = this.value;
+                var addHint = _cookieHints[platformName] || {};
                 passwordField.style.display = 'none';
                 cookieField.style.display = '';
                 passwordInput.removeAttribute('required');
                 document.getElementById('add-cookie').setAttribute('required', 'required');
+                document.getElementById('add-cookie').placeholder = addHint.placeholder || '粘贴 Cookie';
                 document.querySelector('#cookie-field .form-label').innerHTML =
                     'Cookie <span class="text-danger">*</span>';
                 document.querySelector('#cookie-field .form-text').innerHTML =
-                    '获取方式：浏览器登录 → F12 开发者工具 → Application → Cookies → 复制所需 Cookie 值<br>' +
-                    '<span class="text-muted">具体格式见上方平台说明。Cookie 会过期，需定期更新。</span>';
+                    (addHint.help || '获取方式：浏览器登录 → F12 → Application → Cookies → 复制所需 Cookie 值') +
+                    '<br><span class="text-muted">Cookie 会过期，需定期更新。</span>';
             } else if (requiresLogin) {
                 // Password-based auth
                 passwordField.style.display = '';
@@ -913,10 +915,29 @@
     var updateCookieModal = document.getElementById('updateCookieModal');
     var bsUpdateCookieModal = updateCookieModal ? new bootstrap.Modal(updateCookieModal) : null;
 
-    window.showUpdateCookieModal = function(accountId) {
+    var _cookieHints = {
+        'luogu': {
+            placeholder: '格式：__client_id=xxx; _uid=xxx',
+            help: '获取方式：浏览器登录洛谷 → F12 → Application → Cookies → 复制 __client_id 和 _uid 的值<br>' +
+                  '<span class="text-muted">格式：__client_id=xxx; _uid=xxx</span>'
+        },
+        'coderlands': {
+            placeholder: '粘贴 JSESSIONID Cookie',
+            help: '获取方式：浏览器登录代码部落 → F12 → Application → Cookies → 复制 JSESSIONID 值<br>' +
+                  '<span class="text-muted">格式：JSESSIONID=复制的值（直接粘贴值也可以）</span>'
+        }
+    };
+
+    window.showUpdateCookieModal = function(accountId, platform) {
         document.getElementById('update-cookie-account-id').value = accountId;
         document.getElementById('update-cookie-value').value = '';
         document.getElementById('update-cookie-error').classList.add('d-none');
+        var hint = _cookieHints[platform] || {
+            placeholder: '粘贴新的 Cookie',
+            help: '获取方式：浏览器登录 → F12 → Application → Cookies → 复制所需 Cookie 值'
+        };
+        document.getElementById('update-cookie-value').placeholder = hint.placeholder;
+        document.getElementById('update-cookie-help').innerHTML = hint.help;
         bsUpdateCookieModal.show();
     };
 
@@ -977,7 +998,8 @@
         var dd = document.querySelector('.sync-dropdown[data-account-id="' + accountId + '"]');
         if (dd && dd.dataset.authMethod === 'cookie' &&
             (message.indexOf('Cookie') !== -1 || message.indexOf('Session 已过期') !== -1 || message.indexOf('cookie') !== -1)) {
-            return message + ' <a href="#" class="alert-link" onclick="showUpdateCookieModal(' + accountId + '); return false;">点击更新 Cookie</a>';
+            var platform = dd.dataset.platform || '';
+            return message + ' <a href="#" class="alert-link" onclick="showUpdateCookieModal(' + accountId + ', \'' + platform + '\'); return false;">点击更新 Cookie</a>';
         }
         return message;
     }
