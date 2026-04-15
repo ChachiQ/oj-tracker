@@ -109,6 +109,7 @@
                                 <div class="dropdown sync-dropdown"
                                      data-account-id="{{ account.id }}"
                                      data-platform="{{ account.platform }}"
+                                     data-platform-uid="{{ account.platform_uid }}"
                                      {% if account.platform in requires_login_platforms %}data-requires-login="true"{% endif %}
                                      {% if account.platform in platforms and platforms[account.platform].AUTH_METHOD == 'cookie' %}data-auth-method="cookie"{% endif %}>
                                     <button class="btn btn-outline-success dropdown-toggle" type="button"
@@ -135,7 +136,7 @@
                                 {# Update Cookie (cookie-auth platforms only) #}
                                 {% if account.platform in platforms and platforms[account.platform].AUTH_METHOD == 'cookie' %}
                                 <button class="btn btn-outline-info" title="更新 Cookie"
-                                        onclick="showUpdateCookieModal({{ account.id }}, '{{ account.platform }}'); return false;">
+                                        onclick="showUpdateCookieModal({{ account.id }}, '{{ account.platform }}', '{{ account.platform_uid }}'); return false;">
                                     <i class="bi bi-key"></i>
                                 </button>
                                 {% endif %}
@@ -494,19 +495,63 @@
                                   placeholder="部分平台需要 Cookie 才能获取完整数据"></textarea>
                         <div class="form-text" id="add-cookie-help">仅在需要时填写，Cookie 将加密存储。</div>
                     </div>
-                    {# Luogu separate cookie fields #}
+                    {# Luogu auth fields #}
                     <div id="luogu-cookie-fields" style="display:none">
-                        <div class="mb-2">
-                            <label class="form-label">__client_id <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="add-luogu-client"
-                                   placeholder="点击 __client_id 的 Value 列复制，粘贴到这里">
+                        <ul class="nav nav-tabs nav-fill mb-3" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" data-bs-toggle="tab"
+                                        data-bs-target="#add-luogu-login-tab" type="button" role="tab">密码登录</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" data-bs-toggle="tab"
+                                        data-bs-target="#add-luogu-cookie-tab" type="button" role="tab">手动输入 Cookie</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content">
+                            <div class="tab-pane fade show active" id="add-luogu-login-tab" role="tabpanel">
+                                <div class="mb-2">
+                                    <label class="form-label">洛谷用户名 <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="add-luogu-username"
+                                           placeholder="输入洛谷用户名" autocomplete="username">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">密码 <span class="text-danger">*</span></label>
+                                    <input type="password" class="form-control" id="add-luogu-password"
+                                           placeholder="输入洛谷密码" autocomplete="new-password">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">验证码 <span class="text-danger">*</span></label>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <input type="text" class="form-control" id="add-luogu-captcha"
+                                               placeholder="输入验证码" maxlength="6" autocomplete="off" style="max-width:140px">
+                                        <img id="add-luogu-captcha-img" src="" alt="验证码"
+                                             style="height:35px;cursor:pointer;display:none" title="点击刷新">
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="add-luogu-load-captcha">加载验证码</button>
+                                    </div>
+                                </div>
+                                <div id="add-luogu-login-error" class="alert alert-danger py-1 d-none small"></div>
+                                <div id="add-luogu-login-success" class="alert alert-success py-1 d-none small"></div>
+                                <button type="button" class="btn btn-primary btn-sm mb-2" id="add-luogu-login-btn">
+                                    <span class="spinner-border spinner-border-sm d-none" id="add-luogu-login-spinner"></span>
+                                    登录获取 Cookie
+                                </button>
+                                <div class="form-text text-muted small">登录会在洛谷创建新会话，可能踢掉浏览器中的活跃登录。</div>
+                            </div>
+                            <div class="tab-pane fade" id="add-luogu-cookie-tab" role="tabpanel">
+                                <div class="mb-2">
+                                    <label class="form-label">__client_id <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="add-luogu-client"
+                                           placeholder="点击 __client_id 的 Value 列复制，粘贴到这里">
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">_uid <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" id="add-luogu-uid" readonly
+                                           placeholder="自动从平台 ID 填充">
+                                </div>
+                                <div class="form-text">浏览器登录洛谷 → F12 → Application → Cookies → 复制 __client_id 值；_uid 与平台 ID 相同，已自动填充。</div>
+                            </div>
                         </div>
-                        <div class="mb-2">
-                            <label class="form-label">_uid <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="add-luogu-uid"
-                                   placeholder="点击 _uid 的 Value 列复制，粘贴到这里">
-                        </div>
-                        <div class="form-text">浏览器登录洛谷 → F12 → Application → Cookies → 逐个复制上面两个值</div>
+                        <input type="hidden" id="add-luogu-auth-password" name="auth_password">
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -551,6 +596,19 @@
 <script>
 (function() {
     var csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+
+    // Safe JSON parser: handles HTML error pages (e.g. CSRF 400) gracefully
+    function safeJson(r) {
+        if (!r.ok) {
+            return r.text().then(function(t) {
+                try { return JSON.parse(t); } catch(e) {
+                    throw new Error('服务器返回错误 (' + r.status + ')，请刷新页面重试');
+                }
+            });
+        }
+        return r.json();
+    }
+
     var overlay = document.getElementById('sync-overlay');
     var overlayText = document.getElementById('sync-overlay-text');
     var overlayDetail = document.getElementById('sync-overlay-detail');
@@ -582,10 +640,13 @@
                 passwordInput.removeAttribute('required');
 
                 if (platformName === 'luogu') {
-                    // Luogu: two separate input fields
+                    // Luogu: tabbed login/cookie fields
                     cookieField.style.display = 'none';
                     luoguFields.style.display = '';
                     document.getElementById('add-cookie').removeAttribute('required');
+                    // Auto-fill _uid from platform_uid
+                    var uidVal = (document.getElementById('add-uid').value || '').trim();
+                    if (uidVal) document.getElementById('add-luogu-uid').value = uidVal;
                 } else {
                     // Other cookie platforms (e.g. Coderlands): single textarea
                     cookieField.style.display = '';
@@ -618,18 +679,146 @@
         });
     }
 
+    // ── Auto-sync platform_uid → _uid for Luogu ──
+    var addUidInput = document.getElementById('add-uid');
+    if (addUidInput) {
+        addUidInput.addEventListener('input', function() {
+            if (platformSelect && platformSelect.value === 'luogu') {
+                document.getElementById('add-luogu-uid').value = this.value.trim();
+            }
+        });
+    }
+
     // ── Assemble Luogu cookie before form submit ──
     var addForm = document.getElementById('add-account-form');
     if (addForm) {
         addForm.addEventListener('submit', function() {
             var platform = platformSelect ? platformSelect.value : '';
             if (platform === 'luogu') {
+                // Check which tab is active
+                var loginTab = document.getElementById('add-luogu-login-tab');
+                if (loginTab && loginTab.classList.contains('active')) {
+                    // Login tab — cookie was set by the login handler, nothing to do
+                    return;
+                }
+                // Manual cookie tab
                 var c = (document.getElementById('add-luogu-client').value || '').trim();
                 var u = (document.getElementById('add-luogu-uid').value || '').trim();
                 if (c && u) {
                     document.getElementById('add-cookie').value = '__client_id=' + c + '; _uid=' + u;
                 }
             }
+        });
+    }
+
+    // ── Luogu CAPTCHA login helpers ──
+    function luoguLoadCaptcha(imgEl, btnEl, errEl) {
+        btnEl.disabled = true;
+        btnEl.textContent = '加载中...';
+        if (errEl) errEl.classList.add('d-none');
+
+        fetch('/settings/luogu/captcha', {
+            headers: { 'X-CSRFToken': csrfToken }
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            btnEl.disabled = false;
+            btnEl.textContent = '刷新验证码';
+            if (data.success) {
+                imgEl.src = 'data:image/jpeg;base64,' + data.captcha_image;
+                imgEl.style.display = '';
+            } else {
+                if (errEl) {
+                    errEl.textContent = data.message || '加载验证码失败';
+                    errEl.classList.remove('d-none');
+                }
+            }
+        })
+        .catch(function(err) {
+            btnEl.disabled = false;
+            btnEl.textContent = '加载验证码';
+            if (errEl) {
+                errEl.textContent = '网络错误: ' + err.message;
+                errEl.classList.remove('d-none');
+            }
+        });
+    }
+
+    // ── Add Account: Luogu login ──
+    var addLuoguLoadBtn = document.getElementById('add-luogu-load-captcha');
+    var addLuoguCaptchaImg = document.getElementById('add-luogu-captcha-img');
+    var addLuoguLoginErr = document.getElementById('add-luogu-login-error');
+
+    if (addLuoguLoadBtn) {
+        addLuoguLoadBtn.addEventListener('click', function() {
+            luoguLoadCaptcha(addLuoguCaptchaImg, addLuoguLoadBtn, addLuoguLoginErr);
+        });
+    }
+    if (addLuoguCaptchaImg) {
+        addLuoguCaptchaImg.addEventListener('click', function() {
+            luoguLoadCaptcha(addLuoguCaptchaImg, addLuoguLoadBtn, addLuoguLoginErr);
+        });
+    }
+
+    var addLuoguLoginBtn = document.getElementById('add-luogu-login-btn');
+    if (addLuoguLoginBtn) {
+        addLuoguLoginBtn.addEventListener('click', function() {
+            var username = (document.getElementById('add-luogu-username').value || '').trim();
+            var password = (document.getElementById('add-luogu-password').value || '').trim();
+            var captcha = (document.getElementById('add-luogu-captcha').value || '').trim();
+            var errEl = document.getElementById('add-luogu-login-error');
+            var successEl = document.getElementById('add-luogu-login-success');
+            var spinner = document.getElementById('add-luogu-login-spinner');
+
+            errEl.classList.add('d-none');
+            successEl.classList.add('d-none');
+
+            if (!username || !password || !captcha) {
+                errEl.textContent = '请填写用户名、密码和验证码';
+                errEl.classList.remove('d-none');
+                return;
+            }
+
+            addLuoguLoginBtn.disabled = true;
+            spinner.classList.remove('d-none');
+
+            fetch('/settings/luogu/login', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ username: username, password: password, captcha: captcha }),
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                addLuoguLoginBtn.disabled = false;
+                spinner.classList.add('d-none');
+                if (data.success) {
+                    successEl.textContent = '登录成功！Cookie 已获取。';
+                    successEl.classList.remove('d-none');
+                    // Fill in cookie and uid for the form
+                    document.getElementById('add-cookie').value = data.cookie;
+                    document.getElementById('add-uid').value = data.uid;
+                    document.getElementById('add-luogu-uid').value = data.uid;
+                    // Store credentials
+                    document.getElementById('add-luogu-auth-password').value =
+                        JSON.stringify({ username: username, password: password });
+                } else {
+                    errEl.textContent = data.message;
+                    errEl.classList.remove('d-none');
+                    // Reload captcha on captcha/CSRF errors
+                    if (data.message.indexOf('验证码') !== -1 || data.message.indexOf('CSRF') !== -1) {
+                        luoguLoadCaptcha(addLuoguCaptchaImg, addLuoguLoadBtn, null);
+                    }
+                }
+            })
+            .catch(function(err) {
+                addLuoguLoginBtn.disabled = false;
+                spinner.classList.add('d-none');
+                errEl.textContent = '请求失败: ' + err.message;
+                errEl.classList.remove('d-none');
+            });
         });
     }
 
@@ -948,27 +1137,68 @@
     var updateCookieModal = document.getElementById('updateCookieModal');
     var bsUpdateCookieModal = updateCookieModal ? new bootstrap.Modal(updateCookieModal) : null;
 
+    // ── Luogu stored credentials for pre-fill ──
+    var _luoguCredentials = {
+        {% for account in accounts if account.platform == 'luogu' and account.auth_password %}
+        {% set cred = account.auth_password %}
+        {{ account.id }}: {{ cred|tojson }},
+        {% endfor %}
+    };
+
+    function _parseLuoguCreds(accountId) {
+        var raw = _luoguCredentials[accountId];
+        if (!raw) return null;
+        try { return JSON.parse(raw); } catch(e) { return null; }
+    }
+
     // ── Platform-specific cookie field renderers ──
     var _cookieLayouts = {
         'luogu': {
-            render: function() {
-                return '<div class="mb-3">' +
-                    '<label class="form-label">__client_id <span class="text-danger">*</span></label>' +
-                    '<input type="text" class="form-control" id="update-cookie-luogu-client" placeholder="点击 __client_id 的 Value 列复制，粘贴到这里" required>' +
+            render: function(platform, platformUid, accountId) {
+                var creds = _parseLuoguCreds(accountId);
+                var uVal = creds ? (creds.username || '') : '';
+                var pVal = creds ? (creds.password || '') : '';
+                return '<ul class="nav nav-tabs nav-fill mb-3" role="tablist">' +
+                    '<li class="nav-item" role="presentation">' +
+                    '<button class="nav-link active" data-bs-toggle="tab" data-bs-target="#upd-luogu-login-tab" type="button" role="tab">密码登录</button>' +
+                    '</li>' +
+                    '<li class="nav-item" role="presentation">' +
+                    '<button class="nav-link" data-bs-toggle="tab" data-bs-target="#upd-luogu-cookie-tab" type="button" role="tab">手动输入 Cookie</button>' +
+                    '</li></ul>' +
+                    '<div class="tab-content">' +
+                    '<div class="tab-pane fade show active" id="upd-luogu-login-tab" role="tabpanel">' +
+                    '<div class="mb-2"><label class="form-label">洛谷用户名</label>' +
+                    '<input type="text" class="form-control" id="upd-luogu-username" value="' + escapeHtml(uVal) + '" placeholder="输入洛谷用户名" autocomplete="username"></div>' +
+                    '<div class="mb-2"><label class="form-label">密码</label>' +
+                    '<input type="password" class="form-control" id="upd-luogu-password" value="' + escapeHtml(pVal) + '" placeholder="输入洛谷密码" autocomplete="new-password"></div>' +
+                    '<div class="mb-2"><label class="form-label">验证码</label>' +
+                    '<div class="d-flex align-items-center gap-2">' +
+                    '<input type="text" class="form-control" id="upd-luogu-captcha" placeholder="输入验证码" maxlength="6" autocomplete="off" style="max-width:140px">' +
+                    '<img id="upd-luogu-captcha-img" src="" alt="验证码" style="height:35px;cursor:pointer;display:none" title="点击刷新">' +
+                    '<button type="button" class="btn btn-outline-secondary btn-sm" id="upd-luogu-load-captcha">加载验证码</button>' +
+                    '</div></div>' +
+                    '<div class="form-text text-muted small mb-2">登录会在洛谷创建新会话，可能踢掉浏览器中的活跃登录。</div>' +
                     '</div>' +
-                    '<div class="mb-3">' +
-                    '<label class="form-label">_uid <span class="text-danger">*</span></label>' +
-                    '<input type="text" class="form-control" id="update-cookie-luogu-uid" placeholder="点击 _uid 的 Value 列复制，粘贴到这里" required>' +
-                    '</div>' +
-                    '<div class="form-text">浏览器登录洛谷 → F12 → Application → Cookies → 逐个复制上面两个值</div>';
+                    '<div class="tab-pane fade" id="upd-luogu-cookie-tab" role="tabpanel">' +
+                    '<div class="mb-3"><label class="form-label">__client_id <span class="text-danger">*</span></label>' +
+                    '<input type="text" class="form-control" id="update-cookie-luogu-client" placeholder="点击 __client_id 的 Value 列复制，粘贴到这里"></div>' +
+                    '<div class="mb-3"><label class="form-label">_uid</label>' +
+                    '<input type="text" class="form-control" id="update-cookie-luogu-uid" value="' + escapeHtml(platformUid || '') + '" readonly></div>' +
+                    '<div class="form-text">_uid 与平台 ID 相同，已自动填充。只需更新 __client_id。</div>' +
+                    '</div></div>';
             },
             collect: function() {
+                // Check which tab is active
+                var loginTab = document.getElementById('upd-luogu-login-tab');
+                if (loginTab && loginTab.classList.contains('show')) {
+                    return '__luogu_login__';  // sentinel: handled separately
+                }
                 var c = (document.getElementById('update-cookie-luogu-client').value || '').trim();
                 var u = (document.getElementById('update-cookie-luogu-uid').value || '').trim();
                 if (!c || !u) return null;
                 return '__client_id=' + c + '; _uid=' + u;
             },
-            emptyMsg: '请填写 __client_id 和 _uid'
+            emptyMsg: '请填写 __client_id'
         }
     };
 
@@ -991,15 +1221,30 @@
         emptyMsg: '请输入 Cookie'
     };
 
-    window.showUpdateCookieModal = function(accountId, platform) {
+    window.showUpdateCookieModal = function(accountId, platform, platformUid) {
         document.getElementById('update-cookie-account-id').value = accountId;
         document.getElementById('update-cookie-platform').value = platform || '';
         document.getElementById('update-cookie-error').classList.add('d-none');
         var layout = _cookieLayouts[platform] || _defaultLayout;
         document.getElementById('update-cookie-fields').innerHTML =
             typeof layout.render === 'function'
-                ? (layout.render.length ? layout.render(platform) : layout.render())
+                ? layout.render(platform, platformUid, accountId)
                 : _defaultLayout.render(platform);
+
+        // Wire up Luogu CAPTCHA buttons if present
+        var updLoadBtn = document.getElementById('upd-luogu-load-captcha');
+        var updCaptchaImg = document.getElementById('upd-luogu-captcha-img');
+        if (updLoadBtn) {
+            updLoadBtn.addEventListener('click', function() {
+                luoguLoadCaptcha(updCaptchaImg, updLoadBtn, document.getElementById('update-cookie-error'));
+            });
+        }
+        if (updCaptchaImg) {
+            updCaptchaImg.addEventListener('click', function() {
+                luoguLoadCaptcha(updCaptchaImg, updLoadBtn, null);
+            });
+        }
+
         bsUpdateCookieModal.show();
     };
 
@@ -1013,6 +1258,66 @@
             var spinner = document.getElementById('update-cookie-spinner');
             var icon = document.getElementById('update-cookie-icon');
             var btn = this;
+
+            // Luogu password login flow
+            if (cookieValue === '__luogu_login__') {
+                var username = (document.getElementById('upd-luogu-username').value || '').trim();
+                var password = (document.getElementById('upd-luogu-password').value || '').trim();
+                var captcha = (document.getElementById('upd-luogu-captcha').value || '').trim();
+
+                if (!username || !password || !captcha) {
+                    errorEl.textContent = '请填写用户名、密码和验证码';
+                    errorEl.classList.remove('d-none');
+                    return;
+                }
+
+                btn.disabled = true;
+                spinner.classList.remove('d-none');
+                icon.classList.add('d-none');
+                errorEl.classList.add('d-none');
+
+                fetch('/settings/luogu/login', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': csrfToken,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password,
+                        captcha: captcha,
+                        account_id: parseInt(accountId),
+                    }),
+                })
+                .then(safeJson)
+                .then(function(data) {
+                    btn.disabled = false;
+                    spinner.classList.add('d-none');
+                    icon.classList.remove('d-none');
+                    if (data.success) {
+                        bsUpdateCookieModal.hide();
+                        showAlert(data.message, 'success');
+                        setTimeout(function() { location.reload(); }, 1500);
+                    } else {
+                        errorEl.textContent = data.message;
+                        errorEl.classList.remove('d-none');
+                        // Reload captcha on captcha/CSRF errors
+                        if (data.message.indexOf('验证码') !== -1 || data.message.indexOf('CSRF') !== -1) {
+                            var img = document.getElementById('upd-luogu-captcha-img');
+                            var loadBtn = document.getElementById('upd-luogu-load-captcha');
+                            if (img && loadBtn) luoguLoadCaptcha(img, loadBtn, null);
+                        }
+                    }
+                })
+                .catch(function(err) {
+                    btn.disabled = false;
+                    spinner.classList.add('d-none');
+                    icon.classList.remove('d-none');
+                    errorEl.textContent = '请求失败: ' + err.message;
+                    errorEl.classList.remove('d-none');
+                });
+                return;
+            }
 
             if (!cookieValue) {
                 errorEl.textContent = layout.emptyMsg || '请输入 Cookie';
@@ -1033,7 +1338,7 @@
                 },
                 body: JSON.stringify({ cookie: cookieValue }),
             })
-            .then(function(r) { return r.json(); })
+            .then(safeJson)
             .then(function(data) {
                 btn.disabled = false;
                 spinner.classList.add('d-none');
@@ -1063,7 +1368,8 @@
         if (dd && dd.dataset.authMethod === 'cookie' &&
             (message.indexOf('Cookie') !== -1 || message.indexOf('Session 已过期') !== -1 || message.indexOf('cookie') !== -1)) {
             var platform = dd.dataset.platform || '';
-            return message + ' <a href="#" class="alert-link" onclick="showUpdateCookieModal(' + accountId + ', \'' + platform + '\'); return false;">点击更新 Cookie</a>';
+            var platformUid = dd.dataset.platformUid || '';
+            return message + ' <a href="#" class="alert-link" onclick="showUpdateCookieModal(' + accountId + ', \'' + platform + '\', \'' + platformUid + '\'); return false;">点击更新 Cookie</a>';
         }
         return message;
     }

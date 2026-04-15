@@ -6,9 +6,11 @@ from datetime import datetime, timezone, timedelta
 from logging.handlers import RotatingFileHandler
 
 from dotenv import load_dotenv
-from flask import Flask, redirect, url_for
+from flask import Flask, flash, jsonify, redirect, request, url_for
 
 from app.config import config_map
+from flask_wtf.csrf import CSRFError
+
 from app.extensions import db, login_manager, migrate, csrf
 
 __version__ = '1.0.0'
@@ -289,6 +291,17 @@ def create_app(config_name=None):
     @app.context_processor
     def inject_version():
         return dict(app_version=__version__)
+
+    # CSRF error handler — return JSON for AJAX requests
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        if request.is_json or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'success': False,
+                'message': 'CSRF 验证失败，请刷新页面重试',
+            }), 400
+        flash('CSRF 验证失败，请刷新页面重试', 'danger')
+        return redirect(request.referrer or url_for('dashboard.index'))
 
     # Root URL redirect to dashboard
     @app.route('/')

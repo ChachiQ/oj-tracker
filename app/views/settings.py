@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime
 
@@ -10,6 +11,7 @@ from flask import (
     jsonify,
     request,
     current_app,
+    session as flask_session,
 )
 from flask_login import login_required, current_user
 from sqlalchemy import func
@@ -270,6 +272,96 @@ def update_cookie(account_id):
     db.session.commit()
 
     return jsonify({'success': True, 'message': 'Cookie 已更新，账号已恢复正常'})
+
+
+@settings_bp.route('/luogu/captcha', methods=['GET'])
+@login_required
+def luogu_captcha():
+    """Fetch a Luogu CAPTCHA image for password login."""
+    from app.scrapers.luogu import LuoguScraper
+
+    try:
+        result = LuoguScraper.get_login_captcha()
+    except Exception as e:
+        logger.error(f"Failed to fetch Luogu captcha: {e}", exc_info=True)
+        return jsonify({'success': False, 'message': f'无法获取验证码: {e}'}), 500
+
+    flask_session['luogu_login_state'] = result['login_state']
+    return jsonify({
+        'success': True,
+        'captcha_image': result['captcha_image_b64'],
+    })
+
+
+@settings_bp.route('/luogu/login', methods=['POST'])
+@login_required
+def luogu_login():
+    """Perform Luogu password login and optionally update an account's cookies."""
+    from app.scrapers.luogu import LuoguScraper
+
+    login_state = flask_session.pop('luogu_login_state', None)
+    if not login_state:
+        return jsonify({'success': False, 'message': '请先加载验证码'}), 400
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = (data.get('password') or '').strip()
+    captcha = (data.get('captcha') or '').strip()
+    account_id = data.get('account_id')
+
+    if not username or not password or not captcha:
+        return jsonify({'success': False, 'message': '请填写用户名、密码和验证码'}), 400
+
+    result = LuoguScraper.do_password_login(username, password, captcha, login_state)
+
+    if not result['success']:
+        return jsonify(result)
+
+    # Validate the obtained cookie actually works
+    try:
+        scraper = get_scraper_instance('luogu', auth_cookie=result['cookie'])
+        valid = scraper.validate_account(result['uid'])
+        if not valid:
+            return jsonify({
+                'success': False,
+                'message': '登录成功但 Cookie 验证失败，请重试',
+            })
+    except Exception as e:
+        logger.error(f"Cookie validation after Luogu login failed: {e}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f'登录成功但验证异常: {e}',
+        })
+
+    # If account_id provided, update existing account
+    if account_id:
+        account = PlatformAccount.query.get(account_id)
+        if not account or account.student.parent_id != current_user.id:
+            return jsonify({'success': False, 'message': '无权操作'}), 403
+
+        account.auth_cookie = scraper.auth_cookie  # normalized
+        account.auth_password = json.dumps({
+            'username': username, 'password': password,
+        })
+        account.last_sync_error = None
+        account.consecutive_sync_failures = 0
+        if not account.is_active:
+            account.is_active = True
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': '登录成功，Cookie 已更新',
+            'uid': result['uid'],
+        })
+
+    # No account_id — return cookie for add-account flow
+    return jsonify({
+        'success': True,
+        'message': '登录成功',
+        'cookie': result['cookie'],
+        'uid': result['uid'],
+    })
 
 
 @settings_bp.route('/ai', methods=['POST'])

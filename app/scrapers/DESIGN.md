@@ -233,8 +233,16 @@ Coderlands 爬虫通过设置 `self._new_cursor` 属性传递自定义 cursor，
 #### 认证流程
 
 2026-04 起提交列表（`/record/list`）需要登录，题目详情仍可匿名访问。
-认证方式为 Cookie：`__client_id=xxx; _uid=xxx`（从浏览器登录后复制）。
-洛谷使用 WebAuthn 登录，不支持程序化密码登录。
+认证方式为 Cookie：`__client_id=xxx; _uid=xxx`。
+
+洛谷支持密码登录但需要图形验证码（CAPTCHA）：
+1. `GET /auth/login` → 获取 CSRF token（`<meta name="csrf-token">`）和 C3VK cookie（5分钟 TTL）
+2. `GET /lg4/captcha?_t={timestamp}` → 90x35 JPEG 图形验证码
+3. `POST /do-auth/password` + `{username, password, captcha}` + `x-csrf-token` header
+4. 成功后 Set-Cookie 返回 `__client_id` 和 `_uid`
+
+系统支持半自动登录：服务端获取验证码展示给用户，用户输入验证码文本后服务端完成登录。
+`_uid` 是用户数字 ID，与 `platform_uid` 相同，不会变化。
 
 请求头（所有请求都需要）：
 ```

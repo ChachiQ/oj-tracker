@@ -236,6 +236,10 @@ class LuoguScraper(BaseScraper):
                     if score is not None:
                         score = int(score)
 
+                    # Refine: Luogu status 14 ("Unaccepted") with score 0 is WA, not PA
+                    if status == SubmissionStatus.PA.value and score == 0:
+                        status = SubmissionStatus.WA.value
+
                     # Language
                     lang_code = record.get('language', None)
                     language = self._LANG_MAP.get(lang_code, str(lang_code) if lang_code is not None else None)
@@ -411,3 +415,134 @@ class LuoguScraper(BaseScraper):
             "4. 找到 __client_id 和 _uid，分别复制其 Value 值\n"
             "5. 在下方 Cookie 栏粘贴，格式：__client_id=xxx; _uid=xxx"
         )
+
+    # ── Password login with CAPTCHA ──────────────────────────────
+
+    @staticmethod
+    def get_login_captcha() -> dict:
+        """Fetch a CAPTCHA image from Luogu and return it with the login state.
+
+        Returns:
+            {
+                'captcha_image_b64': str,  # base64-encoded JPEG
+                'login_state': {
+                    'csrf_token': str,
+                    'cookies': dict,       # serialized cookie jar
+                }
+            }
+        """
+        import base64
+        from bs4 import BeautifulSoup
+
+        sess = requests.Session()
+        sess.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/131.0.0.0 Safari/537.36',
+        })
+
+        # Step 1: GET login page → CSRF token + C3VK cookie
+        # Luogu's CDN sets C3VK via redirect; requests follows automatically.
+        resp = sess.get('https://www.luogu.com.cn/auth/login', timeout=15)
+        resp.raise_for_status()
+
+        # Extract CSRF token from <meta> or embedded JSON
+        csrf_token = None
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        meta = soup.find('meta', attrs={'name': 'csrf-token'})
+        if meta and meta.get('content'):
+            csrf_token = meta['content']
+
+        if not csrf_token:
+            # Try embedded JSON (Luogu sometimes puts it in decodeURIComponent)
+            m = re.search(r'decodeURIComponent\("([^"]+)"\)', resp.text)
+            if m:
+                from urllib.parse import unquote as url_unquote
+                data = json.loads(url_unquote(m.group(1)))
+                csrf_token = data.get('csrfToken') or data.get('csrf_token')
+
+        if not csrf_token:
+            raise RuntimeError('无法从洛谷登录页提取 CSRF token')
+
+        # Step 2: GET CAPTCHA image
+        captcha_url = f'https://www.luogu.com.cn/lg4/captcha?_t={int(time.time() * 1000)}'
+        captcha_resp = sess.get(captcha_url, timeout=15)
+        captcha_resp.raise_for_status()
+
+        captcha_b64 = base64.b64encode(captcha_resp.content).decode('ascii')
+
+        # Serialize cookies
+        cookies_dict = {c.name: c.value for c in sess.cookies}
+
+        return {
+            'captcha_image_b64': captcha_b64,
+            'login_state': {
+                'csrf_token': csrf_token,
+                'cookies': cookies_dict,
+            },
+        }
+
+    @staticmethod
+    def do_password_login(username: str, password: str, captcha_text: str,
+                          login_state: dict) -> dict:
+        """Perform Luogu password login using previously obtained CAPTCHA state.
+
+        Returns:
+            On success: {'success': True, 'cookie': '__client_id=xxx; _uid=yyy', 'uid': 'yyy'}
+            On failure: {'success': False, 'message': '...'}
+        """
+        sess = requests.Session()
+        sess.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/131.0.0.0 Safari/537.36',
+            'Referer': 'https://www.luogu.com.cn/auth/login',
+            'x-csrf-token': login_state['csrf_token'],
+            'Content-Type': 'application/json',
+        })
+
+        # Restore cookies from login_state
+        for name, value in login_state['cookies'].items():
+            sess.cookies.set(name, value, domain='.luogu.com.cn')
+
+        try:
+            resp = sess.post(
+                'https://www.luogu.com.cn/do-auth/password',
+                json={'username': username, 'password': password, 'captcha': captcha_text},
+                timeout=15,
+                allow_redirects=False,
+            )
+        except requests.RequestException as e:
+            return {'success': False, 'message': f'网络错误: {e}'}
+
+        # Parse response
+        try:
+            data = resp.json() if resp.headers.get('Content-Type', '').startswith('application/json') else {}
+        except (ValueError, TypeError):
+            data = {}
+
+        if resp.status_code == 200:
+            # Success — extract cookies
+            client_id = sess.cookies.get('__client_id', domain='.luogu.com.cn')
+            uid = sess.cookies.get('_uid', domain='.luogu.com.cn')
+
+            if not client_id or not uid:
+                # Try without domain filter
+                client_id = client_id or sess.cookies.get('__client_id')
+                uid = uid or sess.cookies.get('_uid')
+
+            if client_id and uid:
+                cookie_str = f'__client_id={client_id}; _uid={uid}'
+                return {'success': True, 'cookie': cookie_str, 'uid': uid}
+            else:
+                return {'success': False, 'message': '登录似乎成功但未获取到有效 Cookie，请重试'}
+
+        # Error responses
+        error_msg = data.get('errorMessage') or data.get('message') or data.get('error') or ''
+        if resp.status_code == 403:
+            return {'success': False, 'message': error_msg or 'CSRF 验证失败，请重新加载验证码'}
+        if '验证码' in error_msg:
+            return {'success': False, 'message': error_msg}
+        if error_msg:
+            return {'success': False, 'message': error_msg}
+        return {'success': False, 'message': f'登录失败 (HTTP {resp.status_code})'}
